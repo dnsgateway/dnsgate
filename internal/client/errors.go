@@ -23,17 +23,7 @@ func newError(err error) error {
 		return err
 	}
 
-	e := &Error{status: st}
-
-	for _, d := range st.Details() {
-		if detail, ok := d.(*dnsgatev1.Error); ok {
-			e.detail = detail
-
-			break
-		}
-	}
-
-	return e
+	return &Error{status: st, detail: dnsgatev1.ErrorDetail(st)}
 }
 
 // Error returns the Gateway error category and message, such as
@@ -44,8 +34,7 @@ func (e *Error) Error() string {
 		return strings.ToLower(e.status.Code().String()) + ": " + e.status.Message()
 	}
 
-	return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(e.detail.GetCategory().String(), "CATEGORY_")), "_", " ") +
-		": " + e.status.Message()
+	return strings.ReplaceAll(e.detail.GetCategory().Name(), "_", " ") + ": " + e.status.Message()
 }
 
 // Detail returns the Gateway's Error detail, or nil if there was none.

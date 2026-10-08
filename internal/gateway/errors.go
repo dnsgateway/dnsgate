@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"strings"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -37,15 +35,5 @@ func gatewayError(code codes.Code, category dnsgatev1.Error_Category, msg string
 // its enum name in lower case without the prefix, such as
 // "unauthenticated" or "permission_denied".
 func category(err error) string {
-	c := dnsgatev1.Error_CATEGORY_UNSPECIFIED
-
-	for _, d := range status.Convert(err).Details() {
-		if e, ok := d.(*dnsgatev1.Error); ok {
-			c = e.GetCategory()
-
-			break
-		}
-	}
-
-	return strings.ToLower(strings.TrimPrefix(c.String(), "CATEGORY_"))
+	return dnsgatev1.ErrorDetail(status.Convert(err)).GetCategory().Name()
 }
