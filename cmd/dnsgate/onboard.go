@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/client"
 	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 
@@ -58,16 +59,9 @@ func runOnboard(ctx context.Context, out io.Writer, f *Flags) error {
 		req.Expires = durationpb.New(f.Expires)
 	}
 
-	c, closeConn, err := dialGateway(f)
+	resp, err := callGateway(ctx, f, "onboard", (*client.Client).Onboard, req)
 	if err != nil {
 		return err
-	}
-
-	defer closeConn()
-
-	resp, err := c.Onboard(ctx, req)
-	if err != nil {
-		return fmt.Errorf("onboard: %w", err)
 	}
 
 	_, err = fmt.Fprintln(out, resp.GetToken())

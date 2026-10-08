@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -43,4 +44,24 @@ func dialGateway(f *Flags) (c *client.Client, closeConn func(), err error) {
 	}
 
 	return client.New(conn), func() { _ = conn.Close() }, nil
+}
+
+// callGateway dials the Gateway, calls the client operation op with arg
+// and closes the connection. A failed call's error is prefixed with name.
+func callGateway[A, R any](ctx context.Context, f *Flags, name string, op func(*client.Client, context.Context, A) (R, error), arg A) (R, error) {
+	var zero R
+
+	c, closeConn, err := dialGateway(f)
+	if err != nil {
+		return zero, err
+	}
+
+	defer closeConn()
+
+	resp, err := op(c, ctx, arg)
+	if err != nil {
+		return zero, fmt.Errorf("%s: %w", name, err)
+	}
+
+	return resp, nil
 }

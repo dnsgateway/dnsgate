@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/client"
 )
 
 func newTokenCmd(flags *Flags) *cobra.Command {
@@ -58,16 +59,9 @@ func runTokenReseal(ctx context.Context, out io.Writer, f *Flags, args []string)
 		return errors.New("no Service Token: give TOKEN or set " + envToken + " or --" + flagToken)
 	}
 
-	c, closeConn, err := dialGateway(f)
+	resp, err := callGateway(ctx, f, "reseal", (*client.Client).ResealToken, tok)
 	if err != nil {
 		return err
-	}
-
-	defer closeConn()
-
-	resp, err := c.ResealToken(ctx, tok)
-	if err != nil {
-		return fmt.Errorf("reseal: %w", err)
 	}
 
 	_, err = fmt.Fprintln(out, resp.GetToken())
@@ -112,16 +106,9 @@ func runTokenInspect(ctx context.Context, out io.Writer, f *Flags) error {
 		return errors.New("no Service Token: set " + envToken + " or --" + flagToken)
 	}
 
-	c, closeConn, err := dialGateway(f)
+	resp, err := callGateway(ctx, f, "inspect", (*client.Client).InspectToken, f.Token)
 	if err != nil {
 		return err
-	}
-
-	defer closeConn()
-
-	resp, err := c.InspectToken(ctx, f.Token)
-	if err != nil {
-		return fmt.Errorf("inspect: %w", err)
 	}
 
 	enc := json.NewEncoder(out)
