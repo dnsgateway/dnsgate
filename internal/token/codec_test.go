@@ -374,17 +374,23 @@ func TestResealKeepsTheSignedClaimsAndChangesOnlyTheEncryptionKey(t *testing.T) 
 
 	codec := newCodec(src)
 
-	resealed, claims, err := codec.Reseal(ctx, sealed)
+	r, err := codec.Reseal(ctx, sealed)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(claims, derivedClaims()) {
-		t.Errorf("Reseal claims = %#v\nwant %#v", claims, derivedClaims())
+	resealed := r.Token
+
+	if !reflect.DeepEqual(r.Claims, derivedClaims()) {
+		t.Errorf("Reseal claims = %#v\nwant %#v", r.Claims, derivedClaims())
 	}
 
 	if before, after := outerKeyID(t, sealed), outerKeyID(t, resealed); before != "enc-2026-10" || after != "enc-2026-11" {
 		t.Errorf("outer kid went from %q to %q, want enc-2026-10 to enc-2026-11", before, after)
+	}
+
+	if r.OldKeyID != "enc-2026-10" || r.NewKeyID != "enc-2026-11" {
+		t.Errorf("Reseal kids = %q to %q, want enc-2026-10 to enc-2026-11", r.OldKeyID, r.NewKeyID)
 	}
 
 	want, err := codec.InnerJWS(ctx, sealed)

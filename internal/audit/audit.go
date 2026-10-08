@@ -49,6 +49,10 @@ type Event struct {
 	// Root Token of an onboard event.
 	TokenID  string `json:"jti,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// OldKeyID and NewKeyID are the encryption kids a token event moves
+	// a token from and to, such as for Resealing. A kid is not a secret.
+	OldKeyID string `json:"old_kid,omitempty"`
+	NewKeyID string `json:"new_kid,omitempty"`
 	Result   Result `json:"result"`
 	// Category is the Gateway error category of a failed request.
 	Category Category `json:"category,omitempty"`

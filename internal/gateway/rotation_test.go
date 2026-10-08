@@ -179,6 +179,8 @@ func TestResealWritesAuditEventsWithoutSecrets(t *testing.T) {
 		"service_account": "root",
 		"provider":        "cloudflare",
 		"result":          "ok",
+		"old_kid":         "enc-test",
+		"new_kid":         "enc-next",
 	} {
 		if reseals[0][field] != want {
 			t.Errorf("audit %s = %v, want %v", field, reseals[0][field], want)

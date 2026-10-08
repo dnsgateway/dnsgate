@@ -177,7 +177,7 @@ Entries for tokens with an expiry can be removed once that expiry passes. Entrie
 
 The Gateway configuration names one current encryption key and any number of older decryption keys, each with a retirement deadline. From its deadline on, a decryption key opens no token, so a token not resealed by then stops working.
 
-A token authorizes its own Resealing: `dnsgate token reseal` needs no Permission, because the resealed token carries the same claims and signature and grants its holder nothing new. A token that no longer opens (expired, tampered, or sealed under a retired key) cannot be resealed. Resealing writes a `token.reseal` audit event. Only the encryption key rotates this way; the signing key stays, so a resealed token keeps its signature.
+A token authorizes its own Resealing: `dnsgate token reseal` needs no Permission, because the resealed token carries the same claims and signature and grants its holder nothing new. A token that no longer opens (expired, tampered, or sealed under a retired key) cannot be resealed. Resealing writes a `token.reseal` audit event naming the old and new `kid`. Only the encryption key rotates this way; the signing key stays, so a resealed token keeps its signature.
 
 ---
 

@@ -116,7 +116,9 @@ func (c *Codec) seal(ctx context.Context, wire wireClaims) (string, error) {
 		return "", fmt.Errorf("serializing JWS: %w", err)
 	}
 
-	return c.encrypt([]byte(signed))
+	sealed, _, err := c.encrypt([]byte(signed))
+
+	return sealed, err
 }
 
 // encrypt produces a compact ECDH-ES+A256KW / A256GCM JWE over X25519.
@@ -130,22 +132,24 @@ func (c *Codec) seal(ctx context.Context, wire wireClaims) (string, error) {
 // its own, overwriting the A256KW it writes. That is verified for the
 // go-jose version pinned in go.mod, not promised by its API;
 // TestOuterHeaderIsTheOnlyReadablePart fails if an upgrade changes it.
-func (c *Codec) encrypt(plaintext []byte) (string, error) {
+//
+// It returns the JWE and the kid it is encrypted to.
+func (c *Codec) encrypt(plaintext []byte) (string, string, error) {
 	kid, recipient := c.keys.EncryptionKey()
 
 	eph, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
-		return "", fmt.Errorf("generating ephemeral key: %w", err)
+		return "", "", fmt.Errorf("generating ephemeral key: %w", err)
 	}
 
 	z, err := eph.ECDH(recipient)
 	if err != nil {
-		return "", fmt.Errorf("key agreement: %w", err)
+		return "", "", fmt.Errorf("key agreement: %w", err)
 	}
 
 	kek, err := deriveKEK(z)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	opts := (&jose.EncrypterOptions{}).
@@ -159,28 +163,39 @@ func (c *Codec) encrypt(plaintext []byte) (string, error) {
 
 	enc, err := jose.NewEncrypter(contentEncryption, jose.Recipient{Algorithm: jose.A256KW, Key: kek, KeyID: kid}, opts)
 	if err != nil {
-		return "", fmt.Errorf("creating encrypter: %w", err)
+		return "", "", fmt.Errorf("creating encrypter: %w", err)
 	}
 
 	jwe, err := enc.Encrypt(plaintext)
 	if err != nil {
-		return "", fmt.Errorf("encrypting token: %w", err)
+		return "", "", fmt.Errorf("encrypting token: %w", err)
 	}
 
 	sealed, err := jwe.CompactSerialize()
 	if err != nil {
-		return "", fmt.Errorf("serializing JWE: %w", err)
+		return "", "", fmt.Errorf("serializing JWE: %w", err)
 	}
 
-	return sealed, nil
+	return sealed, kid, nil
 }
 
 // Open decrypts and verifies a Service Token, choosing keys by kid, and
 // checks its iss, aud, nbf and exp claims.
 func (c *Codec) Open(ctx context.Context, sealed string) (Claims, error) {
-	claims, _, err := c.open(ctx, sealed)
+	o, err := c.open(ctx, sealed)
 
-	return claims, err
+	return o.claims, err
+}
+
+// Resealed is a Service Token resealed under the current encryption key.
+type Resealed struct {
+	// Token is the resealed token.
+	Token string
+	// Claims are the token's claims, unchanged by Resealing.
+	Claims Claims
+	// OldKeyID is the kid the token was sealed under, and NewKeyID the kid
+	// it is resealed under.
+	OldKeyID, NewKeyID string
 }
 
 // Reseal opens a Service Token as Open does and encrypts its signed
@@ -188,36 +203,44 @@ func (c *Codec) Open(ctx context.Context, sealed string) (Claims, error) {
 // carries the same claims and signature under the current kid. A token
 // that does not open fails with ErrInvalid; any other error is the
 // Gateway's own.
-func (c *Codec) Reseal(ctx context.Context, sealed string) (string, Claims, error) {
-	claims, signed, err := c.open(ctx, sealed)
+func (c *Codec) Reseal(ctx context.Context, sealed string) (Resealed, error) {
+	o, err := c.open(ctx, sealed)
 	if err != nil {
-		return "", Claims{}, err
+		return Resealed{}, err
 	}
 
-	resealed, err := c.encrypt(signed)
+	resealed, kid, err := c.encrypt(o.signed)
 	if err != nil {
-		return "", Claims{}, err
+		return Resealed{}, err
 	}
 
-	return resealed, claims, nil
+	return Resealed{Token: resealed, Claims: o.claims, OldKeyID: o.kid, NewKeyID: kid}, nil
 }
 
-// open is Open that also returns the signed claims, the inner JWS.
-func (c *Codec) open(ctx context.Context, sealed string) (Claims, []byte, error) {
+// opened is an opened Service Token.
+type opened struct {
+	claims Claims
+	// signed is the inner JWS.
+	signed []byte
+	// kid is the encryption key the token was sealed under.
+	kid string
+}
+
+func (c *Codec) open(ctx context.Context, sealed string) (opened, error) {
 	// One reading of the clock for key retirement, nbf and exp.
 	now := c.now()
 
-	signed, err := c.decrypt(ctx, sealed, now)
+	signed, kid, err := c.decrypt(ctx, sealed, now)
 	if err != nil {
-		return Claims{}, nil, err
+		return opened{}, err
 	}
 
 	claims, err := c.verify(signed, now)
 	if err != nil {
-		return Claims{}, nil, err
+		return opened{}, err
 	}
 
-	return claims, signed, nil
+	return opened{claims: claims, signed: signed, kid: kid}, nil
 }
 
 // verify checks the signature and claims of the inner JWS signed, as of
@@ -257,15 +280,16 @@ func (c *Codec) verify(signed []byte, now time.Time) (Claims, error) {
 	return claims, nil
 }
 
-// decrypt opens the JWE sealed with a key that is not retired at now.
-func (c *Codec) decrypt(ctx context.Context, sealed string, now time.Time) ([]byte, error) {
+// decrypt opens the JWE sealed with a key that is not retired at now. It
+// returns the plaintext and the kid it was encrypted to.
+func (c *Codec) decrypt(ctx context.Context, sealed string, now time.Time) ([]byte, string, error) {
 	jwe, err := jose.ParseEncryptedCompact(sealed, []jose.KeyAlgorithm{keyAlgorithm}, []jose.ContentEncryption{contentEncryption})
 	if err != nil {
-		return nil, fmt.Errorf("%w: malformed", ErrInvalid)
+		return nil, "", fmt.Errorf("%w: malformed", ErrInvalid)
 	}
 
 	if typ, _ := jwe.Header.ExtraHeaders[headerTyp].(string); typ != Type {
-		return nil, fmt.Errorf("%w: typ is not %s", ErrInvalid, Type)
+		return nil, "", fmt.Errorf("%w: typ is not %s", ErrInvalid, Type)
 	}
 
 	dk := &opaqueDecrypter{ctx: ctx, keys: c.keys, at: now}
@@ -273,13 +297,13 @@ func (c *Codec) decrypt(ctx context.Context, sealed string, now time.Time) ([]by
 	plaintext, err := jwe.Decrypt(dk)
 	if err != nil {
 		if dk.err != nil {
-			return nil, keyError("encryption", dk.err)
+			return nil, "", keyError("encryption", dk.err)
 		}
 
-		return nil, fmt.Errorf("%w: decryption failed", ErrInvalid)
+		return nil, "", fmt.Errorf("%w: decryption failed", ErrInvalid)
 	}
 
-	return plaintext, nil
+	return plaintext, jwe.Header.KeyID, nil
 }
 
 // keyError reports a failed key lookup without the Source's error text,
