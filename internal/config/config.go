@@ -20,10 +20,10 @@ const DefaultListen = ":8443"
 // minBootstrapSecret is the shortest bootstrap secret the Gateway accepts.
 const minBootstrapSecret = 16
 
-// Gateway is the Gateway's configuration, read from a YAML or JSON file.
+// File is the Gateway's configuration file, read as YAML or JSON.
 // Relative file paths are resolved against the configuration file's
 // directory.
-type Gateway struct {
+type File struct {
 	// Listen is the TCP address the gRPC API is served on.
 	Listen string `json:"listen"`
 	TLS    TLS    `json:"tls"`
@@ -48,13 +48,13 @@ type Keys struct {
 
 // Load reads the configuration file at path. Unknown fields are errors, so
 // a misspelled setting is caught at startup.
-func Load(path string) (*Gateway, error) {
+func Load(path string) (*File, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
-	var cfg Gateway
+	var cfg File
 
 	if err := yaml.UnmarshalStrict(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
@@ -88,7 +88,7 @@ func Load(path string) (*Gateway, error) {
 // BootstrapSecret reads the bootstrap secret, without surrounding
 // whitespace, from BootstrapSecretFile. The file must give group and
 // others no access, and the secret must be at least 16 bytes long.
-func (c *Gateway) BootstrapSecret() (token.Secret, error) {
+func (c *File) BootstrapSecret() (token.Secret, error) {
 	path := c.BootstrapSecretFile
 
 	f, err := os.Open(path)
