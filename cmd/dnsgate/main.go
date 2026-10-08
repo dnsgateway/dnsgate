@@ -33,6 +33,8 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
+	flags := DefaultFlags()
+
 	rootCmd := &cobra.Command{
 		Use:           bin,
 		Short:         "DNS Gateway CLI",
@@ -42,6 +44,7 @@ func newRootCmd() *cobra.Command {
 	}
 
 	rootCmd.AddCommand(
+		newKeysCmd(flags),
 		newVersionCmd(),
 	)
 
