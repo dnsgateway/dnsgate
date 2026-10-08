@@ -25,8 +25,9 @@ func newKeysGenerateCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Write a new signing and encryption key pair",
-		Long: "Write an Ed25519 signing key pair (kid sig-<suffix>) and an X25519 encryption key pair " +
-			"(kid enc-<suffix>) as PEM files readable only by their owner. Existing files are never overwritten.",
+		Long: "Write an Ed25519 signing key pair and an X25519 encryption key pair as PEM files " +
+			"readable only by their owner, each named after its key ID. Existing files are never overwritten.\n\n" +
+			"Key IDs are " + keys.KeyIDFormat + ".",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runKeysGenerate(cmd.OutOrStdout(), flags, time.Now())

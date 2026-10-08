@@ -30,7 +30,22 @@ const (
 	fileMode = 0o600
 )
 
+// KeyIDFormat describes the kids Generate writes and LoadFiles accepts. It
+// is the one description of the format; help texts refer to it.
+const KeyIDFormat = signingPrefix + "<suffix> for the signing key and " +
+	encryptionPrefix + "<suffix> for the encryption key, where <suffix> starts " +
+	"with a letter or digit, followed by letters, digits, '.', '_' or '-'"
+
 var validSuffix = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// checkKeyID reports whether kid is prefix followed by a valid suffix.
+func checkKeyID(kid, prefix string) error {
+	if suffix, ok := strings.CutPrefix(kid, prefix); !ok || !validSuffix.MatchString(suffix) {
+		return fmt.Errorf("invalid key ID %q: want %s", kid, KeyIDFormat)
+	}
+
+	return nil
+}
 
 // Generated describes the key pairs written by Generate.
 type Generated struct {
@@ -42,15 +57,15 @@ type Generated struct {
 }
 
 // Generate writes a new Ed25519 signing key pair and X25519 encryption key
-// pair into dir as PEM files with owner-only permissions. The kids are
-// "sig-<suffix>" and "enc-<suffix>", and each file is named after its kid:
+// pair into dir as PEM files with owner-only permissions. The kids follow
+// KeyIDFormat, and each file is named after its kid:
 // <kid>.pem holds the PKCS #8 private key, <kid>.pub.pem the PKIX public
 // key. dir is created with mode 0700 if it does not exist; an existing dir
 // must give group and others no access. Existing files are never
 // overwritten, and on failure the files this call wrote are removed.
 func Generate(dir, suffix string) (Generated, error) {
 	if !validSuffix.MatchString(suffix) {
-		return Generated{}, fmt.Errorf("invalid key ID suffix %q: use letters, digits, '.', '_' and '-'", suffix)
+		return Generated{}, fmt.Errorf("invalid key ID suffix %q: want %s", suffix, KeyIDFormat)
 	}
 
 	sigPub, sigPriv, err := ed25519.GenerateKey(rand.Reader)
@@ -174,10 +189,11 @@ type Files struct {
 var _ Source = (*Files)(nil)
 
 // LoadFiles reads the signing (Ed25519) and encryption (X25519) private
-// keys written by Generate. A key's kid is its file name without ".pem",
-// and the file must not be readable or writable by group or others.
+// keys written by Generate. A key's kid is its file name without ".pem" and
+// must follow KeyIDFormat, and the file must not be readable or writable by
+// group or others.
 func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
-	sigKID, sigKey, err := readPrivateKey(signingFile)
+	sigKID, sigKey, err := readPrivateKey(signingFile, signingPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +203,7 @@ func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
 		return nil, fmt.Errorf("signing key %s is not an Ed25519 private key", signingFile)
 	}
 
-	encKID, encKey, err := readPrivateKey(encryptionFile)
+	encKID, encKey, err := readPrivateKey(encryptionFile, encryptionPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +216,16 @@ func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
 	return &Files{sigKID: sigKID, sigPriv: sigPriv, encKID: encKID, encPriv: encPriv}, nil
 }
 
-func readPrivateKey(path string) (string, any, error) {
+func readPrivateKey(path, prefix string) (string, any, error) {
+	kid, ok := strings.CutSuffix(filepath.Base(path), privateExt)
+	if !ok {
+		return "", nil, fmt.Errorf("key file %s is not named <kid>%s", path, privateExt)
+	}
+
+	if err := checkKeyID(kid, prefix); err != nil {
+		return "", nil, fmt.Errorf("key file %s: %w", path, err)
+	}
+
 	// Check the mode of the file actually read: stat and read one descriptor.
 	f, err := os.Open(path)
 	if err != nil {
@@ -226,11 +251,6 @@ func readPrivateKey(path string) (string, any, error) {
 	block, _ := pem.Decode(data)
 	if block == nil || block.Type != pemPrivateKey {
 		return "", nil, fmt.Errorf("key file %s holds no PEM %q block", path, pemPrivateKey)
-	}
-
-	kid, ok := strings.CutSuffix(filepath.Base(path), privateExt)
-	if !ok || kid == "" {
-		return "", nil, fmt.Errorf("key file %s is not named <kid>%s", path, privateExt)
 	}
 
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)

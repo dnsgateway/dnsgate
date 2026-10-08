@@ -221,6 +221,47 @@ func TestLoadedKeysSignAndAgreeUnderTheirKeyIDs(t *testing.T) {
 	}
 }
 
+func TestLoadFilesRejectsMisnamedKeyFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "keys")
+
+	if _, err := keys.Generate(dir, "2026-10"); err != nil {
+		t.Fatal(err)
+	}
+
+	sig := filepath.Join(dir, "sig-2026-10.pem")
+	enc := filepath.Join(dir, "enc-2026-10.pem")
+
+	copyKey := func(t *testing.T, from, name string) string {
+		t.Helper()
+
+		data, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		to := filepath.Join(dir, name)
+		if err := os.WriteFile(to, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		return to
+	}
+
+	cases := map[string][2]string{
+		"signing kid without prefix":       {copyKey(t, sig, "signing.pem"), enc},
+		"signing kid with encryption form": {copyKey(t, sig, "enc-2026-09.pem"), enc},
+		"signing kid with bad suffix":      {copyKey(t, sig, "sig-.hidden.pem"), enc},
+		"encryption kid without prefix":    {sig, copyKey(t, enc, "2026-10.pem")},
+		"encryption kid with signing form": {sig, copyKey(t, enc, "sig-2026-09.pem")},
+	}
+
+	for name, files := range cases {
+		if _, err := keys.LoadFiles(files[0], files[1]); err == nil {
+			t.Errorf("%s: LoadFiles(%s, %s) succeeded, want an error", name, files[0], files[1])
+		}
+	}
+}
+
 func TestLoadFilesRejectsLooseOrSwappedKeys(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "keys")
 
