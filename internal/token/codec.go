@@ -66,11 +66,14 @@ func NewCodec(src keys.Source, opts ...Option) *Codec {
 	return c
 }
 
-// wireClaims is the sealed form of Claims. Its credential field shadows the
-// embedded, redacting one so the real value is sealed.
+// wireClaims is the sealed form of Claims: it adds iss and aud, and its
+// credential field shadows the embedded, redacting one so the real value is
+// sealed.
 type wireClaims struct {
 	Claims
 
+	Issuer     string         `json:"iss"`
+	Audience   string         `json:"aud"`
 	Credential wireCredential `json:"credential"`
 }
 
@@ -79,13 +82,19 @@ type wireCredential struct {
 	Value string `json:"value"`
 }
 
-// Seal signs claims with the current signing key and encrypts the result to
-// the current encryption key.
+// Seal adds the iss and aud claims, signs claims with the current signing
+// key and encrypts the result to the current encryption key.
 func (c *Codec) Seal(ctx context.Context, claims Claims) (string, error) {
-	payload, err := json.Marshal(wireClaims{
+	return c.seal(ctx, wireClaims{
 		Claims:     claims,
+		Issuer:     Issuer,
+		Audience:   Audience,
 		Credential: wireCredential{Type: claims.Credential.Type, Value: claims.Credential.Value.Reveal()},
 	})
+}
+
+func (c *Codec) seal(ctx context.Context, wire wireClaims) (string, error) {
+	payload, err := json.Marshal(wire)
 	if err != nil {
 		return "", fmt.Errorf("encoding claims: %w", err)
 	}
@@ -192,12 +201,12 @@ func (c *Codec) Open(ctx context.Context, sealed string) (Claims, error) {
 		return Claims{}, fmt.Errorf("%w: malformed claims", ErrInvalid)
 	}
 
-	claims := wire.Claims
-	claims.Credential = Credential{Type: wire.Credential.Type, Value: NewSecret(wire.Credential.Value)}
-
-	if err := c.check(claims); err != nil {
+	if err := c.check(wire); err != nil {
 		return Claims{}, err
 	}
+
+	claims := wire.Claims
+	claims.Credential = Credential{Type: wire.Credential.Type, Value: NewSecret(wire.Credential.Value)}
 
 	return claims, nil
 }
@@ -226,7 +235,7 @@ func (c *Codec) decrypt(ctx context.Context, sealed string) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (c *Codec) check(claims Claims) error {
+func (c *Codec) check(claims wireClaims) error {
 	now := c.now()
 
 	switch {

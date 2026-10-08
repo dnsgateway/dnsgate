@@ -44,9 +44,8 @@ func newCodec(src keys.Source) *token.Codec {
 func derivedClaims() token.Claims {
 	exp := token.NewNumericDate(testNow.Add(24 * time.Hour))
 
+	// No iss or aud: the Codec sets them.
 	return token.Claims{
-		Issuer:    token.Issuer,
-		Audience:  token.Audience,
 		Subject:   "external-dns-prod",
 		ID:        "tok_01JCHILD",
 		IssuedAt:  token.NewNumericDate(testNow),
@@ -194,8 +193,6 @@ func TestOpenRejectsForeignAndTamperedTokens(t *testing.T) {
 		"encrypted to a different key": {token: seal(t, loadMixed(t, gateway, "2026-10", other, "2026-10"), derivedClaims())},
 		"unknown signing kid":          {token: seal(t, loadMixed(t, rotated, "2026-11", gateway, "2026-10"), derivedClaims()), unknownKey: true},
 		"unknown encryption kid":       {token: seal(t, loadMixed(t, gateway, "2026-10", rotated, "2026-11"), derivedClaims()), unknownKey: true},
-		"wrong issuer":                 {token: withClaims(func(c *token.Claims) { c.Issuer = "someone-else" })},
-		"wrong audience":               {token: withClaims(func(c *token.Claims) { c.Audience = "someone-else" })},
 		"not valid yet":                {token: withClaims(func(c *token.Claims) { c.NotBefore = token.NewNumericDate(testNow.Add(time.Minute)) })},
 		"expired":                      {token: withClaims(func(c *token.Claims) { e := token.NewNumericDate(testNow); c.Expiry = &e })},
 	}

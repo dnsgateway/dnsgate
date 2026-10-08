@@ -15,14 +15,14 @@ const (
 	Audience = "dnsgate"
 )
 
-// Claims is the content of a Service Token.
+// Claims is the content of a Service Token. The iss and aud claims are not
+// fields: the Codec seals them as Issuer and Audience and checks them on
+// Open.
 //
 // The claim names identity (an Identity Binding) and acme (a Challenge
 // Map) are reserved for v2. They are not produced, and a token carrying
 // them, or any other unknown claim, does not open.
 type Claims struct {
-	Issuer   string `json:"iss"`
-	Audience string `json:"aud"`
 	// Subject is the Service Account the token was issued for.
 	Subject string `json:"sub"`
 	// ID is the token ID (jti), a prefixed ULID such as "tok_...".
