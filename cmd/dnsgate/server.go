@@ -32,8 +32,15 @@ func newServerCmd(flags *Flags) *cobra.Command {
 			"    keyFile: tls.key\n" +
 			"  keys:\n" +
 			"    signingKeyFile: keys/sig-2026-10.pem\n" +
-			"    encryptionKeyFile: keys/enc-2026-10.pem\n" +
-			"  bootstrapSecretFile: bootstrap-secret",
+			"    encryptionKeyFile: keys/enc-2026-11.pem\n" +
+			"    decryptionKeys:\n" +
+			"      - keyFile: keys/enc-2026-10.pem\n" +
+			"        retireAt: 2026-12-01T00:00:00Z\n" +
+			"  bootstrapSecretFile: bootstrap-secret\n\n" +
+			"To rotate the encryption key, generate a new key set with \"dnsgate keys generate\" and a new " +
+			"--" + flagKeyIDSuffix + ", make its enc- file the encryptionKeyFile and move the old one to decryptionKeys with a retireAt deadline. New tokens " +
+			"are sealed under the current key; tokens sealed under an older key open until its deadline, " +
+			"and \"dnsgate token reseal\" moves them to the current key.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runServer(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), flags)
@@ -54,7 +61,12 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		return err
 	}
 
-	src, err := keys.LoadFiles(cfg.Keys.SigningKeyFile, cfg.Keys.EncryptionKeyFile)
+	opts := make([]keys.Option, 0, len(cfg.Keys.DecryptionKeys))
+	for _, dk := range cfg.Keys.DecryptionKeys {
+		opts = append(opts, keys.WithDecryptionKey(dk.KeyFile, dk.RetireAt))
+	}
+
+	src, err := keys.LoadFiles(cfg.Keys.SigningKeyFile, cfg.Keys.EncryptionKeyFile, opts...)
 	if err != nil {
 		return err
 	}

@@ -84,6 +84,24 @@ bootstrapSecretFile: bootstrap-secret
 	return env
 }
 
+// writeDecryptionKeysConfig rewrites env's config file with entries as
+// its keys.decryptionKeys list.
+func writeDecryptionKeysConfig(t *testing.T, env *gatewayEnv, entries string) {
+	t.Helper()
+
+	writeFile(t, env.config, `
+listen: 127.0.0.1:0
+tls:
+  certFile: tls.crt
+  keyFile: tls.key
+keys:
+  signingKeyFile: keys/sig-e2e.pem
+  encryptionKeyFile: keys/enc-e2e.pem
+  decryptionKeys:
+`+entries+`bootstrapSecretFile: bootstrap-secret
+`, 0o600)
+}
+
 func writeFile(t *testing.T, path, data string, mode os.FileMode) {
 	t.Helper()
 
@@ -363,6 +381,42 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 				}
 			},
 			want: "bootstrap secret file",
+		},
+		"decryption key without retireAt": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				writeDecryptionKeysConfig(t, env, "    - keyFile: keys/enc-old.pem\n")
+			},
+			want: "keys.decryptionKeys[0].retireAt is required",
+		},
+		"decryption key without keyFile": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				writeDecryptionKeysConfig(t, env, "    - retireAt: 2030-01-01T00:00:00Z\n")
+			},
+			want: "keys.decryptionKeys[0].keyFile is required",
+		},
+		"decryption key with a malformed retireAt": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				writeDecryptionKeysConfig(t, env, "    - keyFile: keys/enc-old.pem\n      retireAt: next month\n")
+			},
+			want: "parsing config",
+		},
+		"decryption key with an unknown field": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				writeDecryptionKeysConfig(t, env, "    - keyFile: keys/enc-old.pem\n      retireAt: 2030-01-01T00:00:00Z\n      retireAfter: 720h\n")
+			},
+			want: "retireAfter",
+		},
+		"decryption key that is the current key": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				writeDecryptionKeysConfig(t, env, "    - keyFile: keys/enc-e2e.pem\n      retireAt: 2030-01-01T00:00:00Z\n")
+			},
+			want: "used twice",
+		},
+		"missing decryption key file": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				writeDecryptionKeysConfig(t, env, "    - keyFile: keys/enc-old.pem\n      retireAt: 2030-01-01T00:00:00Z\n")
+			},
+			want: "enc-old.pem",
 		},
 		"short bootstrap secret": {
 			edit: func(t *testing.T, env *gatewayEnv) {

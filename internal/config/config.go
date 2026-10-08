@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -41,8 +42,22 @@ type TLS struct {
 // Keys are the Gateway's signing and encryption key files, as written by
 // "dnsgate keys generate".
 type Keys struct {
-	SigningKeyFile    string `json:"signingKeyFile"`
+	SigningKeyFile string `json:"signingKeyFile"`
+	// EncryptionKeyFile is the current encryption key: new and resealed
+	// tokens are sealed under it.
 	EncryptionKeyFile string `json:"encryptionKeyFile"`
+	// DecryptionKeys are older encryption keys, kept after a rotation so
+	// that tokens sealed under them open until they are resealed.
+	DecryptionKeys []DecryptionKey `json:"decryptionKeys"`
+}
+
+// DecryptionKey is an older encryption key and its retirement deadline.
+type DecryptionKey struct {
+	KeyFile string `json:"keyFile"`
+	// RetireAt is an RFC 3339 time from which the key no longer opens
+	// tokens. A deadline that has passed is allowed: the key then opens
+	// none.
+	RetireAt time.Time `json:"retireAt"`
 }
 
 // Load reads the configuration file at path. Unknown fields are errors, so
@@ -65,13 +80,24 @@ func Load(path string) (*File, error) {
 
 	base := filepath.Dir(path)
 
-	for name, p := range map[string]*string{
+	files := map[string]*string{
 		"tls.certFile":           &cfg.TLS.CertFile,
 		"tls.keyFile":            &cfg.TLS.KeyFile,
 		"keys.signingKeyFile":    &cfg.Keys.SigningKeyFile,
 		"keys.encryptionKeyFile": &cfg.Keys.EncryptionKeyFile,
 		"bootstrapSecretFile":    &cfg.BootstrapSecretFile,
-	} {
+	}
+
+	for i := range cfg.Keys.DecryptionKeys {
+		dk := &cfg.Keys.DecryptionKeys[i]
+		files[fmt.Sprintf("keys.decryptionKeys[%d].keyFile", i)] = &dk.KeyFile
+
+		if dk.RetireAt.IsZero() {
+			return nil, fmt.Errorf("config %s: keys.decryptionKeys[%d].retireAt is required", path, i)
+		}
+	}
+
+	for name, p := range files {
 		if *p == "" {
 			return nil, fmt.Errorf("config %s: %s is required", path, name)
 		}
