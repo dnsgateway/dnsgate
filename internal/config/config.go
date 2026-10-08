@@ -3,7 +3,6 @@ package config
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -87,7 +86,8 @@ func Load(path string) (*File, error) {
 
 // BootstrapSecret reads the bootstrap secret, without surrounding
 // whitespace, from BootstrapSecretFile. The file must give group and
-// others no access, and the secret must be at least 16 bytes long.
+// others no access, and the secret must be at least minBootstrapSecret
+// bytes long.
 func (c *File) BootstrapSecret() (token.Secret, error) {
 	path := c.BootstrapSecretFile
 
@@ -114,7 +114,7 @@ func (c *File) BootstrapSecret() (token.Secret, error) {
 
 	secret := bytes.TrimSpace(data)
 	if len(secret) < minBootstrapSecret {
-		return token.Secret{}, errors.New("bootstrap secret file " + path + " holds fewer than 16 bytes")
+		return token.Secret{}, fmt.Errorf("bootstrap secret file %s holds fewer than %d bytes", path, minBootstrapSecret)
 	}
 
 	return token.NewSecret(string(secret)), nil
