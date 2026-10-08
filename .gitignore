@@ -16,6 +16,10 @@
 *.dll
 *.so
 *.dylib
+tls.*
+dnsgate.yaml
+bootstrap-secret
+keys/
 bin/
 dist/
 bundle/
