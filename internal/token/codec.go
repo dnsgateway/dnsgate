@@ -243,8 +243,10 @@ func (c *Codec) decrypt(ctx context.Context, sealed string) ([]byte, error) {
 // keyError reports a failed key lookup without the Source's error text,
 // which may quote the kid the token supplied.
 func keyError(kind string, err error) error {
-	if errors.Is(err, keys.ErrUnknownKey) {
-		return fmt.Errorf("%w: %s key: %w", ErrInvalid, kind, keys.ErrUnknownKey)
+	for _, known := range []error{keys.ErrUnknownKey, keys.ErrRetiredKey} {
+		if errors.Is(err, known) {
+			return fmt.Errorf("%w: %s key: %w", ErrInvalid, kind, known)
+		}
 	}
 
 	return fmt.Errorf("%w: %s key unavailable", ErrInvalid, kind)

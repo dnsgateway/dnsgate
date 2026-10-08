@@ -42,6 +42,9 @@ type harness struct {
 	api    dnsgatev1.GatewayServiceClient
 	audit  *syncBuffer
 	now    time.Time
+
+	auditTo io.Writer
+	keyDir  string
 }
 
 // syncBuffer is a bytes.Buffer safe for the Gateway's goroutines.
@@ -75,27 +78,63 @@ func newHarness(t *testing.T) *harness {
 }
 
 // newHarnessAuditingTo returns a harness whose Gateway writes its audit
-// events to w.
+// events to w. Its keys have the kid suffix "test".
 func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 	t.Helper()
 
-	dir := filepath.Join(t.TempDir(), "keys")
+	h := &harness{
+		now:     time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
+		auditTo: w,
+		keyDir:  filepath.Join(t.TempDir(), "keys"),
+	}
 
-	if _, err := keys.Generate(dir, "test"); err != nil {
+	if _, err := keys.Generate(h.keyDir, "test"); err != nil {
 		t.Fatal(err)
 	}
 
-	src, err := keys.LoadFiles(filepath.Join(dir, "sig-test.pem"), filepath.Join(dir, "enc-test.pem"))
+	h.serve(t, h.loadKeys(t, "enc-test"))
+
+	return h
+}
+
+// loadKeys loads the signing key sig-test with encKID as the current
+// encryption key, on the harness clock.
+func (h *harness) loadKeys(t *testing.T, encKID string, opts ...keys.Option) *keys.Files {
+	t.Helper()
+
+	opts = append([]keys.Option{keys.WithClock(func() time.Time { return h.now })}, opts...)
+
+	src, err := keys.LoadFiles(filepath.Join(h.keyDir, "sig-test.pem"), filepath.Join(h.keyDir, encKID+".pem"), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	h := &harness{now: time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)}
+	return src
+}
+
+// rotate restarts the Gateway with a new encryption key, enc-next, as the
+// current key, keeping enc-test as a decryption key until retireAt. It
+// returns the new key's kid.
+func (h *harness) rotate(t *testing.T, retireAt time.Time) string {
+	t.Helper()
+
+	if _, err := keys.Generate(h.keyDir, "next"); err != nil {
+		t.Fatal(err)
+	}
+
+	h.serve(t, h.loadKeys(t, "enc-next", keys.WithDecryptionKey(filepath.Join(h.keyDir, "enc-test.pem"), retireAt)))
+
+	return "enc-next"
+}
+
+// serve starts a Gateway using src and points the harness clients at it.
+func (h *harness) serve(t *testing.T, src keys.Source) {
+	t.Helper()
 
 	gw := gateway.New(gateway.Config{
 		Keys:            src,
 		BootstrapSecret: token.NewSecret(bootstrapSecret),
-		Audit:           audit.New(w),
+		Audit:           audit.New(h.auditTo),
 		Now:             func() time.Time { return h.now },
 	})
 
@@ -119,8 +158,6 @@ func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 
 	h.client = client.New(conn)
 	h.api = dnsgatev1.NewGatewayServiceClient(conn)
-
-	return h
 }
 
 func onboardRequest() *dnsgatev1.OnboardRequest {

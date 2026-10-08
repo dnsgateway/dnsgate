@@ -15,6 +15,10 @@ import (
 // ErrUnknownKey is returned when no key with the requested kid exists.
 var ErrUnknownKey = errors.New("unknown key ID")
 
+// ErrRetiredKey is returned when the requested decryption key is past its
+// retirement deadline.
+var ErrRetiredKey = errors.New("retired key ID")
+
 // Source signs with the Gateway's Ed25519 signing key and performs X25519
 // key agreement with its encryption key. Keys are addressed by kid.
 type Source interface {

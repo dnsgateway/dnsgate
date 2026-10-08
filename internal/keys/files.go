@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const (
@@ -191,11 +192,15 @@ func writeExclusive(path string, data []byte) error {
 	return nil
 }
 
-// Files is a Source backed by one signing and one encryption private key
-// read from PEM files.
+// Files is a Source backed by PEM files: one signing key, the current
+// encryption key, and any older encryption keys kept as decryption keys
+// until their retirement deadlines.
 type Files struct {
 	sig namedKey[ed25519.PrivateKey]
 	enc namedKey[*ecdh.PrivateKey]
+	// decryption holds the older encryption keys by kid.
+	decryption map[string]decryptionKey
+	now        func() time.Time
 }
 
 // namedKey is a private key and its kid.
@@ -204,28 +209,95 @@ type namedKey[K any] struct {
 	key K
 }
 
+// decryptionKey is an older encryption key and the time from which it no
+// longer opens tokens.
+type decryptionKey struct {
+	key      *ecdh.PrivateKey
+	retireAt time.Time
+}
+
 var _ Source = (*Files)(nil)
 
+// Option configures LoadFiles.
+type Option func(*loadOptions)
+
+type loadOptions struct {
+	decryption []decryptionKeyFile
+	now        func() time.Time
+}
+
+type decryptionKeyFile struct {
+	path     string
+	retireAt time.Time
+}
+
+// WithDecryptionKey adds the older encryption key in path, written by
+// Generate, as a decryption key: tokens sealed under it still open until
+// retireAt, and none open from then on. New tokens are never sealed under
+// it.
+func WithDecryptionKey(path string, retireAt time.Time) Option {
+	return func(o *loadOptions) {
+		o.decryption = append(o.decryption, decryptionKeyFile{path: path, retireAt: retireAt})
+	}
+}
+
+// WithClock sets the clock that retirement deadlines are checked against.
+func WithClock(now func() time.Time) Option {
+	return func(o *loadOptions) { o.now = now }
+}
+
 // LoadFiles reads the signing (Ed25519) and encryption (X25519) private
-// keys written by Generate. A key's kid is its file name without ".pem" and
-// must follow KeyIDFormat, and the file must not be readable or writable by
-// group or others.
-func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
+// keys written by Generate, and the decryption keys given as options. A
+// key's kid is its file name without ".pem" and must follow KeyIDFormat,
+// every encryption kid must be distinct, and no file may be readable or
+// writable by group or others.
+func LoadFiles(signingFile, encryptionFile string, opts ...Option) (*Files, error) {
+	o := loadOptions{now: time.Now}
+
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	sig, err := readPrivateKey[ed25519.PrivateKey](signingFile, signingPrefix, "Ed25519")
 	if err != nil {
 		return nil, err
 	}
 
-	enc, err := readPrivateKey[*ecdh.PrivateKey](encryptionFile, encryptionPrefix, "X25519")
+	enc, err := readEncryptionKey(encryptionFile)
 	if err != nil {
 		return nil, err
 	}
 
-	if enc.key.Curve() != ecdh.X25519() {
-		return nil, fmt.Errorf("key file %s is not an X25519 private key", encryptionFile)
+	f := &Files{sig: sig, enc: enc, decryption: make(map[string]decryptionKey, len(o.decryption)), now: o.now}
+
+	for _, d := range o.decryption {
+		k, err := readEncryptionKey(d.path)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, dup := f.decryption[k.kid]; dup || k.kid == enc.kid {
+			return nil, fmt.Errorf("key file %s: encryption key ID %q is used twice", d.path, k.kid)
+		}
+
+		f.decryption[k.kid] = decryptionKey{key: k.key, retireAt: d.retireAt}
 	}
 
-	return &Files{sig: sig, enc: enc}, nil
+	return f, nil
+}
+
+// readEncryptionKey reads the X25519 private key in path.
+func readEncryptionKey(path string) (namedKey[*ecdh.PrivateKey], error) {
+	k, err := readPrivateKey[*ecdh.PrivateKey](path, encryptionPrefix, "X25519")
+	if err != nil {
+		return k, err
+	}
+
+	if k.key.Curve() != ecdh.X25519() {
+		return namedKey[*ecdh.PrivateKey]{}, fmt.Errorf("key file %s is not an X25519 private key", path)
+	}
+
+	return k, nil
 }
 
 // readPrivateKey reads the private key in path, checking that its kid is
@@ -307,13 +379,25 @@ func (f *Files) EncryptionKey() (string, *ecdh.PublicKey) {
 	return f.enc.kid, f.enc.key.PublicKey()
 }
 
-// SharedSecret implements Source.
+// SharedSecret implements Source. It agrees under the current encryption
+// key or under a decryption key before its retirement deadline.
 func (f *Files) SharedSecret(_ context.Context, kid string, peer *ecdh.PublicKey) ([]byte, error) {
+	key := f.enc.key
+
 	if kid != f.enc.kid {
-		return nil, fmt.Errorf("encryption key %q: %w", kid, ErrUnknownKey)
+		dk, ok := f.decryption[kid]
+		if !ok {
+			return nil, fmt.Errorf("encryption key %q: %w", kid, ErrUnknownKey)
+		}
+
+		if !f.now().Before(dk.retireAt) {
+			return nil, fmt.Errorf("encryption key %q: %w", kid, ErrRetiredKey)
+		}
+
+		key = dk.key
 	}
 
-	secret, err := f.enc.key.ECDH(peer)
+	secret, err := key.ECDH(peer)
 	if err != nil {
 		return nil, fmt.Errorf("key agreement: %w", err)
 	}

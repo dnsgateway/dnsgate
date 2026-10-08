@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dnsgateway/dnsgate/internal/keys"
 )
@@ -286,5 +287,87 @@ func TestLoadFilesRejectsLooseOrSwappedKeys(t *testing.T) {
 
 	if _, err := keys.LoadFiles(sig, enc); err == nil {
 		t.Error("LoadFiles with a group/world-readable signing key succeeded, want an error")
+	}
+}
+
+func TestDecryptionKeyAgreesUntilItsRetirementDeadline(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "keys")
+
+	for _, suffix := range []string{"2026-10", "2026-11"} {
+		if _, err := keys.Generate(dir, suffix); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	retireAt := now.Add(time.Hour)
+
+	src, err := keys.LoadFiles(filepath.Join(dir, "sig-2026-10.pem"), filepath.Join(dir, "enc-2026-11.pem"),
+		keys.WithDecryptionKey(filepath.Join(dir, "enc-2026-10.pem"), retireAt),
+		keys.WithClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if kid, _ := src.EncryptionKey(); kid != "enc-2026-11" {
+		t.Errorf("EncryptionKey kid = %q, want the current key enc-2026-11", kid)
+	}
+
+	eph, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey()); err != nil {
+		t.Errorf("SharedSecret under the decryption key before its deadline: %v", err)
+	}
+
+	now = retireAt
+
+	if _, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey()); !errors.Is(err, keys.ErrRetiredKey) {
+		t.Errorf("SharedSecret under a retired key error = %v, want ErrRetiredKey", err)
+	}
+
+	if _, err := src.SharedSecret(ctx, "enc-2026-11", eph.PublicKey()); err != nil {
+		t.Errorf("SharedSecret under the current key: %v", err)
+	}
+}
+
+func TestLoadFilesRejectsBadDecryptionKeys(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "keys")
+
+	for _, suffix := range []string{"2026-10", "2026-11"} {
+		if _, err := keys.Generate(dir, suffix); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sig := filepath.Join(dir, "sig-2026-10.pem")
+	enc := filepath.Join(dir, "enc-2026-11.pem")
+	old := filepath.Join(dir, "enc-2026-10.pem")
+	retireAt := time.Now().Add(time.Hour)
+
+	for name, path := range map[string]string{
+		"the current key": enc,
+		"a signing key":   filepath.Join(dir, "sig-2026-11.pem"),
+		"a missing file":  filepath.Join(dir, "enc-missing.pem"),
+		"a public key":    filepath.Join(dir, "enc-2026-10.pub.pem"),
+	} {
+		if _, err := keys.LoadFiles(sig, enc, keys.WithDecryptionKey(path, retireAt)); err == nil {
+			t.Errorf("LoadFiles with %s as a decryption key succeeded, want an error", name)
+		}
+	}
+
+	if _, err := keys.LoadFiles(sig, enc, keys.WithDecryptionKey(old, retireAt), keys.WithDecryptionKey(old, retireAt)); err == nil {
+		t.Error("LoadFiles with the same decryption key twice succeeded, want an error")
+	}
+
+	if err := os.Chmod(old, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := keys.LoadFiles(sig, enc, keys.WithDecryptionKey(old, retireAt)); err == nil {
+		t.Error("LoadFiles with a group-readable decryption key succeeded, want an error")
 	}
 }
