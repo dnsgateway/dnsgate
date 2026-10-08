@@ -1,6 +1,7 @@
 package token_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -325,5 +326,78 @@ func TestDecryptionKeyRetiresOnTheCodecClock(t *testing.T) {
 				t.Errorf("Open after the deadline on the codec clock error = %v, want ErrRetiredKey", err)
 			}
 		})
+	}
+}
+
+// outerKeyID returns the kid in the readable JWE header of sealed.
+func outerKeyID(t *testing.T, sealed string) string {
+	t.Helper()
+
+	header, _, _ := strings.Cut(sealed, ".")
+
+	raw, err := base64.RawURLEncoding.DecodeString(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var h struct {
+		Kid string `json:"kid"`
+	}
+
+	if err := json.Unmarshal(raw, &h); err != nil {
+		t.Fatal(err)
+	}
+
+	return h.Kid
+}
+
+func TestResealKeepsTheSignedClaimsAndChangesOnlyTheEncryptionKey(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "keys")
+
+	for _, suffix := range []string{"2026-10", "2026-11"} {
+		if _, err := keys.Generate(dir, suffix); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sealed, err := newCodec(loadMixed(t, dir, "2026-10", dir, "2026-10")).Seal(ctx, derivedClaims())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src, err := keys.LoadFiles(filepath.Join(dir, "sig-2026-10.pem"), filepath.Join(dir, "enc-2026-11.pem"),
+		keys.WithDecryptionKey(filepath.Join(dir, "enc-2026-10.pem"), testNow.Add(time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	codec := newCodec(src)
+
+	resealed, claims, err := codec.Reseal(ctx, sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(claims, derivedClaims()) {
+		t.Errorf("Reseal claims = %#v\nwant %#v", claims, derivedClaims())
+	}
+
+	if before, after := outerKeyID(t, sealed), outerKeyID(t, resealed); before != "enc-2026-10" || after != "enc-2026-11" {
+		t.Errorf("outer kid went from %q to %q, want enc-2026-10 to enc-2026-11", before, after)
+	}
+
+	want, err := codec.InnerJWS(ctx, sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := codec.InnerJWS(ctx, resealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Errorf("resealed inner JWS differs from the original:\n got %s\nwant %s", got, want)
 	}
 }
