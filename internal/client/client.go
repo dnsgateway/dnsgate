@@ -56,28 +56,28 @@ func (c *Client) InspectToken(ctx context.Context, tok string) (*dnsgatev1.Inspe
 }
 
 // call opens a stream, sends req and waits for its Response. A Gateway
-// error comes back as the gRPC status error that ended the stream.
+// error comes back as an *Error holding the status that ended the stream.
 func (c *Client) call(ctx context.Context, req *dnsgatev1.Request) (*dnsgatev1.Response, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	stream, err := c.api.Call(ctx)
 	if err != nil {
-		return nil, err
+		return nil, newError(err)
 	}
 
 	if err := stream.Send(&dnsgatev1.CallRequest{Message: &dnsgatev1.CallRequest_Request{Request: req}}); err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
+		return nil, newError(err)
 	}
 
 	// A failed Send returns io.EOF; the reason is the status Recv returns.
 	if err := stream.CloseSend(); err != nil {
-		return nil, err
+		return nil, newError(err)
 	}
 
 	msg, err := stream.Recv()
 	if err != nil {
-		return nil, err
+		return nil, newError(err)
 	}
 
 	resp := msg.GetResponse()
