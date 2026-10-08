@@ -90,6 +90,14 @@ _Avoid_: untrust, disabling, deletion
 Re-encrypting an existing Service Token under the Gateway's current key, without changing its identity or permissions.
 _Avoid_: token rotation, refresh, re-issue
 
+**Decryption Key**:
+An older Gateway encryption key, kept after a rotation only to open Service Tokens sealed under it until they are Resealed. No token is ever sealed under it.
+_Avoid_: old key, legacy key, previous key
+
+**Retirement Deadline**:
+The time from which a Decryption Key opens no Service Token. A token not Resealed by then stops working.
+_Avoid_: expiry, key expiration, grace period
+
 **Provider Credential**:
 The secret that authenticates to a Provider's API. Every Service Token is bound to exactly one. Clients never see it in plaintext.
 _Avoid_: master key, provider token, API key, provider account
