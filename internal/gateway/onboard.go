@@ -70,13 +70,16 @@ func (g *Gateway) onboard(r *request, req *dnsgatev1.OnboardRequest) (*dnsgatev1
 		return nil, internal()
 	}
 
-	g.writeAudit(r, audit.Event{
+	// A Root Token whose onboard event is lost would be untraceable.
+	if err := g.writeAudit(r, audit.Event{
 		Event:          audit.EventOnboard,
 		ServiceAccount: claims.Subject,
 		TokenID:        claims.ID,
 		Provider:       claims.Provider,
 		Result:         audit.ResultOK,
-	})
+	}); err != nil {
+		return nil, internal()
+	}
 
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_Onboard{
 		Onboard: &dnsgatev1.OnboardResponse{Token: sealed},

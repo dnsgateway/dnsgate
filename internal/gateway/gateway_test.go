@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"path/filepath"
 	"slices"
@@ -65,6 +67,18 @@ func (b *syncBuffer) String() string {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
+	buf := &syncBuffer{}
+	h := newHarnessAuditingTo(t, buf)
+	h.audit = buf
+
+	return h
+}
+
+// newHarnessAuditingTo returns a harness whose Gateway writes its audit
+// events to w.
+func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
+	t.Helper()
+
 	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, "test"); err != nil {
@@ -76,15 +90,12 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 
-	h := &harness{
-		audit: &syncBuffer{},
-		now:   time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
-	}
+	h := &harness{now: time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)}
 
 	gw := gateway.New(gateway.Config{
 		Keys:            src,
 		BootstrapSecret: token.NewSecret(bootstrapSecret),
-		Audit:           audit.New(h.audit),
+		Audit:           audit.New(w),
 		Now:             func() time.Time { return h.now },
 	})
 
@@ -335,6 +346,22 @@ func TestOnboardAuditsDenials(t *testing.T) {
 
 	if e := events[0]; e["event"] != "onboard" || e["result"] != "denied" || e["category"] != "unauthenticated" {
 		t.Errorf("audit event = %v, want a denied onboard, category unauthenticated", e)
+	}
+}
+
+// failingWriter fails every write, like an audit log on a full disk.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestOnboardReturnsNoRootTokenWhenItsAuditEventIsLost(t *testing.T) {
+	h := newHarnessAuditingTo(t, failingWriter{})
+
+	resp, err := h.client.Onboard(t.Context(), onboardRequest())
+	wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	if resp.GetToken() != "" {
+		t.Error("a Root Token was returned without its audit event")
 	}
 }
 

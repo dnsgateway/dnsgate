@@ -122,20 +122,24 @@ func (g *Gateway) newID(prefix string) string {
 }
 
 // writeAudit writes e, stamped with the time and the request ID. A failed
-// write is logged: the request has already been carried out.
-func (g *Gateway) writeAudit(r *request, e audit.Event) {
+// write is logged and returned, so a caller can withhold what the event
+// records.
+func (g *Gateway) writeAudit(r *request, e audit.Event) error {
 	e.Time = g.now().UTC()
 	e.RequestID = r.id
 
-	if err := g.audit.Write(e); err != nil {
+	err := g.audit.Write(e)
+	if err != nil {
 		g.log.Error("audit event lost", "request_id", r.id, "event", e.Event, "error", err)
 	}
+
+	return err
 }
 
 // deny audits a refused request as event and returns err, the Gateway
-// error the client gets.
+// error the client gets. The request is refused even if its event is lost.
 func (g *Gateway) deny(r *request, event string, err error) error {
-	g.writeAudit(r, audit.Event{Event: event, Result: audit.ResultDenied, Category: category(err)})
+	_ = g.writeAudit(r, audit.Event{Event: event, Result: audit.ResultDenied, Category: category(err)})
 
 	return err
 }
