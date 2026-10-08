@@ -142,6 +142,8 @@ Administrator --(bootstrap secret, provider, Provider Credential)--> Gateway
 Gateway: build claims → sign → encrypt → Root Token
 ```
 
+The Provider Credential and the bootstrap secret are protected in transit by TLS alone, which must terminate at the Gateway ([ADR 0005](adr/0005-onboarding-relies-on-tls.md)).
+
 A **Root Token** has full Permissions on everything the Provider Credential can reach (`zones: ["*"]`, `types: ["*"]`, `names: ["@", "**"]`, all verbs on `zones`, `records` and `tokens`, both egresses). By default it has **no expiry**. A CLI flag can set one.
 
 ## Derived Tokens and Narrowing
@@ -504,4 +506,3 @@ A Service Token can be bound to a workload's OIDC identity: Kubernetes ServiceAc
 - Exact claim schema and protobuf API definition.
 - Relay framing inside the gRPC stream: OPEN/DATA/CLOSE messages, half-close, flow control, timeouts.
 - Maximum ancestor chain depth.
-- Whether the CLI encrypts the Provider Credential to the Gateway's public key before sending it during Onboarding.
