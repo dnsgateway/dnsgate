@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"crypto/subtle"
-	"slices"
 	"time"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
@@ -13,12 +12,6 @@ import (
 
 // rootServiceAccount is the sub of every Root Token.
 const rootServiceAccount = "root"
-
-// credentialTypes lists the Provider Credential types each Provider accepts
-// at Onboarding.
-var credentialTypes = map[string][]string{
-	provider.Cloudflare: {"api-token"},
-}
 
 // rootPermissions are the full Permissions of a Root Token.
 func rootPermissions() []token.Permission {
@@ -89,12 +82,12 @@ func (g *Gateway) onboard(r *request, req *dnsgatev1.OnboardRequest) (*dnsgatev1
 // checkOnboardRequest checks that req names a supported Provider and
 // credential type and a usable expiry.
 func checkOnboardRequest(req *dnsgatev1.OnboardRequest) error {
-	types, ok := credentialTypes[req.GetProvider()]
+	credType, ok := provider.CredentialType(req.GetProvider())
 
 	switch {
 	case !ok:
 		return invalidRequest("unsupported provider")
-	case !slices.Contains(types, req.GetCredential().GetType()):
+	case req.GetCredential().GetType() != credType:
 		return invalidRequest("unsupported credential type for the provider")
 	case req.GetCredential().GetValue() == "":
 		return invalidRequest("missing credential")

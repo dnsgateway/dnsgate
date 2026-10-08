@@ -13,12 +13,6 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 
-// credentialTypes maps each Provider to the type of the Provider
-// Credential onboarded for it.
-var credentialTypes = map[string]string{
-	provider.Cloudflare: "api-token",
-}
-
 func newOnboardCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "onboard",
@@ -41,7 +35,7 @@ func newOnboardCmd(flags *Flags) *cobra.Command {
 }
 
 func runOnboard(ctx context.Context, out io.Writer, f *Flags) error {
-	credType, ok := credentialTypes[f.Provider]
+	credType, ok := provider.CredentialType(f.Provider)
 
 	switch {
 	case f.Provider == "":

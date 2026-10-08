@@ -2,9 +2,12 @@ package main
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
+
+	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 
 const (
@@ -106,9 +109,9 @@ func (f *Flags) AddTokenFlags(flags *pflag.FlagSet) {
 // AddOnboardFlags registers the flags of "onboard".
 func (f *Flags) AddOnboardFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Provider, flagProvider, "", f.Provider,
-		"Provider the credential authenticates to: cloudflare")
+		"Provider the credential authenticates to: "+strings.Join(provider.Names(), ", "))
 	flags.StringVarP(&f.Credential, flagCredential, "", f.Credential,
-		"Provider Credential, a Cloudflare API token (env "+envCredential+secretHelp+")")
+		"Provider Credential, such as a Cloudflare API token (env "+envCredential+secretHelp+")")
 	flags.StringVarP(&f.BootstrapSecret, flagBootstrapSecret, "", f.BootstrapSecret,
 		"bootstrap secret configured on the Gateway (env "+envBootstrapSecret+secretHelp+")")
 	flags.DurationVarP(&f.Expires, flagExpires, "", f.Expires,

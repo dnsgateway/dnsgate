@@ -20,3 +20,19 @@ func TestRegistryOffersCloudflareOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryProviderHasACredentialType(t *testing.T) {
+	for _, name := range provider.Names() {
+		if _, ok := provider.CredentialType(name); !ok {
+			t.Errorf("Provider %q has no credential type", name)
+		}
+	}
+
+	if got, _ := provider.CredentialType(provider.Cloudflare); got != "api-token" {
+		t.Errorf("Cloudflare credential type = %q, want api-token", got)
+	}
+
+	if _, ok := provider.CredentialType("godaddy"); ok {
+		t.Error("an unsupported Provider has a credential type")
+	}
+}
