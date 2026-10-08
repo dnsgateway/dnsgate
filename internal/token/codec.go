@@ -185,7 +185,9 @@ func (c *Codec) Open(ctx context.Context, sealed string) (Claims, error) {
 
 // Reseal opens a Service Token as Open does and encrypts its signed
 // claims, unchanged, to the current encryption key. The resealed token
-// carries the same claims and signature under the current kid.
+// carries the same claims and signature under the current kid. A token
+// that does not open fails with ErrInvalid; any other error is the
+// Gateway's own.
 func (c *Codec) Reseal(ctx context.Context, sealed string) (string, Claims, error) {
 	claims, signed, err := c.open(ctx, sealed)
 	if err != nil {

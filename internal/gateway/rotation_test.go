@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"crypto/ecdh"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/keys"
 )
 
 // outerKeyID returns the kid in a Service Token's readable JWE header.
@@ -191,6 +193,36 @@ func TestResealWritesAuditEventsWithoutSecrets(t *testing.T) {
 		if strings.Contains(h.audit.String(), secret) || strings.Contains(err.Error(), secret) {
 			t.Errorf("audit log or error contains a secret:\n%s\n%v", h.audit.String(), err)
 		}
+	}
+}
+
+// unusableEncryptionKey is a key Source whose current encryption key is a
+// low-order X25519 point, so sealing under it fails while opening still
+// works.
+type unusableEncryptionKey struct {
+	keys.Source
+}
+
+func (unusableEncryptionKey) EncryptionKey() (string, *ecdh.PublicKey) {
+	pub, err := ecdh.X25519().NewPublicKey(make([]byte, 32))
+	if err != nil {
+		panic(err)
+	}
+
+	return "enc-broken", pub
+}
+
+func TestResealReportsAnInternalErrorWhenSealingFails(t *testing.T) {
+	h := newHarness(t)
+	old := h.onboard(t, onboardRequest())
+
+	h.serve(t, unusableEncryptionKey{Source: h.loadKeys(t, "enc-test")})
+
+	resp, err := h.client.ResealToken(t.Context(), old)
+	wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	if resp.GetToken() != "" {
+		t.Error("a token was returned")
 	}
 }
 
