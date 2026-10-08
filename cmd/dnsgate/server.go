@@ -16,7 +16,6 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/config"
 	"github.com/dnsgateway/dnsgate/internal/gateway"
-	"github.com/dnsgateway/dnsgate/internal/keys"
 )
 
 func newServerCmd(flags *Flags) *cobra.Command {
@@ -61,12 +60,7 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		return err
 	}
 
-	opts := make([]keys.Option, 0, len(cfg.Keys.DecryptionKeys))
-	for _, dk := range cfg.Keys.DecryptionKeys {
-		opts = append(opts, keys.WithDecryptionKey(dk.KeyFile, dk.RetireAt))
-	}
-
-	src, err := keys.LoadFiles(cfg.Keys.SigningKeyFile, cfg.Keys.EncryptionKeyFile, opts...)
+	src, err := cfg.Keys.Load()
 	if err != nil {
 		return err
 	}

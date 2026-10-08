@@ -11,6 +11,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/dnsgateway/dnsgate/internal/keys"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -108,6 +109,17 @@ func Load(path string) (*File, error) {
 	}
 
 	return &cfg, nil
+}
+
+// Load reads the key files: the signing key, the current encryption key
+// and the decryption keys with their retirement deadlines.
+func (k Keys) Load() (*keys.Files, error) {
+	opts := make([]keys.Option, 0, len(k.DecryptionKeys))
+	for _, dk := range k.DecryptionKeys {
+		opts = append(opts, keys.WithDecryptionKey(dk.KeyFile, dk.RetireAt))
+	}
+
+	return keys.LoadFiles(k.SigningKeyFile, k.EncryptionKeyFile, opts...)
 }
 
 // BootstrapSecret reads the bootstrap secret, without surrounding
