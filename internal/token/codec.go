@@ -123,8 +123,12 @@ func (c *Codec) seal(ctx context.Context, wire wireClaims) (string, error) {
 // key derivation (RFC 7518 section 4.6, RFC 8037) happen here and go-jose
 // wraps the content key under the derived key (A256KW) and encrypts the
 // content. The alg header is then set to ECDH-ES+A256KW with the epk, as the
-// standard requires; go-jose applies extra headers last, and they are
-// covered by the AES-GCM additional data.
+// standard requires, and is covered by the AES-GCM additional data.
+//
+// The alg override works only because go-jose applies extra headers after
+// its own, overwriting the A256KW it writes. That is verified for the
+// go-jose version pinned in go.mod, not promised by its API;
+// TestOuterHeaderIsTheOnlyReadablePart fails if an upgrade changes it.
 func (c *Codec) encrypt(plaintext []byte) (string, error) {
 	kid, recipient := c.keys.EncryptionKey()
 
