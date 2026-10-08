@@ -45,6 +45,9 @@ func newRootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(
 		newKeysCmd(flags),
+		newOnboardCmd(flags),
+		newServerCmd(flags),
+		newTokenCmd(flags),
 		newVersionCmd(),
 	)
 
