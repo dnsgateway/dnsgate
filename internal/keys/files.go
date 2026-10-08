@@ -84,15 +84,16 @@ func Generate(dir, suffix string) (Generated, error) {
 	}
 
 	type keyFile struct {
-		path, blockType string
-		key             any
+		path   string
+		key    any
+		encode func(key any) ([]byte, error)
 	}
 
 	files := []keyFile{
-		{filepath.Join(dir, gen.SigningKeyID+privateExt), pemPrivateKey, sigPriv},
-		{filepath.Join(dir, gen.SigningKeyID+publicExt), pemPublicKey, sigPub},
-		{filepath.Join(dir, gen.EncryptionKeyID+privateExt), pemPrivateKey, encPriv},
-		{filepath.Join(dir, gen.EncryptionKeyID+publicExt), pemPublicKey, encPriv.PublicKey()},
+		{filepath.Join(dir, gen.SigningKeyID+privateExt), sigPriv, encodePrivate},
+		{filepath.Join(dir, gen.SigningKeyID+publicExt), sigPub, encodePublic},
+		{filepath.Join(dir, gen.EncryptionKeyID+privateExt), encPriv, encodePrivate},
+		{filepath.Join(dir, gen.EncryptionKeyID+publicExt), encPriv.PublicKey(), encodePublic},
 	}
 
 	if err := prepareDir(dir); err != nil {
@@ -100,16 +101,9 @@ func Generate(dir, suffix string) (Generated, error) {
 	}
 
 	for _, f := range files {
-		var der []byte
-
-		if f.blockType == pemPrivateKey {
-			der, err = x509.MarshalPKCS8PrivateKey(f.key)
-		} else {
-			der, err = x509.MarshalPKIXPublicKey(f.key)
-		}
-
+		data, err := f.encode(f.key)
 		if err == nil {
-			err = writeExclusive(f.path, pem.EncodeToMemory(&pem.Block{Type: f.blockType, Bytes: der}))
+			err = writeExclusive(f.path, data)
 		}
 
 		if err != nil {
@@ -125,6 +119,26 @@ func Generate(dir, suffix string) (Generated, error) {
 	}
 
 	return gen, nil
+}
+
+// encodePrivate encodes key as a PEM PKCS #8 private key.
+func encodePrivate(key any) ([]byte, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: pemPrivateKey, Bytes: der}), nil
+}
+
+// encodePublic encodes key as a PEM PKIX public key.
+func encodePublic(key any) ([]byte, error) {
+	der, err := x509.MarshalPKIXPublicKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: pemPublicKey, Bytes: der}), nil
 }
 
 // prepareDir creates dir with mode 0700, or checks that an existing dir
@@ -180,10 +194,14 @@ func writeExclusive(path string, data []byte) error {
 // Files is a Source backed by one signing and one encryption private key
 // read from PEM files.
 type Files struct {
-	sigKID  string
-	sigPriv ed25519.PrivateKey
-	encKID  string
-	encPriv *ecdh.PrivateKey
+	sig namedKey[ed25519.PrivateKey]
+	enc namedKey[*ecdh.PrivateKey]
+}
+
+// namedKey is a private key and its kid.
+type namedKey[K any] struct {
+	kid string
+	key K
 }
 
 var _ Source = (*Files)(nil)
@@ -193,89 +211,90 @@ var _ Source = (*Files)(nil)
 // must follow KeyIDFormat, and the file must not be readable or writable by
 // group or others.
 func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
-	sigKID, sigKey, err := readPrivateKey(signingFile, signingPrefix)
+	sig, err := readPrivateKey[ed25519.PrivateKey](signingFile, signingPrefix, "Ed25519")
 	if err != nil {
 		return nil, err
 	}
 
-	sigPriv, ok := sigKey.(ed25519.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("signing key %s is not an Ed25519 private key", signingFile)
-	}
-
-	encKID, encKey, err := readPrivateKey(encryptionFile, encryptionPrefix)
+	enc, err := readPrivateKey[*ecdh.PrivateKey](encryptionFile, encryptionPrefix, "X25519")
 	if err != nil {
 		return nil, err
 	}
 
-	encPriv, ok := encKey.(*ecdh.PrivateKey)
-	if !ok || encPriv.Curve() != ecdh.X25519() {
-		return nil, fmt.Errorf("encryption key %s is not an X25519 private key", encryptionFile)
+	if enc.key.Curve() != ecdh.X25519() {
+		return nil, fmt.Errorf("key file %s is not an X25519 private key", encryptionFile)
 	}
 
-	return &Files{sigKID: sigKID, sigPriv: sigPriv, encKID: encKID, encPriv: encPriv}, nil
+	return &Files{sig: sig, enc: enc}, nil
 }
 
-func readPrivateKey(path, prefix string) (string, any, error) {
+// readPrivateKey reads the private key in path, checking that its kid is
+// prefix plus a valid suffix and that the key is a K (an algo key).
+func readPrivateKey[K any](path, prefix, algo string) (namedKey[K], error) {
 	kid, ok := strings.CutSuffix(filepath.Base(path), privateExt)
 	if !ok {
-		return "", nil, fmt.Errorf("key file %s is not named <kid>%s", path, privateExt)
+		return namedKey[K]{}, fmt.Errorf("key file %s is not named <kid>%s", path, privateExt)
 	}
 
 	if err := checkKeyID(kid, prefix); err != nil {
-		return "", nil, fmt.Errorf("key file %s: %w", path, err)
+		return namedKey[K]{}, fmt.Errorf("key file %s: %w", path, err)
 	}
 
 	// Check the mode of the file actually read: stat and read one descriptor.
 	f, err := os.Open(path)
 	if err != nil {
-		return "", nil, fmt.Errorf("reading key file: %w", err)
+		return namedKey[K]{}, fmt.Errorf("reading key file: %w", err)
 	}
 
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return "", nil, fmt.Errorf("reading key file: %w", err)
+		return namedKey[K]{}, fmt.Errorf("reading key file: %w", err)
 	}
 
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return "", nil, fmt.Errorf("key file %s has mode %o, want no group or other access (600)", path, perm)
+		return namedKey[K]{}, fmt.Errorf("key file %s has mode %o, want no group or other access (600)", path, perm)
 	}
 
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return "", nil, fmt.Errorf("reading key file: %w", err)
+		return namedKey[K]{}, fmt.Errorf("reading key file: %w", err)
 	}
 
 	block, _ := pem.Decode(data)
 	if block == nil || block.Type != pemPrivateKey {
-		return "", nil, fmt.Errorf("key file %s holds no PEM %q block", path, pemPrivateKey)
+		return namedKey[K]{}, fmt.Errorf("key file %s holds no PEM %q block", path, pemPrivateKey)
 	}
 
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return "", nil, fmt.Errorf("parsing key file %s: %w", path, err)
+		return namedKey[K]{}, fmt.Errorf("parsing key file %s: %w", path, err)
 	}
 
-	return kid, key, nil
+	k, ok := key.(K)
+	if !ok {
+		return namedKey[K]{}, fmt.Errorf("key file %s is not an %s private key", path, algo)
+	}
+
+	return namedKey[K]{kid: kid, key: k}, nil
 }
 
 // SigningKeyID implements Source.
-func (f *Files) SigningKeyID() string { return f.sigKID }
+func (f *Files) SigningKeyID() string { return f.sig.kid }
 
 // Sign implements Source.
 func (f *Files) Sign(_ context.Context, payload []byte) ([]byte, error) {
-	return ed25519.Sign(f.sigPriv, payload), nil
+	return ed25519.Sign(f.sig.key, payload), nil
 }
 
 // VerificationKey implements Source.
 func (f *Files) VerificationKey(kid string) (ed25519.PublicKey, error) {
-	if kid != f.sigKID {
+	if kid != f.sig.kid {
 		return nil, fmt.Errorf("signing key %q: %w", kid, ErrUnknownKey)
 	}
 
-	pub, ok := f.sigPriv.Public().(ed25519.PublicKey)
+	pub, ok := f.sig.key.Public().(ed25519.PublicKey)
 	if !ok {
 		return nil, errors.New("signing key has no Ed25519 public key")
 	}
@@ -285,16 +304,16 @@ func (f *Files) VerificationKey(kid string) (ed25519.PublicKey, error) {
 
 // EncryptionKey implements Source.
 func (f *Files) EncryptionKey() (string, *ecdh.PublicKey) {
-	return f.encKID, f.encPriv.PublicKey()
+	return f.enc.kid, f.enc.key.PublicKey()
 }
 
 // SharedSecret implements Source.
 func (f *Files) SharedSecret(_ context.Context, kid string, peer *ecdh.PublicKey) ([]byte, error) {
-	if kid != f.encKID {
+	if kid != f.enc.kid {
 		return nil, fmt.Errorf("encryption key %q: %w", kid, ErrUnknownKey)
 	}
 
-	secret, err := f.encPriv.ECDH(peer)
+	secret, err := f.enc.key.ECDH(peer)
 	if err != nil {
 		return nil, fmt.Errorf("key agreement: %w", err)
 	}
