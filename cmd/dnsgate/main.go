@@ -33,17 +33,13 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
-	flags := DefaultFlags()
-
 	rootCmd := &cobra.Command{
 		Use:           bin,
 		Short:         "DNS Gateway CLI",
-		Long:          "dnsgate manages DNS records at a DNS Provider through the DNS Gateway.",
+		Long:          "dnsgate manages DNS records at a Provider through the Gateway.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-
-	flags.AddPersistentFlags(rootCmd.PersistentFlags())
 
 	rootCmd.AddCommand(
 		newVersionCmd(),
