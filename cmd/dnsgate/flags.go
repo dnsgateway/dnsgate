@@ -7,12 +7,12 @@ import (
 )
 
 const (
-	flagKeyDir       = "dir"
-	flagKeyIDSuffix  = "kid-suffix"
-	envKeyDir        = "DNSGATE_KEY_DIR"
-	envKeyIDSuffix   = "DNSGATE_KEY_ID_SUFFIX"
-	defaultKeyDir    = "."
-	defaultKIDSuffix = ""
+	flagKeyDir         = "key-dir"
+	flagKeyIDSuffix    = "key-id-suffix"
+	envKeyDir          = "DNSGATE_KEY_DIR"
+	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
+	defaultKeyDir      = "."
+	defaultKeyIDSuffix = ""
 )
 
 // Flags holds the parsed CLI flags. Each falls back to an environment
@@ -27,7 +27,7 @@ type Flags struct {
 func DefaultFlags() *Flags {
 	return &Flags{
 		KeyDir:      withDefaultEnv(envKeyDir, defaultKeyDir),
-		KeyIDSuffix: withDefaultEnv(envKeyIDSuffix, defaultKIDSuffix),
+		KeyIDSuffix: withDefaultEnv(envKeyIDSuffix, defaultKeyIDSuffix),
 	}
 }
 

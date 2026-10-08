@@ -29,7 +29,7 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 func TestKeysGenerateWritesLoadableKeyPairs(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "keys")
 
-	out, err := runCLI(t, "keys", "generate", "--dir", dir, "--kid-suffix", "2026-10")
+	out, err := runCLI(t, "keys", "generate", "--key-dir", dir, "--key-id-suffix", "2026-10")
 	if err != nil {
 		t.Fatalf("keys generate: %v\n%s", err, out)
 	}
@@ -49,7 +49,7 @@ func TestKeysGenerateWritesLoadableKeyPairs(t *testing.T) {
 		t.Errorf("loaded kids = %q, %q", src.SigningKeyID(), kid)
 	}
 
-	if _, err := runCLI(t, "keys", "generate", "--dir", dir, "--kid-suffix", "2026-10"); err == nil {
+	if _, err := runCLI(t, "keys", "generate", "--key-dir", dir, "--key-id-suffix", "2026-10"); err == nil {
 		t.Error("generating the same kids again succeeded, want an error")
 	}
 }
