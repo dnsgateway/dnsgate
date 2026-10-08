@@ -13,7 +13,7 @@ import (
 // writes, as another issuer sharing the keys would.
 func TestOpenRejectsForeignIssuerOrAudience(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, "2026-10"); err != nil {
 		t.Fatal(err)

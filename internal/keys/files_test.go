@@ -74,7 +74,7 @@ func TestGenerateWritesOwnerOnlyPEMFilesNamedByKeyID(t *testing.T) {
 }
 
 func TestGenerateRefusesToOverwriteKeys(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, "2026-10"); err != nil {
 		t.Fatal(err)
@@ -99,6 +99,54 @@ func TestGenerateRefusesToOverwriteKeys(t *testing.T) {
 	}
 }
 
+func TestGenerateRefusesADirectoryOthersCanReach(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := keys.Generate(dir, "2026-10"); err == nil {
+		t.Fatal("Generate into a mode 755 directory succeeded, want an error")
+	}
+
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("Generate left %d files in the refused directory", len(entries))
+	}
+}
+
+func TestGenerateLeavesNoPartialKeySetOnFailure(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "keys")
+	existing := filepath.Join(dir, "enc-2026-10.pub.pem")
+
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// The last file Generate writes is taken, so it fails after writing the
+	// others.
+	if err := os.WriteFile(existing, []byte("someone else's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := keys.Generate(dir, "2026-10"); err == nil {
+		t.Fatal("Generate succeeded over an existing key file, want an error")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(entries) != 1 || entries[0].Name() != "enc-2026-10.pub.pem" {
+		t.Errorf("directory holds %v, want only the pre-existing file", entries)
+	}
+
+	if data, _ := os.ReadFile(existing); string(data) != "someone else's" {
+		t.Error("pre-existing file was changed")
+	}
+}
+
 func TestGenerateRejectsUnsafeSuffix(t *testing.T) {
 	for _, suffix := range []string{"", "../x", "a/b", "a b"} {
 		if _, err := keys.Generate(t.TempDir(), suffix); err == nil {
@@ -109,7 +157,7 @@ func TestGenerateRejectsUnsafeSuffix(t *testing.T) {
 
 func TestLoadedKeysSignAndAgreeUnderTheirKeyIDs(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, "2026-10"); err != nil {
 		t.Fatal(err)
@@ -174,7 +222,7 @@ func TestLoadedKeysSignAndAgreeUnderTheirKeyIDs(t *testing.T) {
 }
 
 func TestLoadFilesRejectsLooseOrSwappedKeys(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, "2026-10"); err != nil {
 		t.Fatal(err)

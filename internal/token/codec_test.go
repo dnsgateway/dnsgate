@@ -23,7 +23,7 @@ const testCredential = "cf-api-token-very-secret-value"
 func newKeys(t *testing.T, suffix string) *keys.Files {
 	t.Helper()
 
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, suffix); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func loadMixed(t *testing.T, sigDir, sigSuffix, encDir, encSuffix string) *keys.
 func generate(t *testing.T, suffix string) string {
 	t.Helper()
 
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 
 	if _, err := keys.Generate(dir, suffix); err != nil {
 		t.Fatal(err)

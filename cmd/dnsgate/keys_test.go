@@ -55,7 +55,7 @@ func TestKeysGenerateWritesLoadableKeyPairs(t *testing.T) {
 }
 
 func TestKeysGenerateTakesDirFromEnvAndDefaultsSuffixToTheMonth(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "keys")
 	t.Setenv("DNSGATE_KEY_DIR", dir)
 
 	month := time.Now().UTC().Format("2006-01")

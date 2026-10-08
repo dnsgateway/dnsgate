@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,8 +44,9 @@ type Generated struct {
 // pair into dir as PEM files with owner-only permissions. The kids are
 // "sig-<suffix>" and "enc-<suffix>", and each file is named after its kid:
 // <kid>.pem holds the PKCS #8 private key, <kid>.pub.pem the PKIX public
-// key. dir is created with mode 0700 if it does not exist. Existing files
-// are never overwritten.
+// key. dir is created with mode 0700 if it does not exist; an existing dir
+// must give group and others no access. Existing files are never
+// overwritten, and on failure the files this call wrote are removed.
 func Generate(dir, suffix string) (Generated, error) {
 	if !validSuffix.MatchString(suffix) {
 		return Generated{}, fmt.Errorf("invalid key ID suffix %q: use letters, digits, '.', '_' and '-'", suffix)
@@ -77,14 +79,8 @@ func Generate(dir, suffix string) (Generated, error) {
 		{filepath.Join(dir, gen.EncryptionKeyID+publicExt), pemPublicKey, encPriv.PublicKey()},
 	}
 
-	for _, f := range files {
-		if _, err := os.Lstat(f.path); err == nil {
-			return Generated{}, fmt.Errorf("key file %s already exists", f.path)
-		}
-	}
-
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return Generated{}, fmt.Errorf("creating key directory: %w", err)
+	if err := prepareDir(dir); err != nil {
+		return Generated{}, err
 	}
 
 	for _, f := range files {
@@ -96,14 +92,17 @@ func Generate(dir, suffix string) (Generated, error) {
 			der, err = x509.MarshalPKIXPublicKey(f.key)
 		}
 
-		if err != nil {
-			return Generated{}, fmt.Errorf("encoding %s: %w", f.path, err)
+		if err == nil {
+			err = writeExclusive(f.path, pem.EncodeToMemory(&pem.Block{Type: f.blockType, Bytes: der}))
 		}
 
-		block := &pem.Block{Type: f.blockType, Bytes: der}
+		if err != nil {
+			// Leave no partial key set behind: remove what this call wrote.
+			for _, path := range gen.Files {
+				_ = os.Remove(path)
+			}
 
-		if err := writeExclusive(f.path, pem.EncodeToMemory(block)); err != nil {
-			return Generated{}, err
+			return Generated{}, fmt.Errorf("writing %s: %w", f.path, err)
 		}
 
 		gen.Files = append(gen.Files, f.path)
@@ -112,20 +111,51 @@ func Generate(dir, suffix string) (Generated, error) {
 	return gen, nil
 }
 
+// prepareDir creates dir with mode 0700, or checks that an existing dir
+// gives group and others no access.
+func prepareDir(dir string) error {
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(dir, dirMode); err != nil {
+			return fmt.Errorf("creating key directory: %w", err)
+		}
+
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("checking key directory: %w", err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("key directory %s is not a directory", dir)
+	}
+
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Errorf("key directory %s has mode %o, want no group or other access (700)", dir, perm)
+	}
+
+	return nil
+}
+
+// writeExclusive creates path, failing if it exists, and writes data to
+// it. A file it created but could not fill is removed.
 func writeExclusive(path string, data []byte) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 	if err != nil {
-		return fmt.Errorf("creating key file: %w", err)
+		return err
 	}
 
-	if _, err := f.Write(data); err != nil {
-		f.Close()
+	_, err = f.Write(data)
 
-		return fmt.Errorf("writing key file %s: %w", path, err)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
 	}
 
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("writing key file %s: %w", path, err)
+	if err != nil {
+		_ = os.Remove(path)
+
+		return err
 	}
 
 	return nil
