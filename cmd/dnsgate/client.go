@@ -14,7 +14,7 @@ import (
 )
 
 // dialGateway connects to the Gateway at --gateway over TLS, verifying it
-// against --ca-file or the system's CA certificates. close releases the
+// against --ca-file or the system's CA certificates. closeConn releases the
 // connection.
 func dialGateway(f *Flags) (c *client.Client, closeConn func(), err error) {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
