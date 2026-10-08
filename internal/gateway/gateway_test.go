@@ -98,11 +98,9 @@ func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 }
 
 // loadKeys loads the signing key sig-test with encKID as the current
-// encryption key, on the harness clock.
+// encryption key.
 func (h *harness) loadKeys(t *testing.T, encKID string, opts ...keys.Option) *keys.Files {
 	t.Helper()
-
-	opts = append([]keys.Option{keys.WithClock(func() time.Time { return h.now })}, opts...)
 
 	src, err := keys.LoadFiles(filepath.Join(h.keyDir, "sig-test.pem"), filepath.Join(h.keyDir, encKID+".pem"), opts...)
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"crypto/ecdh"
 	"crypto/ed25519"
 	"errors"
+	"time"
 )
 
 // ErrUnknownKey is returned when no key with the requested kid exists.
@@ -33,6 +34,9 @@ type Source interface {
 	// encrypted to.
 	EncryptionKey() (string, *ecdh.PublicKey)
 	// SharedSecret returns the X25519 shared secret between the private
-	// encryption key with the given kid and peer.
-	SharedSecret(ctx context.Context, kid string, peer *ecdh.PublicKey) ([]byte, error)
+	// encryption key with the given kid and peer, for opening a token at
+	// time at. A Decryption Key whose Retirement Deadline is not after at
+	// fails with ErrRetiredKey. Taking the time from the caller keeps
+	// retirement on the same clock as the token's nbf and exp.
+	SharedSecret(ctx context.Context, kid string, peer *ecdh.PublicKey, at time.Time) ([]byte, error)
 }

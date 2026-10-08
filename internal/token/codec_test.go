@@ -276,3 +276,54 @@ func TestOuterHeaderIsTheOnlyReadablePart(t *testing.T) {
 		}
 	}
 }
+
+// TestDecryptionKeyRetiresOnTheCodecClock checks that a Decryption Key's
+// Retirement Deadline is judged by the same clock as nbf and exp, not by the
+// wall clock.
+func TestDecryptionKeyRetiresOnTheCodecClock(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "keys")
+
+	for _, suffix := range []string{"2026-10", "2026-11"} {
+		if _, err := keys.Generate(dir, suffix); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wall := time.Now()
+
+	for name, tc := range map[string]struct {
+		retireAt, clock time.Time
+		opens           bool
+	}{
+		"deadline passed on the wall clock only":  {retireAt: wall.Add(-24 * time.Hour), clock: wall.Add(-25 * time.Hour), opens: true},
+		"deadline passed on the codec clock only": {retireAt: wall.Add(24 * time.Hour), clock: wall.Add(24 * time.Hour)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			now := func() time.Time { return tc.clock }
+
+			claims := derivedClaims()
+			claims.NotBefore, claims.Expiry = token.NewNumericDate(tc.clock.Add(-time.Hour)), nil
+
+			sealed, err := token.NewCodec(loadMixed(t, dir, "2026-10", dir, "2026-10"), token.WithClock(now)).Seal(ctx, claims)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			src, err := keys.LoadFiles(filepath.Join(dir, "sig-2026-10.pem"), filepath.Join(dir, "enc-2026-11.pem"),
+				keys.WithDecryptionKey(filepath.Join(dir, "enc-2026-10.pem"), tc.retireAt))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = token.NewCodec(src, token.WithClock(now)).Open(ctx, sealed)
+
+			switch {
+			case tc.opens && err != nil:
+				t.Errorf("Open before the deadline on the codec clock: %v", err)
+			case !tc.opens && !errors.Is(err, keys.ErrRetiredKey):
+				t.Errorf("Open after the deadline on the codec clock error = %v, want ErrRetiredKey", err)
+			}
+		})
+	}
+}

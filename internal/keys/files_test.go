@@ -208,7 +208,7 @@ func TestLoadedKeysSignAndAgreeUnderTheirKeyIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey())
+	got, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestLoadedKeysSignAndAgreeUnderTheirKeyIDs(t *testing.T) {
 		t.Error("SharedSecret differs from the ephemeral side's ECDH result")
 	}
 
-	if _, err := src.SharedSecret(ctx, "enc-other", eph.PublicKey()); !errors.Is(err, keys.ErrUnknownKey) {
+	if _, err := src.SharedSecret(ctx, "enc-other", eph.PublicKey(), time.Now()); !errors.Is(err, keys.ErrUnknownKey) {
 		t.Errorf("SharedSecret(unknown) error = %v, want ErrUnknownKey", err)
 	}
 }
@@ -300,12 +300,10 @@ func TestDecryptionKeyAgreesUntilItsRetirementDeadline(t *testing.T) {
 		}
 	}
 
-	now := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	retireAt := now.Add(time.Hour)
+	retireAt := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 
 	src, err := keys.LoadFiles(filepath.Join(dir, "sig-2026-10.pem"), filepath.Join(dir, "enc-2026-11.pem"),
-		keys.WithDecryptionKey(filepath.Join(dir, "enc-2026-10.pem"), retireAt),
-		keys.WithClock(func() time.Time { return now }))
+		keys.WithDecryptionKey(filepath.Join(dir, "enc-2026-10.pem"), retireAt))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,17 +317,15 @@ func TestDecryptionKeyAgreesUntilItsRetirementDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey()); err != nil {
+	if _, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey(), retireAt.Add(-time.Second)); err != nil {
 		t.Errorf("SharedSecret under the decryption key before its deadline: %v", err)
 	}
 
-	now = retireAt
-
-	if _, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey()); !errors.Is(err, keys.ErrRetiredKey) {
+	if _, err := src.SharedSecret(ctx, "enc-2026-10", eph.PublicKey(), retireAt); !errors.Is(err, keys.ErrRetiredKey) {
 		t.Errorf("SharedSecret under a retired key error = %v, want ErrRetiredKey", err)
 	}
 
-	if _, err := src.SharedSecret(ctx, "enc-2026-11", eph.PublicKey()); err != nil {
+	if _, err := src.SharedSecret(ctx, "enc-2026-11", eph.PublicKey(), retireAt); err != nil {
 		t.Errorf("SharedSecret under the current key: %v", err)
 	}
 }

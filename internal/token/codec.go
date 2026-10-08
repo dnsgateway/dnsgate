@@ -51,7 +51,8 @@ type Codec struct {
 // Option configures a Codec.
 type Option func(*Codec)
 
-// WithClock sets the clock Open checks nbf and exp against.
+// WithClock sets the clock Open checks nbf, exp and the Retirement
+// Deadlines of Decryption Keys against.
 func WithClock(now func() time.Time) Option {
 	return func(c *Codec) { c.now = now }
 }
@@ -201,12 +202,15 @@ func (c *Codec) Reseal(ctx context.Context, sealed string) (string, Claims, erro
 
 // open is Open that also returns the signed claims, the inner JWS.
 func (c *Codec) open(ctx context.Context, sealed string) (Claims, []byte, error) {
-	signed, err := c.decrypt(ctx, sealed)
+	// One reading of the clock for key retirement, nbf and exp.
+	now := c.now()
+
+	signed, err := c.decrypt(ctx, sealed, now)
 	if err != nil {
 		return Claims{}, nil, err
 	}
 
-	claims, err := c.verify(signed)
+	claims, err := c.verify(signed, now)
 	if err != nil {
 		return Claims{}, nil, err
 	}
@@ -214,8 +218,9 @@ func (c *Codec) open(ctx context.Context, sealed string) (Claims, []byte, error)
 	return claims, signed, nil
 }
 
-// verify checks the signature and claims of the inner JWS signed.
-func (c *Codec) verify(signed []byte) (Claims, error) {
+// verify checks the signature and claims of the inner JWS signed, as of
+// now.
+func (c *Codec) verify(signed []byte, now time.Time) (Claims, error) {
 	jws, err := jose.ParseSignedCompact(string(signed), []jose.SignatureAlgorithm{signatureAlg})
 	if err != nil || len(jws.Signatures) != 1 {
 		return Claims{}, fmt.Errorf("%w: malformed signature", ErrInvalid)
@@ -240,7 +245,7 @@ func (c *Codec) verify(signed []byte) (Claims, error) {
 		return Claims{}, fmt.Errorf("%w: malformed claims", ErrInvalid)
 	}
 
-	if err := c.check(wire); err != nil {
+	if err := check(wire, now); err != nil {
 		return Claims{}, err
 	}
 
@@ -250,7 +255,8 @@ func (c *Codec) verify(signed []byte) (Claims, error) {
 	return claims, nil
 }
 
-func (c *Codec) decrypt(ctx context.Context, sealed string) ([]byte, error) {
+// decrypt opens the JWE sealed with a key that is not retired at now.
+func (c *Codec) decrypt(ctx context.Context, sealed string, now time.Time) ([]byte, error) {
 	jwe, err := jose.ParseEncryptedCompact(sealed, []jose.KeyAlgorithm{keyAlgorithm}, []jose.ContentEncryption{contentEncryption})
 	if err != nil {
 		return nil, fmt.Errorf("%w: malformed", ErrInvalid)
@@ -260,7 +266,7 @@ func (c *Codec) decrypt(ctx context.Context, sealed string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: typ is not %s", ErrInvalid, Type)
 	}
 
-	dk := &opaqueDecrypter{ctx: ctx, keys: c.keys}
+	dk := &opaqueDecrypter{ctx: ctx, keys: c.keys, at: now}
 
 	plaintext, err := jwe.Decrypt(dk)
 	if err != nil {
@@ -286,9 +292,7 @@ func keyError(kind string, err error) error {
 	return fmt.Errorf("%w: %s key unavailable", ErrInvalid, kind)
 }
 
-func (c *Codec) check(claims wireClaims) error {
-	now := c.now()
-
+func check(claims wireClaims, now time.Time) error {
 	switch {
 	case claims.Issuer != Issuer:
 		return fmt.Errorf("%w: wrong issuer", ErrInvalid)
@@ -343,6 +347,7 @@ func (s *opaqueSigner) SignPayload(payload []byte, alg jose.SignatureAlgorithm) 
 type opaqueDecrypter struct {
 	ctx  context.Context //nolint:containedctx // go-jose's decrypter interface carries no context
 	keys keys.Source
+	at   time.Time
 	err  error
 }
 
@@ -356,7 +361,7 @@ func (d *opaqueDecrypter) DecryptKey(encryptedKey []byte, header jose.Header) ([
 		return nil, err
 	}
 
-	z, err := d.keys.SharedSecret(d.ctx, header.KeyID, peer)
+	z, err := d.keys.SharedSecret(d.ctx, header.KeyID, peer, d.at)
 	if err != nil {
 		d.err = err
 

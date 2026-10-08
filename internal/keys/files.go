@@ -200,7 +200,6 @@ type Files struct {
 	enc namedKey[*ecdh.PrivateKey]
 	// decryption holds the older encryption keys by kid.
 	decryption map[string]decryptionKey
-	now        func() time.Time
 }
 
 // namedKey is a private key and its kid.
@@ -223,7 +222,6 @@ type Option func(*loadOptions)
 
 type loadOptions struct {
 	decryption []decryptionKeyFile
-	now        func() time.Time
 }
 
 type decryptionKeyFile struct {
@@ -241,18 +239,13 @@ func WithDecryptionKey(path string, retireAt time.Time) Option {
 	}
 }
 
-// WithClock sets the clock that retirement deadlines are checked against.
-func WithClock(now func() time.Time) Option {
-	return func(o *loadOptions) { o.now = now }
-}
-
 // LoadFiles reads the signing (Ed25519) and encryption (X25519) private
 // keys written by Generate, and the decryption keys given as options. A
 // key's kid is its file name without ".pem" and must follow KeyIDFormat,
 // every encryption kid must be distinct, and no file may be readable or
 // writable by group or others.
 func LoadFiles(signingFile, encryptionFile string, opts ...Option) (*Files, error) {
-	o := loadOptions{now: time.Now}
+	var o loadOptions
 
 	for _, opt := range opts {
 		opt(&o)
@@ -268,7 +261,7 @@ func LoadFiles(signingFile, encryptionFile string, opts ...Option) (*Files, erro
 		return nil, err
 	}
 
-	f := &Files{sig: sig, enc: enc, decryption: make(map[string]decryptionKey, len(o.decryption)), now: o.now}
+	f := &Files{sig: sig, enc: enc, decryption: make(map[string]decryptionKey, len(o.decryption))}
 
 	for _, d := range o.decryption {
 		k, err := readEncryptionKey(d.path)
@@ -381,7 +374,7 @@ func (f *Files) EncryptionKey() (string, *ecdh.PublicKey) {
 
 // SharedSecret implements Source. It agrees under the current encryption
 // key or under a decryption key before its retirement deadline.
-func (f *Files) SharedSecret(_ context.Context, kid string, peer *ecdh.PublicKey) ([]byte, error) {
+func (f *Files) SharedSecret(_ context.Context, kid string, peer *ecdh.PublicKey, at time.Time) ([]byte, error) {
 	key := f.enc.key
 
 	if kid != f.enc.kid {
@@ -390,7 +383,7 @@ func (f *Files) SharedSecret(_ context.Context, kid string, peer *ecdh.PublicKey
 			return nil, fmt.Errorf("encryption key %q: %w", kid, ErrUnknownKey)
 		}
 
-		if !f.now().Before(dk.retireAt) {
+		if !at.Before(dk.retireAt) {
 			return nil, fmt.Errorf("encryption key %q: %w", kid, ErrRetiredKey)
 		}
 
