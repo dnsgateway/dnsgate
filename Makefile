@@ -1,5 +1,5 @@
 REGISTRY ?= ghcr.io
-USERNAME ?= sergelogvinov
+USERNAME ?= dnsgate
 OCIREPO ?= $(REGISTRY)/$(USERNAME)
 PLATFORM ?= linux/arm64,linux/amd64
 PUSH ?= false
@@ -10,16 +10,6 @@ GO_LDFLAGS := -ldflags "-w -s -X main.version=$(TAG) -X main.commit=$(SHA)"
 
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
-ARCHS ?= amd64 arm64
-
-BUILD_ARGS := --platform=$(PLATFORM)
-ifeq ($(PUSH),true)
-BUILD_ARGS += --push=$(PUSH)
-else
-BUILD_ARGS += --output type=docker
-endif
-
-COSING_ARGS ?=
 
 ############
 

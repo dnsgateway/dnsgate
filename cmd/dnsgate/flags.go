@@ -11,7 +11,7 @@ const (
 	flagKeyIDSuffix    = "key-id-suffix"
 	envKeyDir          = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
-	defaultKeyDir      = "."
+	defaultKeyDir      = "keys"
 	defaultKeyIDSuffix = ""
 )
 
