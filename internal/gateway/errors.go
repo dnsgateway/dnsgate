@@ -5,6 +5,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/audit"
 )
 
 // Error messages never quote what the client sent: it may hold a secret.
@@ -34,6 +35,6 @@ func gatewayError(code codes.Code, category dnsgatev1.Error_Category, msg string
 // category returns the category of a Gateway error for audit events, as
 // its enum name in lower case without the prefix, such as
 // "unauthenticated" or "permission_denied".
-func category(err error) string {
-	return dnsgatev1.ErrorDetail(status.Convert(err)).GetCategory().Name()
+func category(err error) audit.Category {
+	return audit.Category(dnsgatev1.ErrorDetail(status.Convert(err)).GetCategory().Name())
 }

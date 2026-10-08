@@ -14,23 +14,32 @@ import (
 	"time"
 )
 
+// Name names what an Event records.
+type Name string
+
 // Event names.
 const (
-	EventOnboard      = "onboard"
-	EventTokenInspect = "token.inspect"
+	EventOnboard      Name = "onboard"
+	EventTokenInspect Name = "token.inspect"
 )
+
+// Result is the outcome of the request an Event records.
+type Result string
 
 // Results.
 const (
-	ResultOK     = "ok"
-	ResultDenied = "denied"
-	ResultFailed = "failed"
+	ResultOK     Result = "ok"
+	ResultDenied Result = "denied"
 )
+
+// Category is the Gateway error category of a failed request, such as
+// "unauthenticated".
+type Category string
 
 // Event is one audit event.
 type Event struct {
 	Time  time.Time `json:"time"`
-	Event string    `json:"event"`
+	Event Name      `json:"event"`
 	// RequestID identifies the Gateway request the event belongs to.
 	RequestID string `json:"request_id"`
 	// ServiceAccount is the sub of the token the event concerns.
@@ -39,9 +48,9 @@ type Event struct {
 	// Root Token of an onboard event.
 	TokenID  string `json:"jti,omitempty"`
 	Provider string `json:"provider,omitempty"`
-	Result   string `json:"result"`
+	Result   Result `json:"result"`
 	// Category is the Gateway error category of a failed request.
-	Category string `json:"category,omitempty"`
+	Category Category `json:"category,omitempty"`
 }
 
 // Log writes Events to an io.Writer, one JSON object per line.
