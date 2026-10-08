@@ -42,25 +42,18 @@ func newTokenInspectCmd(flags *Flags) *cobra.Command {
 	return cmd
 }
 
-// inspectOutput is what "token inspect" prints.
+// inspectOutput is what "token inspect" prints. Permissions are printed
+// as the API messages: their generated JSON tags name each filter and
+// leave out an empty one.
 type inspectOutput struct {
-	Sub         string             `json:"sub"`
-	Jti         string             `json:"jti"`
-	Ancestors   []string           `json:"ancestors"`
-	IssuedAt    time.Time          `json:"iat"`
-	NotBefore   time.Time          `json:"nbf"`
-	Expiry      *time.Time         `json:"exp"`
-	Provider    string             `json:"provider"`
-	Permissions []permissionOutput `json:"permissions"`
-}
-
-type permissionOutput struct {
-	Verbs     []string `json:"verbs,omitempty"`
-	Resources []string `json:"resources,omitempty"`
-	Zones     []string `json:"zones,omitempty"`
-	Names     []string `json:"names,omitempty"`
-	Types     []string `json:"types,omitempty"`
-	Egress    []string `json:"egress,omitempty"`
+	Sub         string                  `json:"sub"`
+	Jti         string                  `json:"jti"`
+	Ancestors   []string                `json:"ancestors"`
+	IssuedAt    time.Time               `json:"iat"`
+	NotBefore   time.Time               `json:"nbf"`
+	Expiry      *time.Time              `json:"exp"`
+	Provider    string                  `json:"provider"`
+	Permissions []*dnsgatev1.Permission `json:"permissions"`
 }
 
 func runTokenInspect(ctx context.Context, out io.Writer, f *Flags) error {
@@ -94,27 +87,20 @@ func newInspectOutput(resp *dnsgatev1.InspectTokenResponse) inspectOutput {
 		IssuedAt:    resp.GetIat().AsTime(),
 		NotBefore:   resp.GetNbf().AsTime(),
 		Provider:    resp.GetProvider(),
-		Permissions: make([]permissionOutput, 0, len(resp.GetPermissions())),
+		Permissions: resp.GetPermissions(),
 	}
 
 	if o.Ancestors == nil {
 		o.Ancestors = []string{}
 	}
 
+	if o.Permissions == nil {
+		o.Permissions = []*dnsgatev1.Permission{}
+	}
+
 	if resp.Exp != nil {
 		exp := resp.GetExp().AsTime()
 		o.Expiry = &exp
-	}
-
-	for _, p := range resp.GetPermissions() {
-		o.Permissions = append(o.Permissions, permissionOutput{
-			Verbs:     p.GetVerbs(),
-			Resources: p.GetResources(),
-			Zones:     p.GetZones(),
-			Names:     p.GetNames(),
-			Types:     p.GetTypes(),
-			Egress:    p.GetEgress(),
-		})
 	}
 
 	return o
