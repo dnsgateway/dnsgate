@@ -5,6 +5,7 @@ import (
 	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -48,6 +49,17 @@ func TestGenerateWritesOwnerOnlyPEMFilesNamedByKeyID(t *testing.T) {
 
 		if perm := info.Mode().Perm(); perm != 0o600 {
 			t.Errorf("%s mode = %o, want 600", path, perm)
+		}
+
+		// Plain PEM without headers, so OpenSSL and other tools read it.
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		block, rest := pem.Decode(data)
+		if block == nil || len(block.Headers) != 0 || len(rest) != 0 {
+			t.Errorf("%s is not a single header-free PEM block", path)
 		}
 	}
 

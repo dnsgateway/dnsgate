@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -20,7 +21,8 @@ const (
 
 	pemPrivateKey = "PRIVATE KEY"
 	pemPublicKey  = "PUBLIC KEY"
-	pemHeaderKID  = "kid"
+	privateExt    = ".pem"
+	publicExt     = ".pub.pem"
 
 	dirMode  = 0o700
 	fileMode = 0o600
@@ -39,9 +41,10 @@ type Generated struct {
 
 // Generate writes a new Ed25519 signing key pair and X25519 encryption key
 // pair into dir as PEM files with owner-only permissions. The kids are
-// "sig-<suffix>" and "enc-<suffix>"; each file is named after its kid and
-// carries it in a "kid" PEM header. dir is created with mode 0700 if it
-// does not exist. Existing files are never overwritten.
+// "sig-<suffix>" and "enc-<suffix>", and each file is named after its kid:
+// <kid>.pem holds the PKCS #8 private key, <kid>.pub.pem the PKIX public
+// key. dir is created with mode 0700 if it does not exist. Existing files
+// are never overwritten.
 func Generate(dir, suffix string) (Generated, error) {
 	if !validSuffix.MatchString(suffix) {
 		return Generated{}, fmt.Errorf("invalid key ID suffix %q: use letters, digits, '.', '_' and '-'", suffix)
@@ -63,15 +66,15 @@ func Generate(dir, suffix string) (Generated, error) {
 	}
 
 	type keyFile struct {
-		path, kid, blockType string
-		key                  any
+		path, blockType string
+		key             any
 	}
 
 	files := []keyFile{
-		{filepath.Join(dir, gen.SigningKeyID+".pem"), gen.SigningKeyID, pemPrivateKey, sigPriv},
-		{filepath.Join(dir, gen.SigningKeyID+".pub.pem"), gen.SigningKeyID, pemPublicKey, sigPub},
-		{filepath.Join(dir, gen.EncryptionKeyID+".pem"), gen.EncryptionKeyID, pemPrivateKey, encPriv},
-		{filepath.Join(dir, gen.EncryptionKeyID+".pub.pem"), gen.EncryptionKeyID, pemPublicKey, encPriv.PublicKey()},
+		{filepath.Join(dir, gen.SigningKeyID+privateExt), pemPrivateKey, sigPriv},
+		{filepath.Join(dir, gen.SigningKeyID+publicExt), pemPublicKey, sigPub},
+		{filepath.Join(dir, gen.EncryptionKeyID+privateExt), pemPrivateKey, encPriv},
+		{filepath.Join(dir, gen.EncryptionKeyID+publicExt), pemPublicKey, encPriv.PublicKey()},
 	}
 
 	for _, f := range files {
@@ -97,7 +100,7 @@ func Generate(dir, suffix string) (Generated, error) {
 			return Generated{}, fmt.Errorf("encoding %s: %w", f.path, err)
 		}
 
-		block := &pem.Block{Type: f.blockType, Headers: map[string]string{pemHeaderKID: f.kid}, Bytes: der}
+		block := &pem.Block{Type: f.blockType, Bytes: der}
 
 		if err := writeExclusive(f.path, pem.EncodeToMemory(block)); err != nil {
 			return Generated{}, err
@@ -140,8 +143,8 @@ type Files struct {
 var _ Source = (*Files)(nil)
 
 // LoadFiles reads the signing (Ed25519) and encryption (X25519) private
-// keys written by Generate. Each file must carry a "kid" PEM header and
-// must not be readable or writable by group or others.
+// keys written by Generate. A key's kid is its file name without ".pem",
+// and the file must not be readable or writable by group or others.
 func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
 	sigKID, sigKey, err := readPrivateKey(signingFile)
 	if err != nil {
@@ -186,9 +189,9 @@ func readPrivateKey(path string) (string, any, error) {
 		return "", nil, fmt.Errorf("key file %s holds no PEM %q block", path, pemPrivateKey)
 	}
 
-	kid := block.Headers[pemHeaderKID]
-	if kid == "" {
-		return "", nil, fmt.Errorf("key file %s has no %q PEM header", path, pemHeaderKID)
+	kid, ok := strings.CutSuffix(filepath.Base(path), privateExt)
+	if !ok || kid == "" {
+		return "", nil, fmt.Errorf("key file %s is not named <kid>%s", path, privateExt)
 	}
 
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
