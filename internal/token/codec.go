@@ -177,11 +177,45 @@ func (c *Codec) encrypt(plaintext []byte) (string, error) {
 // Open decrypts and verifies a Service Token, choosing keys by kid, and
 // checks its iss, aud, nbf and exp claims.
 func (c *Codec) Open(ctx context.Context, sealed string) (Claims, error) {
-	signed, err := c.decrypt(ctx, sealed)
+	claims, _, err := c.open(ctx, sealed)
+
+	return claims, err
+}
+
+// Reseal opens a Service Token as Open does and encrypts its signed
+// claims, unchanged, to the current encryption key. The resealed token
+// carries the same claims and signature under the current kid.
+func (c *Codec) Reseal(ctx context.Context, sealed string) (string, Claims, error) {
+	claims, signed, err := c.open(ctx, sealed)
 	if err != nil {
-		return Claims{}, err
+		return "", Claims{}, err
 	}
 
+	resealed, err := c.encrypt(signed)
+	if err != nil {
+		return "", Claims{}, err
+	}
+
+	return resealed, claims, nil
+}
+
+// open is Open that also returns the signed claims, the inner JWS.
+func (c *Codec) open(ctx context.Context, sealed string) (Claims, []byte, error) {
+	signed, err := c.decrypt(ctx, sealed)
+	if err != nil {
+		return Claims{}, nil, err
+	}
+
+	claims, err := c.verify(signed)
+	if err != nil {
+		return Claims{}, nil, err
+	}
+
+	return claims, signed, nil
+}
+
+// verify checks the signature and claims of the inner JWS signed.
+func (c *Codec) verify(signed []byte) (Claims, error) {
 	jws, err := jose.ParseSignedCompact(string(signed), []jose.SignatureAlgorithm{signatureAlg})
 	if err != nil || len(jws.Signatures) != 1 {
 		return Claims{}, fmt.Errorf("%w: malformed signature", ErrInvalid)

@@ -21,6 +21,7 @@ type Name string
 const (
 	EventOnboard      Name = "onboard"
 	EventTokenInspect Name = "token.inspect"
+	EventTokenReseal  Name = "token.reseal"
 )
 
 // Result is the outcome of the request an Event records.

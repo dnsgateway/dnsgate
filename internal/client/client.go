@@ -55,6 +55,24 @@ func (c *Client) InspectToken(ctx context.Context, tok string) (*dnsgatev1.Inspe
 	return out, nil
 }
 
+// ResealToken asks the Gateway to reseal tok under its current encryption
+// key.
+func (c *Client) ResealToken(ctx context.Context, tok string) (*dnsgatev1.ResealTokenResponse, error) {
+	resp, err := c.call(ctx, &dnsgatev1.Request{Operation: &dnsgatev1.Request_ResealToken{
+		ResealToken: &dnsgatev1.ResealTokenRequest{Token: tok},
+	}})
+	if err != nil {
+		return nil, err
+	}
+
+	out := resp.GetResealToken()
+	if out == nil {
+		return nil, errors.New("gateway answered reseal with another operation")
+	}
+
+	return out, nil
+}
+
 // call opens a stream, sends req and waits for its Response. A Gateway
 // error comes back as an *Error holding the status that ended the stream.
 func (c *Client) call(ctx context.Context, req *dnsgatev1.Request) (*dnsgatev1.Response, error) {
