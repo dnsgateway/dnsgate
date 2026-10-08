@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -200,7 +201,15 @@ func LoadFiles(signingFile, encryptionFile string) (*Files, error) {
 }
 
 func readPrivateKey(path string) (string, any, error) {
-	info, err := os.Stat(path)
+	// Check the mode of the file actually read: stat and read one descriptor.
+	f, err := os.Open(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading key file: %w", err)
+	}
+
+	defer f.Close()
+
+	info, err := f.Stat()
 	if err != nil {
 		return "", nil, fmt.Errorf("reading key file: %w", err)
 	}
@@ -209,7 +218,7 @@ func readPrivateKey(path string) (string, any, error) {
 		return "", nil, fmt.Errorf("key file %s has mode %o, want no group or other access (600)", path, perm)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", nil, fmt.Errorf("reading key file: %w", err)
 	}
