@@ -9,7 +9,7 @@ const redacted = "[REDACTED]"
 
 // Secret holds a value, such as a Provider Credential, that must never be
 // printed. Every formatting path (fmt verbs, String, GoString, JSON, text
-// marshalling and slog) yields "[REDACTED]"; only Reveal returns the value.
+// marshaling and slog) yields "[REDACTED]"; only Reveal returns the value.
 // The token codec seals the real value through its own wire format.
 type Secret struct {
 	value string
