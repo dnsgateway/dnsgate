@@ -62,6 +62,10 @@ _Avoid_: issuer token, source token
 Turning a plaintext Provider Credential into a Root Token; the only moment the Provider Credential is handled in plaintext outside the Gateway.
 _Avoid_: import, registration, sealing
 
+**Bootstrap Secret**:
+The secret configured on the Gateway that authorizes Onboarding. It is the only credential the Gateway checks that is not a Service Token, and it grants nothing else.
+_Avoid_: admin password, master secret, setup token
+
 **Permission**:
 A rule inside a Service Token that grants verbs on zones, records or tokens, limited to certain zones, record name patterns, record types and Egress. Permissions only add up; there is no deny.
 _Avoid_: policy, role, capability, scope
