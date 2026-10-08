@@ -5,6 +5,7 @@ go 1.27
 require (
 	github.com/dnsgateway/dnsprovider v0.0.0-20261008174015-be2eab62a2a4
 	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/oklog/ulid/v2 v2.1.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	google.golang.org/grpc v1.84.0
