@@ -36,10 +36,14 @@ func newServerCmd(flags *Flags) *cobra.Command {
 			"      - keyFile: keys/enc-2026-10.pem\n" +
 			"        retireAt: 2026-12-01T00:00:00Z\n" +
 			"  bootstrapSecretFile: bootstrap-secret\n\n" +
-			"To rotate the encryption key, generate a new key set with \"dnsgate keys generate\" and a new " +
-			"--" + flagKeyIDSuffix + ", make its enc- file the encryptionKeyFile and move the old one to decryptionKeys with a retireAt deadline. New tokens " +
-			"are sealed under the current key; tokens sealed under an older key open until its deadline, " +
-			"and \"dnsgate token reseal\" moves them to the current key.",
+			"To rotate the encryption key:\n\n" +
+			"  1. Run \"dnsgate keys generate\" with a new --" + flagKeyIDSuffix + ". Only its enc- key file is used; " +
+			"ignore or delete the sig- key files it also writes, and keep signingKeyFile as it is.\n" +
+			"  2. Make the new enc- file the encryptionKeyFile.\n" +
+			"  3. Move the old encryptionKeyFile to decryptionKeys with a retireAt deadline, and restart the Gateway.\n" +
+			"  4. Run \"dnsgate token reseal\" on each token before the deadline.\n\n" +
+			"New tokens are sealed under the current key. Tokens sealed under a decryption key open only " +
+			"until its deadline; resealing moves them to the current key with the same signature.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runServer(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), flags)
