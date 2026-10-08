@@ -336,28 +336,35 @@ func parseEPK(raw any) (*ecdh.PublicKey, error) {
 	return ecdh.X25519().NewPublicKey(b)
 }
 
-// deriveKEK runs the Concat KDF of RFC 7518 section 4.6.2 for
-// ECDH-ES+A256KW with empty apu and apv.
+// deriveKEK derives the ECDH-ES+A256KW key-encryption key from the shared
+// secret z, with empty apu and apv.
 func deriveKEK(z []byte) ([]byte, error) {
+	return concatKDF(z, string(keyAlgorithm), nil, nil, kekSize)
+}
+
+// concatKDF runs the Concat KDF of RFC 7518 section 4.6.2, deriving size
+// bytes for algorithm alg from the shared secret z and the PartyUInfo (apu)
+// and PartyVInfo (apv).
+func concatKDF(z []byte, alg string, apu, apv []byte, size int) ([]byte, error) {
 	var supPubInfo [4]byte
 
-	binary.BigEndian.PutUint32(supPubInfo[:], kekSize*8)
+	binary.BigEndian.PutUint32(supPubInfo[:], uint32(size*8))
 
 	kdf := josecipher.NewConcatKDF(crypto.SHA256, z,
-		lengthPrefixed([]byte(keyAlgorithm)), lengthPrefixed(nil), lengthPrefixed(nil),
+		lengthPrefixed([]byte(alg)), lengthPrefixed(apu), lengthPrefixed(apv),
 		supPubInfo[:], nil)
 
-	kek := make([]byte, kekSize)
-	if _, err := io.ReadFull(kdf, kek); err != nil {
+	key := make([]byte, size)
+	if _, err := io.ReadFull(kdf, key); err != nil {
 		return nil, fmt.Errorf("deriving key: %w", err)
 	}
 
-	return kek, nil
+	return key, nil
 }
 
 func lengthPrefixed(data []byte) []byte {
 	out := make([]byte, 4, 4+len(data))
-	binary.BigEndian.PutUint32(out, uint32(len(data))) //nolint:gosec // inputs are short constants
+	binary.BigEndian.PutUint32(out, uint32(len(data)))
 
 	return append(out, data...)
 }
