@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+// Package dnsgate.v1 is the Gateway's gRPC API.
+package dnsgate.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/dnsgateway/dnsgate/api/dnsgate/v1;dnsgatev1";
+
+// Gateway authorizes requests presented with a Service Token and executes
+// them against the token's Provider.
+service GatewayService {
+  // Call opens one stream per request. The client sends one CallRequest
+  // holding a Request and the Gateway answers with one CallResponse holding
+  // the Response, or ends the stream with an error status.
+  //
+  // The stream is bidirectional so that Agent Egress can later relay the
+  // Gateway's connection to the Provider inside the same stream, as further
+  // CallRequest and CallResponse kinds, without an API break.
+  //
+  // A failed request ends the stream with a gRPC status carrying an Error
+  // detail.
+  rpc Call(stream CallRequest) returns (stream CallResponse);
+}
+
+// CallRequest is one message the client sends on a Call stream.
+message CallRequest {
+  oneof message {
+    // Request is the first and, in v1, only message of a stream.
+    Request request = 1;
+  }
+  // Field numbers 2 to 15 are kept for the Agent Egress relay frames.
+  reserved 2 to 15;
+}
+
+// CallResponse is one message the Gateway sends on a Call stream.
+message CallResponse {
+  oneof message {
+    // Response answers the stream's Request.
+    Response response = 1;
+  }
+  // Field numbers 2 to 15 are kept for the Agent Egress relay frames.
+  reserved 2 to 15;
+}
+
+// Request is one Gateway operation.
+message Request {
+  oneof operation {
+    OnboardRequest onboard = 1;
+    InspectTokenRequest inspect_token = 2;
+  }
+}
+
+// Response is the result of a Request, of the same operation.
+message Response {
+  oneof result {
+    OnboardResponse onboard = 1;
+    InspectTokenResponse inspect_token = 2;
+  }
+}
+
+// OnboardRequest turns a Provider Credential into a Root Token.
+message OnboardRequest {
+  // bootstrap_secret is the secret configured on the Gateway. Onboarding
+  // without it, or with a wrong one, fails as unauthenticated.
+  string bootstrap_secret = 1;
+  // provider names the Provider the credential authenticates to, such as
+  // "cloudflare".
+  string provider = 2;
+  // credential is the plaintext Provider Credential. It is protected in
+  // transit by the TLS connection to the Gateway (ADR 0005).
+  Credential credential = 3;
+  // expires is the Root Token's lifetime. Left out, the Root Token never
+  // expires.
+  optional google.protobuf.Duration expires = 4;
+}
+
+// Credential is a Provider Credential.
+message Credential {
+  // type is the kind of credential, such as "api-token" for Cloudflare.
+  string type = 1;
+  // value is the secret itself.
+  string value = 2;
+}
+
+// OnboardResponse carries the new Root Token.
+message OnboardResponse {
+  // token is the Root Token. Its Service Account is "root".
+  string token = 1;
+}
+
+// InspectTokenRequest asks the Gateway to open a Service Token and show its
+// claims to its holder.
+message InspectTokenRequest {
+  // token is the Service Token to inspect.
+  string token = 1;
+}
+
+// InspectTokenResponse is the content of a Service Token, without its
+// Provider Credential.
+message InspectTokenResponse {
+  // sub is the Service Account the token was issued for.
+  string sub = 1;
+  // jti is the token ID.
+  string jti = 2;
+  // ancestors lists the IDs of every token above this one, root first.
+  repeated string ancestors = 3;
+  google.protobuf.Timestamp iat = 4;
+  google.protobuf.Timestamp nbf = 5;
+  // exp is left out for a token that never expires.
+  optional google.protobuf.Timestamp exp = 6;
+  // provider names the token's Provider.
+  string provider = 7;
+  repeated Permission permissions = 8;
+}
+
+// Permission grants verbs on resources, limited by the zone, name, type
+// and egress filters. An empty filter is left out and means "any"; an
+// empty resources means ["records"].
+message Permission {
+  repeated string verbs = 1;
+  repeated string resources = 2;
+  repeated string zones = 3;
+  repeated string names = 4;
+  repeated string types = 5;
+  repeated string egress = 6;
+}
+
+// Error is the detail of every error status the Gateway returns.
+message Error {
+  // Category is what kind of failure the error is.
+  enum Category {
+    CATEGORY_UNSPECIFIED = 0;
+    // The request is malformed or names something the Gateway does not
+    // support.
+    CATEGORY_INVALID_REQUEST = 1;
+    // The bootstrap secret or Service Token was missing or not accepted.
+    CATEGORY_UNAUTHENTICATED = 2;
+    // The token's Permissions do not allow the request.
+    CATEGORY_PERMISSION_DENIED = 3;
+    // A Derived Token would exceed its Parent Token; see dimension.
+    CATEGORY_NARROWING_VIOLATION = 4;
+    // The Provider refused the request; see provider_status.
+    CATEGORY_DENIED_BY_PROVIDER = 5;
+    CATEGORY_NOT_FOUND = 6;
+    CATEGORY_RATE_LIMITED = 7;
+    CATEGORY_INVALID_RECORD = 8;
+    // The requested or allowed Egress is not supported yet.
+    CATEGORY_EGRESS_NOT_SUPPORTED = 9;
+    // The Gateway failed; the details are in its logs.
+    CATEGORY_INTERNAL = 10;
+  }
+
+  Category category = 1;
+  // dimension names what exceeded the Parent Token in a narrowing
+  // violation, such as "zones" or "exp".
+  string dimension = 2;
+  // provider_status is the Provider's HTTP status for a Provider error.
+  int32 provider_status = 3;
+}
