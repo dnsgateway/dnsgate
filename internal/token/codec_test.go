@@ -208,8 +208,11 @@ func TestOpenRejectsForeignAndTamperedTokens(t *testing.T) {
 				t.Errorf("Open error = %v, want it to wrap ErrUnknownKey", err)
 			}
 
-			if strings.Contains(err.Error(), testCredential) {
-				t.Errorf("Open error reveals the Provider Credential: %v", err)
+			// Errors carry nothing taken from the token, not even a kid.
+			for _, leak := range []string{testCredential, "2026-10", "2026-11"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("Open error reveals %q: %v", leak, err)
+				}
 			}
 		})
 	}

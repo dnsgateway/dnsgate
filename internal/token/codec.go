@@ -37,7 +37,8 @@ const (
 
 // ErrInvalid is returned by Open for any token that does not open: a
 // malformed, tampered or foreign token, an unknown kid, or failed claim
-// checks. Errors never include the token or its contents.
+// checks. Errors never include the token or anything read from it, such as
+// a kid.
 var ErrInvalid = errors.New("invalid service token")
 
 // Codec seals claims into Service Tokens and opens them again, using keys
@@ -184,7 +185,7 @@ func (c *Codec) Open(ctx context.Context, sealed string) (Claims, error) {
 
 	pub, err := c.keys.VerificationKey(jws.Signatures[0].Header.KeyID)
 	if err != nil {
-		return Claims{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+		return Claims{}, keyError("signing", err)
 	}
 
 	payload, err := jws.Verify(pub)
@@ -226,13 +227,23 @@ func (c *Codec) decrypt(ctx context.Context, sealed string) ([]byte, error) {
 	plaintext, err := jwe.Decrypt(dk)
 	if err != nil {
 		if dk.err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrInvalid, dk.err)
+			return nil, keyError("encryption", dk.err)
 		}
 
 		return nil, fmt.Errorf("%w: decryption failed", ErrInvalid)
 	}
 
 	return plaintext, nil
+}
+
+// keyError reports a failed key lookup without the Source's error text,
+// which may quote the kid the token supplied.
+func keyError(kind string, err error) error {
+	if errors.Is(err, keys.ErrUnknownKey) {
+		return fmt.Errorf("%w: %s key: %w", ErrInvalid, kind, keys.ErrUnknownKey)
+	}
+
+	return fmt.Errorf("%w: %s key unavailable", ErrInvalid, kind)
 }
 
 func (c *Codec) check(claims wireClaims) error {
