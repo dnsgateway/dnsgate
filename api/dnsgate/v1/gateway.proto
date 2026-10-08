@@ -49,6 +49,7 @@ message Request {
   oneof operation {
     OnboardRequest onboard = 1;
     InspectTokenRequest inspect_token = 2;
+    ResealTokenRequest reseal_token = 3;
   }
 }
 
@@ -57,6 +58,7 @@ message Response {
   oneof result {
     OnboardResponse onboard = 1;
     InspectTokenResponse inspect_token = 2;
+    ResealTokenResponse reseal_token = 3;
   }
 }
 
@@ -113,6 +115,23 @@ message InspectTokenResponse {
   // provider names the token's Provider.
   string provider = 7;
   repeated Permission permissions = 8;
+}
+
+// ResealTokenRequest asks the Gateway to reseal a Service Token: to
+// re-encrypt it under the Gateway's current encryption key. The token
+// itself authorizes the request, since resealing changes none of its
+// claims.
+message ResealTokenRequest {
+  // token is the Service Token to reseal. It must still open: valid, not
+  // expired, and sealed under a key that is not retired.
+  string token = 1;
+}
+
+// ResealTokenResponse carries the resealed Service Token.
+message ResealTokenResponse {
+  // token holds the same claims and signature as the request's token,
+  // sealed under the current encryption key.
+  string token = 1;
 }
 
 // Permission grants verbs on resources, limited by the zone, name, type

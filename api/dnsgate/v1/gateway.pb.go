@@ -104,7 +104,7 @@ func (x Error_Category) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Error_Category.Descriptor instead.
 func (Error_Category) EnumDescriptor() ([]byte, []int) {
-	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{10, 0}
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{12, 0}
 }
 
 // CallRequest is one message the client sends on a Call stream.
@@ -250,6 +250,7 @@ type Request struct {
 	//
 	//	*Request_Onboard
 	//	*Request_InspectToken
+	//	*Request_ResealToken
 	Operation     isRequest_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -310,6 +311,15 @@ func (x *Request) GetInspectToken() *InspectTokenRequest {
 	return nil
 }
 
+func (x *Request) GetResealToken() *ResealTokenRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_ResealToken); ok {
+			return x.ResealToken
+		}
+	}
+	return nil
+}
+
 type isRequest_Operation interface {
 	isRequest_Operation()
 }
@@ -322,9 +332,15 @@ type Request_InspectToken struct {
 	InspectToken *InspectTokenRequest `protobuf:"bytes,2,opt,name=inspect_token,json=inspectToken,proto3,oneof"`
 }
 
+type Request_ResealToken struct {
+	ResealToken *ResealTokenRequest `protobuf:"bytes,3,opt,name=reseal_token,json=resealToken,proto3,oneof"`
+}
+
 func (*Request_Onboard) isRequest_Operation() {}
 
 func (*Request_InspectToken) isRequest_Operation() {}
+
+func (*Request_ResealToken) isRequest_Operation() {}
 
 // Response is the result of a Request, of the same operation.
 type Response struct {
@@ -333,6 +349,7 @@ type Response struct {
 	//
 	//	*Response_Onboard
 	//	*Response_InspectToken
+	//	*Response_ResealToken
 	Result        isResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -393,6 +410,15 @@ func (x *Response) GetInspectToken() *InspectTokenResponse {
 	return nil
 }
 
+func (x *Response) GetResealToken() *ResealTokenResponse {
+	if x != nil {
+		if x, ok := x.Result.(*Response_ResealToken); ok {
+			return x.ResealToken
+		}
+	}
+	return nil
+}
+
 type isResponse_Result interface {
 	isResponse_Result()
 }
@@ -405,9 +431,15 @@ type Response_InspectToken struct {
 	InspectToken *InspectTokenResponse `protobuf:"bytes,2,opt,name=inspect_token,json=inspectToken,proto3,oneof"`
 }
 
+type Response_ResealToken struct {
+	ResealToken *ResealTokenResponse `protobuf:"bytes,3,opt,name=reseal_token,json=resealToken,proto3,oneof"`
+}
+
 func (*Response_Onboard) isResponse_Result() {}
 
 func (*Response_InspectToken) isResponse_Result() {}
+
+func (*Response_ResealToken) isResponse_Result() {}
 
 // OnboardRequest turns a Provider Credential into a Root Token.
 type OnboardRequest struct {
@@ -741,6 +773,103 @@ func (x *InspectTokenResponse) GetPermissions() []*Permission {
 	return nil
 }
 
+// ResealTokenRequest asks the Gateway to reseal a Service Token: to
+// re-encrypt it under the Gateway's current encryption key. The token
+// itself authorizes the request, since resealing changes none of its
+// claims.
+type ResealTokenRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// token is the Service Token to reseal. It must still open: valid, not
+	// expired, and sealed under a key that is not retired.
+	Token         string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResealTokenRequest) Reset() {
+	*x = ResealTokenRequest{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResealTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResealTokenRequest) ProtoMessage() {}
+
+func (x *ResealTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResealTokenRequest.ProtoReflect.Descriptor instead.
+func (*ResealTokenRequest) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ResealTokenRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+// ResealTokenResponse carries the resealed Service Token.
+type ResealTokenResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// token holds the same claims and signature as the request's token,
+	// sealed under the current encryption key.
+	Token         string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResealTokenResponse) Reset() {
+	*x = ResealTokenResponse{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResealTokenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResealTokenResponse) ProtoMessage() {}
+
+func (x *ResealTokenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResealTokenResponse.ProtoReflect.Descriptor instead.
+func (*ResealTokenResponse) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ResealTokenResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 // Permission grants verbs on resources, limited by the zone, name, type
 // and egress filters. An empty filter is left out and means "any"; an
 // empty resources means ["records"].
@@ -758,7 +887,7 @@ type Permission struct {
 
 func (x *Permission) Reset() {
 	*x = Permission{}
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[9]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -770,7 +899,7 @@ func (x *Permission) String() string {
 func (*Permission) ProtoMessage() {}
 
 func (x *Permission) ProtoReflect() protoreflect.Message {
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[9]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -783,7 +912,7 @@ func (x *Permission) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Permission.ProtoReflect.Descriptor instead.
 func (*Permission) Descriptor() ([]byte, []int) {
-	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{9}
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Permission) GetVerbs() []string {
@@ -843,7 +972,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[10]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +984,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[10]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +997,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{10}
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Error) GetCategory() Error_Category {
@@ -903,14 +1032,16 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\amessageJ\x04\b\x02\x10\x10\"S\n" +
 	"\fCallResponse\x122\n" +
 	"\bresponse\x18\x01 \x01(\v2\x14.dnsgate.v1.ResponseH\x00R\bresponseB\t\n" +
-	"\amessageJ\x04\b\x02\x10\x10\"\x96\x01\n" +
+	"\amessageJ\x04\b\x02\x10\x10\"\xdb\x01\n" +
 	"\aRequest\x126\n" +
 	"\aonboard\x18\x01 \x01(\v2\x1a.dnsgate.v1.OnboardRequestH\x00R\aonboard\x12F\n" +
-	"\rinspect_token\x18\x02 \x01(\v2\x1f.dnsgate.v1.InspectTokenRequestH\x00R\finspectTokenB\v\n" +
-	"\toperation\"\x96\x01\n" +
+	"\rinspect_token\x18\x02 \x01(\v2\x1f.dnsgate.v1.InspectTokenRequestH\x00R\finspectToken\x12C\n" +
+	"\freseal_token\x18\x03 \x01(\v2\x1e.dnsgate.v1.ResealTokenRequestH\x00R\vresealTokenB\v\n" +
+	"\toperation\"\xdc\x01\n" +
 	"\bResponse\x127\n" +
 	"\aonboard\x18\x01 \x01(\v2\x1b.dnsgate.v1.OnboardResponseH\x00R\aonboard\x12G\n" +
-	"\rinspect_token\x18\x02 \x01(\v2 .dnsgate.v1.InspectTokenResponseH\x00R\finspectTokenB\b\n" +
+	"\rinspect_token\x18\x02 \x01(\v2 .dnsgate.v1.InspectTokenResponseH\x00R\finspectToken\x12D\n" +
+	"\freseal_token\x18\x03 \x01(\v2\x1f.dnsgate.v1.ResealTokenResponseH\x00R\vresealTokenB\b\n" +
 	"\x06result\"\xd5\x01\n" +
 	"\x0eOnboardRequest\x12)\n" +
 	"\x10bootstrap_secret\x18\x01 \x01(\tR\x0fbootstrapSecret\x12\x1a\n" +
@@ -938,7 +1069,11 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\x03exp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x03exp\x88\x01\x01\x12\x1a\n" +
 	"\bprovider\x18\a \x01(\tR\bprovider\x128\n" +
 	"\vpermissions\x18\b \x03(\v2\x16.dnsgate.v1.PermissionR\vpermissionsB\x06\n" +
-	"\x04_exp\"\x9a\x01\n" +
+	"\x04_exp\"*\n" +
+	"\x12ResealTokenRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"+\n" +
+	"\x13ResealTokenResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\x9a\x01\n" +
 	"\n" +
 	"Permission\x12\x14\n" +
 	"\x05verbs\x18\x01 \x03(\tR\x05verbs\x12\x1c\n" +
@@ -980,7 +1115,7 @@ func file_dnsgate_v1_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_dnsgate_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dnsgate_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_dnsgate_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_dnsgate_v1_gateway_proto_goTypes = []any{
 	(Error_Category)(0),           // 0: dnsgate.v1.Error.Category
 	(*CallRequest)(nil),           // 1: dnsgate.v1.CallRequest
@@ -992,32 +1127,36 @@ var file_dnsgate_v1_gateway_proto_goTypes = []any{
 	(*OnboardResponse)(nil),       // 7: dnsgate.v1.OnboardResponse
 	(*InspectTokenRequest)(nil),   // 8: dnsgate.v1.InspectTokenRequest
 	(*InspectTokenResponse)(nil),  // 9: dnsgate.v1.InspectTokenResponse
-	(*Permission)(nil),            // 10: dnsgate.v1.Permission
-	(*Error)(nil),                 // 11: dnsgate.v1.Error
-	(*durationpb.Duration)(nil),   // 12: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*ResealTokenRequest)(nil),    // 10: dnsgate.v1.ResealTokenRequest
+	(*ResealTokenResponse)(nil),   // 11: dnsgate.v1.ResealTokenResponse
+	(*Permission)(nil),            // 12: dnsgate.v1.Permission
+	(*Error)(nil),                 // 13: dnsgate.v1.Error
+	(*durationpb.Duration)(nil),   // 14: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
 }
 var file_dnsgate_v1_gateway_proto_depIdxs = []int32{
 	3,  // 0: dnsgate.v1.CallRequest.request:type_name -> dnsgate.v1.Request
 	4,  // 1: dnsgate.v1.CallResponse.response:type_name -> dnsgate.v1.Response
 	5,  // 2: dnsgate.v1.Request.onboard:type_name -> dnsgate.v1.OnboardRequest
 	8,  // 3: dnsgate.v1.Request.inspect_token:type_name -> dnsgate.v1.InspectTokenRequest
-	7,  // 4: dnsgate.v1.Response.onboard:type_name -> dnsgate.v1.OnboardResponse
-	9,  // 5: dnsgate.v1.Response.inspect_token:type_name -> dnsgate.v1.InspectTokenResponse
-	6,  // 6: dnsgate.v1.OnboardRequest.credential:type_name -> dnsgate.v1.Credential
-	12, // 7: dnsgate.v1.OnboardRequest.expires:type_name -> google.protobuf.Duration
-	13, // 8: dnsgate.v1.InspectTokenResponse.iat:type_name -> google.protobuf.Timestamp
-	13, // 9: dnsgate.v1.InspectTokenResponse.nbf:type_name -> google.protobuf.Timestamp
-	13, // 10: dnsgate.v1.InspectTokenResponse.exp:type_name -> google.protobuf.Timestamp
-	10, // 11: dnsgate.v1.InspectTokenResponse.permissions:type_name -> dnsgate.v1.Permission
-	0,  // 12: dnsgate.v1.Error.category:type_name -> dnsgate.v1.Error.Category
-	1,  // 13: dnsgate.v1.GatewayService.Call:input_type -> dnsgate.v1.CallRequest
-	2,  // 14: dnsgate.v1.GatewayService.Call:output_type -> dnsgate.v1.CallResponse
-	14, // [14:15] is the sub-list for method output_type
-	13, // [13:14] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	10, // 4: dnsgate.v1.Request.reseal_token:type_name -> dnsgate.v1.ResealTokenRequest
+	7,  // 5: dnsgate.v1.Response.onboard:type_name -> dnsgate.v1.OnboardResponse
+	9,  // 6: dnsgate.v1.Response.inspect_token:type_name -> dnsgate.v1.InspectTokenResponse
+	11, // 7: dnsgate.v1.Response.reseal_token:type_name -> dnsgate.v1.ResealTokenResponse
+	6,  // 8: dnsgate.v1.OnboardRequest.credential:type_name -> dnsgate.v1.Credential
+	14, // 9: dnsgate.v1.OnboardRequest.expires:type_name -> google.protobuf.Duration
+	15, // 10: dnsgate.v1.InspectTokenResponse.iat:type_name -> google.protobuf.Timestamp
+	15, // 11: dnsgate.v1.InspectTokenResponse.nbf:type_name -> google.protobuf.Timestamp
+	15, // 12: dnsgate.v1.InspectTokenResponse.exp:type_name -> google.protobuf.Timestamp
+	12, // 13: dnsgate.v1.InspectTokenResponse.permissions:type_name -> dnsgate.v1.Permission
+	0,  // 14: dnsgate.v1.Error.category:type_name -> dnsgate.v1.Error.Category
+	1,  // 15: dnsgate.v1.GatewayService.Call:input_type -> dnsgate.v1.CallRequest
+	2,  // 16: dnsgate.v1.GatewayService.Call:output_type -> dnsgate.v1.CallResponse
+	16, // [16:17] is the sub-list for method output_type
+	15, // [15:16] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_dnsgate_v1_gateway_proto_init() }
@@ -1034,10 +1173,12 @@ func file_dnsgate_v1_gateway_proto_init() {
 	file_dnsgate_v1_gateway_proto_msgTypes[2].OneofWrappers = []any{
 		(*Request_Onboard)(nil),
 		(*Request_InspectToken)(nil),
+		(*Request_ResealToken)(nil),
 	}
 	file_dnsgate_v1_gateway_proto_msgTypes[3].OneofWrappers = []any{
 		(*Response_Onboard)(nil),
 		(*Response_InspectToken)(nil),
+		(*Response_ResealToken)(nil),
 	}
 	file_dnsgate_v1_gateway_proto_msgTypes[4].OneofWrappers = []any{}
 	file_dnsgate_v1_gateway_proto_msgTypes[8].OneofWrappers = []any{}
@@ -1047,7 +1188,7 @@ func file_dnsgate_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dnsgate_v1_gateway_proto_rawDesc), len(file_dnsgate_v1_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
