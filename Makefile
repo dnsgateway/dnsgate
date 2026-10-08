@@ -58,8 +58,11 @@ tools:
 
 .PHONY: build ## Build
 build:
-	CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) go build $(GO_LDFLAGS) \
-		-o bin/...-$(ARCH) ./cmd/...
+	@for cmd in $(notdir $(wildcard cmd/*)); do \
+		echo "building bin/$$cmd-$(ARCH)"; \
+		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build $(GO_LDFLAGS) \
+			-o bin/$$cmd-$(ARCH) ./cmd/$$cmd || exit 1; \
+	done
 
 .PHONY: run
 run: ## Run
