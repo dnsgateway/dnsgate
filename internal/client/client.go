@@ -25,49 +25,38 @@ func New(conn grpc.ClientConnInterface) *Client {
 
 // Onboard turns a Provider Credential into a Root Token.
 func (c *Client) Onboard(ctx context.Context, req *dnsgatev1.OnboardRequest) (*dnsgatev1.OnboardResponse, error) {
-	resp, err := c.call(ctx, &dnsgatev1.Request{Operation: &dnsgatev1.Request_Onboard{Onboard: req}})
-	if err != nil {
-		return nil, err
-	}
-
-	out := resp.GetOnboard()
-	if out == nil {
-		return nil, errors.New("gateway answered onboard with another operation")
-	}
-
-	return out, nil
+	return roundTrip(ctx, c, "onboard",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_Onboard{Onboard: req}},
+		(*dnsgatev1.Response).GetOnboard)
 }
 
 // InspectToken asks the Gateway to show the content of tok.
 func (c *Client) InspectToken(ctx context.Context, tok string) (*dnsgatev1.InspectTokenResponse, error) {
-	resp, err := c.call(ctx, &dnsgatev1.Request{Operation: &dnsgatev1.Request_InspectToken{
-		InspectToken: &dnsgatev1.InspectTokenRequest{Token: tok},
-	}})
-	if err != nil {
-		return nil, err
-	}
-
-	out := resp.GetInspectToken()
-	if out == nil {
-		return nil, errors.New("gateway answered inspect with another operation")
-	}
-
-	return out, nil
+	return roundTrip(ctx, c, "inspect",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_InspectToken{InspectToken: &dnsgatev1.InspectTokenRequest{Token: tok}}},
+		(*dnsgatev1.Response).GetInspectToken)
 }
 
 // ResealToken asks the Gateway to reseal tok under its current encryption
 // key.
 func (c *Client) ResealToken(ctx context.Context, tok string) (*dnsgatev1.ResealTokenResponse, error) {
-	resp, err := c.call(ctx, &dnsgatev1.Request{Operation: &dnsgatev1.Request_ResealToken{
-		ResealToken: &dnsgatev1.ResealTokenRequest{Token: tok},
-	}})
+	return roundTrip(ctx, c, "reseal",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_ResealToken{ResealToken: &dnsgatev1.ResealTokenRequest{Token: tok}}},
+		(*dnsgatev1.Response).GetResealToken)
+}
+
+// roundTrip sends req, named op in errors, and returns the result that
+// result picks from the Response. A Response holding another operation's
+// result is an error.
+func roundTrip[R any](ctx context.Context, c *Client, op string, req *dnsgatev1.Request, result func(*dnsgatev1.Response) *R) (*R, error) {
+	resp, err := c.call(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	out := resp.GetResealToken()
+	out := result(resp)
 	if out == nil {
-		return nil, errors.New("gateway answered reseal with another operation")
+		return nil, fmt.Errorf("gateway answered %s with another operation", op)
 	}
 
 	return out, nil
