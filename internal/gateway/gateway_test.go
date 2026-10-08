@@ -37,6 +37,7 @@ const (
 // harness is a Gateway served in-process over an in-memory listener.
 type harness struct {
 	client *client.Client
+	api    dnsgatev1.GatewayServiceClient
 	audit  *syncBuffer
 	now    time.Time
 }
@@ -106,6 +107,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	h.client = client.New(conn)
+	h.api = dnsgatev1.NewGatewayServiceClient(conn)
 
 	return h
 }
@@ -438,6 +440,36 @@ func TestInspectRejectsInvalidOrExpiredTokens(t *testing.T) {
 		if e["event"] != "token.inspect" || e["result"] != "denied" || e["category"] != "unauthenticated" {
 			t.Errorf("audit event = %v, want a denied token.inspect", e)
 		}
+	}
+}
+
+func TestCallRejectsStreamsWithoutARequest(t *testing.T) {
+	for name, msgs := range map[string][]*dnsgatev1.CallRequest{
+		"no message":   nil,
+		"no request":   {{}},
+		"no operation": {{Message: &dnsgatev1.CallRequest_Request{Request: &dnsgatev1.Request{}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+
+			stream, err := h.api.Call(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, m := range msgs {
+				if err := stream.Send(m); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := stream.CloseSend(); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = stream.Recv()
+			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
+		})
 	}
 }
 

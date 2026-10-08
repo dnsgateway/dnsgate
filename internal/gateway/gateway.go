@@ -5,6 +5,8 @@ package gateway
 import (
 	"context"
 	"crypto/rand"
+	"errors"
+	"io"
 	"log/slog"
 	"time"
 
@@ -75,6 +77,10 @@ func New(cfg Config) *Gateway {
 // Call implements GatewayService.Call.
 func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dnsgatev1.CallResponse]) error {
 	msg, err := stream.Recv()
+	if errors.Is(err, io.EOF) {
+		return invalidRequest("the stream ended before a request")
+	}
+
 	if err != nil {
 		return err
 	}
