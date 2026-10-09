@@ -29,11 +29,11 @@ func rootPermissions() []token.Permission {
 // plaintext credential lives only in req and the claims being sealed.
 func (g *Gateway) onboard(r *request, req *dnsgatev1.OnboardRequest) (*dnsgatev1.Response, error) {
 	if !g.checkBootstrapSecret(req.GetBootstrapSecret()) {
-		return nil, g.deny(r, audit.EventOnboard, unauthenticated("wrong or missing bootstrap secret"))
+		return nil, g.deny(r, audit.Event{Event: audit.EventOnboard}, unauthenticated("wrong or missing bootstrap secret"))
 	}
 
 	if err := checkOnboardRequest(req); err != nil {
-		return nil, g.deny(r, audit.EventOnboard, err)
+		return nil, g.deny(r, audit.Event{Event: audit.EventOnboard}, err)
 	}
 
 	now := g.now()

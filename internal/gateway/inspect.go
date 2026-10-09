@@ -11,7 +11,7 @@ import (
 func (g *Gateway) inspectToken(r *request, req *dnsgatev1.InspectTokenRequest) (*dnsgatev1.Response, error) {
 	claims, err := g.codec.Open(r.ctx, req.GetToken())
 	if err != nil {
-		return nil, g.deny(r, audit.EventTokenInspect, unauthenticated("invalid service token"))
+		return nil, g.deny(r, audit.Event{Event: audit.EventTokenInspect}, unauthenticated("invalid service token"))
 	}
 
 	out := &dnsgatev1.InspectTokenResponse{

@@ -10,43 +10,28 @@ import (
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
-	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
 // listRecords lists the RRsets of a zone the token covers. The token needs
 // list on records in the zone; each RRset is then filtered by the names
 // and types filters of the rules that allow list there.
 func (g *Gateway) listRecords(r *request, req *dnsgatev1.ListRecordsRequest) (*dnsgatev1.Response, error) {
-	c := newDNSCall(r, audit.EventRecordsList, permission.VerbList)
-
-	claims, err := g.openToken(c, req.GetToken())
+	c, err := g.startDNSCall(r, audit.EventRecordsList, req,
+		permission.Request{Verb: permission.VerbList, Resource: permission.ResourceRecords, Zone: req.GetZone()}, checkZoneOf)
 	if err != nil {
 		return nil, err
 	}
 
-	zone, err := checkZone(req.GetZone())
-	if err != nil {
-		return nil, g.refuse(c, audit.ResultDenied, err)
-	}
-
-	c.event.Zone = zone
-
-	pr := permission.Request{Verb: permission.VerbList, Resource: permission.ResourceRecords, Zone: zone}
-
-	pr.Egress, err = g.authorize(c, claims, req.GetEgress(), pr)
+	records, err := g.readRecords(c, dnsprovider.RecordFilter{})
 	if err != nil {
 		return nil, err
 	}
 
-	records, err := g.readRecords(c, claims, zone, dnsprovider.RecordFilter{})
-	if err != nil {
-		return nil, err
-	}
-
-	sets := recordSets(zone, records, func(name, typ string) bool {
+	pr := c.perm
+	sets := recordSets(pr.Zone, records, func(name, typ string) bool {
 		pr.Name, pr.Type = name, typ
 
-		return permission.Allows(claims.Permissions, pr)
+		return permission.Allows(c.claims.Permissions, pr)
 	})
 
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_ListRecords{
@@ -57,38 +42,18 @@ func (g *Gateway) listRecords(r *request, req *dnsgatev1.ListRecordsRequest) (*d
 // getRecord reads one RRset. The token needs get on records for its zone,
 // name and type.
 func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsgatev1.Response, error) {
-	c := newDNSCall(r, audit.EventRecordsGet, permission.VerbGet)
-
-	claims, err := g.openToken(c, req.GetToken())
+	c, err := g.startDNSCall(r, audit.EventRecordsGet, req, permission.Request{
+		Verb: permission.VerbGet, Resource: permission.ResourceRecords, Zone: req.GetZone(), Name: req.GetName(), Type: req.GetType(),
+	}, checkRecordOf)
 	if err != nil {
 		return nil, err
 	}
 
-	zone, err := checkZone(req.GetZone())
-	if err != nil {
-		return nil, g.refuse(c, audit.ResultDenied, err)
-	}
-
-	name, err := checkRecordName(req.GetName())
-	if err != nil {
-		return nil, g.refuse(c, audit.ResultDenied, err)
-	}
-
-	typ, err := checkType(req.GetType())
-	if err != nil {
-		return nil, g.refuse(c, audit.ResultDenied, err)
-	}
-
-	c.event.Zone, c.event.RecordName, c.event.RecordType = zone, name, typ
-
-	pr := permission.Request{Verb: permission.VerbGet, Resource: permission.ResourceRecords, Zone: zone, Name: name, Type: typ}
-	if _, err := g.authorize(c, claims, req.GetEgress(), pr); err != nil {
-		return nil, err
-	}
+	zone, name, typ := c.perm.Zone, c.perm.Name, c.perm.Type
 
 	// Contains narrows the Provider's answer to names ending in this one;
 	// the exact name is matched below.
-	records, err := g.readRecords(c, claims, zone, dnsprovider.RecordFilter{Type: typ, Contains: absoluteName(zone, name) + "."})
+	records, err := g.readRecords(c, dnsprovider.RecordFilter{Type: typ, Contains: absoluteName(zone, name) + "."})
 	if err != nil {
 		return nil, err
 	}
@@ -103,20 +68,15 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 	}}, nil
 }
 
-// readRecords reads the records of zone that match f from the token's
+// readRecords reads the records of the call's zone that match f from its
 // Provider.
-func (g *Gateway) readRecords(c *dnsCall, claims token.Claims, zone string, f dnsprovider.RecordFilter) ([]dnsprovider.Record, error) {
-	p, err := g.connect(c, claims)
-	if err != nil {
-		return nil, err
-	}
-
-	z, err := p.Zone(c.ctx, zone)
+func (g *Gateway) readRecords(c *dnsCall, f dnsprovider.RecordFilter) ([]dnsprovider.Record, error) {
+	z, err := c.provider.Zone(c.ctx, c.perm.Zone)
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}
 
-	set, err := p.Records(c.ctx, z, f)
+	set, err := c.provider.Records(c.ctx, z, f)
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}

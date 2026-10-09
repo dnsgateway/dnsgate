@@ -16,7 +16,7 @@ func (g *Gateway) resealToken(r *request, req *dnsgatev1.ResealTokenRequest) (*d
 
 	switch {
 	case errors.Is(err, token.ErrInvalid):
-		return nil, g.deny(r, audit.EventTokenReseal, unauthenticated("invalid service token"))
+		return nil, g.deny(r, audit.Event{Event: audit.EventTokenReseal}, unauthenticated("invalid service token"))
 	case err != nil:
 		g.log.Error("resealing token", "request_id", r.id, "error", err)
 

@@ -12,6 +12,37 @@ const (
 	maxTypeLength  = 16
 )
 
+// checkZoneOf checks the zone of pr and puts it in the form the Gateway
+// compares.
+func checkZoneOf(pr *permission.Request) error {
+	zone, err := checkZone(pr.Zone)
+	pr.Zone = zone
+
+	return err
+}
+
+// checkRecordOf checks the zone, record name and type of pr and puts them
+// in the form the Gateway compares.
+func checkRecordOf(pr *permission.Request) error {
+	if err := checkZoneOf(pr); err != nil {
+		return err
+	}
+
+	name, err := checkRecordName(pr.Name)
+	if err != nil {
+		return err
+	}
+
+	typ, err := checkType(pr.Type)
+	if err != nil {
+		return err
+	}
+
+	pr.Name, pr.Type = name, typ
+
+	return nil
+}
+
 // checkZone returns a zone name as the Gateway compares it, in lower case
 // without a trailing dot, or an invalid request error.
 func checkZone(name string) (string, error) {

@@ -12,37 +12,23 @@ import (
 // covers. The token needs list on zones; each zone is then filtered by the
 // token's zones filter.
 func (g *Gateway) listZones(r *request, req *dnsgatev1.ListZonesRequest) (*dnsgatev1.Response, error) {
-	c := newDNSCall(r, audit.EventZonesList, permission.VerbList)
-
-	claims, err := g.openToken(c, req.GetToken())
+	c, err := g.startDNSCall(r, audit.EventZonesList, req,
+		permission.Request{Verb: permission.VerbList, Resource: permission.ResourceZones}, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	pr := permission.Request{Verb: permission.VerbList, Resource: permission.ResourceZones}
-
-	egress, err := g.authorize(c, claims, req.GetEgress(), pr)
-	if err != nil {
-		return nil, err
-	}
-
-	p, err := g.connect(c, claims)
-	if err != nil {
-		return nil, err
-	}
-
-	zones, err := p.Zones(r.ctx, dnsprovider.ZoneFilter{})
+	zones, err := c.provider.Zones(c.ctx, dnsprovider.ZoneFilter{})
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}
 
 	out := &dnsgatev1.ListZonesResponse{}
 
-	pr.Egress = egress
-
+	pr := c.perm
 	for _, z := range zones {
 		pr.Zone = z.Name
-		if permission.Allows(claims.Permissions, pr) {
+		if permission.Allows(c.claims.Permissions, pr) {
 			out.Zones = append(out.Zones, zoneToAPI(z))
 		}
 	}
@@ -52,31 +38,13 @@ func (g *Gateway) listZones(r *request, req *dnsgatev1.ListZonesRequest) (*dnsga
 
 // getZone reads one zone. The token needs get on zones for it.
 func (g *Gateway) getZone(r *request, req *dnsgatev1.GetZoneRequest) (*dnsgatev1.Response, error) {
-	c := newDNSCall(r, audit.EventZonesGet, permission.VerbGet)
-
-	claims, err := g.openToken(c, req.GetToken())
+	c, err := g.startDNSCall(r, audit.EventZonesGet, req,
+		permission.Request{Verb: permission.VerbGet, Resource: permission.ResourceZones, Zone: req.GetZone()}, checkZoneOf)
 	if err != nil {
 		return nil, err
 	}
 
-	zone, err := checkZone(req.GetZone())
-	if err != nil {
-		return nil, g.refuse(c, audit.ResultDenied, err)
-	}
-
-	c.event.Zone = zone
-
-	pr := permission.Request{Verb: permission.VerbGet, Resource: permission.ResourceZones, Zone: zone}
-	if _, err := g.authorize(c, claims, req.GetEgress(), pr); err != nil {
-		return nil, err
-	}
-
-	p, err := g.connect(c, claims)
-	if err != nil {
-		return nil, err
-	}
-
-	z, err := p.Zone(r.ctx, zone)
+	z, err := c.provider.Zone(c.ctx, c.perm.Zone)
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}

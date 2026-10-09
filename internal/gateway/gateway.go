@@ -166,10 +166,14 @@ func (g *Gateway) writeAudit(r *request, e audit.Event) error {
 	return err
 }
 
-// deny audits a refused request as event and returns err, the Gateway
-// error the client gets. The request is refused even if its event is lost.
-func (g *Gateway) deny(r *request, event audit.Name, err error) error {
-	_ = g.writeAudit(r, audit.Event{Event: event, Result: audit.ResultDenied, Category: category(err)})
+// deny audits a refused request as e, denied with the category of err,
+// and returns err, the Gateway error the client gets. The request is
+// refused even if its event is lost.
+func (g *Gateway) deny(r *request, e audit.Event, err error) error {
+	e.Result = audit.ResultDenied
+	e.Category = category(err)
+
+	_ = g.writeAudit(r, e)
 
 	return err
 }
