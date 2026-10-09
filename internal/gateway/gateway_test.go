@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -47,8 +48,13 @@ type harness struct {
 	// logs holds the Gateway's operational logs.
 	logs *syncBuffer
 	now  time.Time
-	// fake is the Provider the Gateway calls, as "cloudflare".
+	// fake is the Provider the Gateway calls, as "cloudflare", unless
+	// providers is set.
 	fake *providertest.Provider
+	// providers, if set, are the Providers the Gateway calls, through
+	// the Egress Transport egress.
+	providers dnsprovider.Registry
+	egress    http.RoundTripper
 	// keys are the keys of the Gateway last served.
 	keys keys.Source
 
@@ -140,11 +146,17 @@ func (h *harness) rotate(t *testing.T, retireAt time.Time) string {
 func (h *harness) serve(t *testing.T, src keys.Source) {
 	t.Helper()
 
+	providers := h.providers
+	if providers == nil {
+		providers = dnsprovider.Registry{"cloudflare": h.fake.Factory()}
+	}
+
 	gw := gateway.New(gateway.Config{
 		Keys:            src,
 		BootstrapSecret: token.NewSecret(bootstrapSecret),
 		Audit:           audit.New(h.auditTo),
-		Providers:       dnsprovider.Registry{"cloudflare": h.fake.Factory()},
+		Providers:       providers,
+		EgressTransport: h.egress,
 		Logger:          slog.New(slog.NewTextHandler(h.logs, nil)),
 		Now:             func() time.Time { return h.now },
 	})

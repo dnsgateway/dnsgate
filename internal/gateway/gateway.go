@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/dnsgateway/dnsprovider"
@@ -36,9 +37,14 @@ type Config struct {
 	// Audit receives the audit events.
 	Audit *audit.Log
 	// Providers builds the Provider of a token from its Provider
-	// Credential; nil means provider.Registry(). Each Provider sends its
-	// requests through Gateway Egress, with strict TLS verification.
+	// Credential; nil means provider.Registry().
 	Providers dnsprovider.Registry
+	// EgressTransport sends the Providers' requests through Gateway
+	// Egress. nil means each Provider's own transport, which verifies
+	// TLS strictly against the system roots and bounds each request;
+	// a transport given here brings its own TLS settings and timeouts.
+	// Tests point it at a fake Provider API.
+	EgressTransport http.RoundTripper
 	// Logger receives operational logs; nil discards them.
 	Logger *slog.Logger
 	// Now is the Gateway's clock; nil means time.Now.
@@ -52,6 +58,7 @@ type Gateway struct {
 	codec     *token.Codec
 	bootstrap token.Secret
 	providers dnsprovider.Registry
+	egress    http.RoundTripper
 	audit     *audit.Log
 	log       *slog.Logger
 	now       func() time.Time
@@ -64,6 +71,7 @@ func New(cfg Config) *Gateway {
 	g := &Gateway{
 		bootstrap: cfg.BootstrapSecret,
 		providers: cfg.Providers,
+		egress:    cfg.EgressTransport,
 		audit:     cfg.Audit,
 		log:       cfg.Logger,
 		now:       cfg.Now,

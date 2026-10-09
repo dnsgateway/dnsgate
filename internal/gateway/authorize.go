@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/dnsgateway/dnsprovider"
@@ -93,7 +94,12 @@ func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1
 // caller drops when its request is done. A failed build is logged by its
 // reason alone: the Provider's error may quote the credential.
 func (g *Gateway) connect(c *dnsCall, claims token.Claims) (dnsprovider.Provider, error) {
-	p, err := g.providers.New(claims.Provider, provider.CredentialFields(claims.Provider, claims.Credential.Value.Reveal()))
+	var opts []dnsprovider.Option
+	if g.egress != nil {
+		opts = append(opts, dnsprovider.WithHTTPClient(&http.Client{Transport: g.egress}))
+	}
+
+	p, err := g.providers.New(claims.Provider, provider.CredentialFields(claims.Provider, claims.Credential.Value.Reveal()), opts...)
 	if err != nil {
 		reason := "provider_rejected_credential"
 		if _, ok := g.providers[claims.Provider]; !ok {
