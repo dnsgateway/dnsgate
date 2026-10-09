@@ -154,10 +154,12 @@ Presenting any token that holds `create` on `tokens` lets you issue a **Derived 
 
 - Every Permission dimension (verbs, resources, zones, names, types, egress) must be covered by the parent's Permissions. A filter left out of the child means "any", so it is accepted only if the parent's matching filter is "any" too. A child that leaves out `resources` means `["records"]`.
 - A child can hold `create` on `tokens` only if its parent does.
-- The child's `exp` can be no later than the parent's. A child of a parent with no expiry may also have none.
+- The child's `exp` can be no later than the parent's. A child of a parent with no expiry may also have none; a child of a parent with an expiry must set one.
+- Each combination of a child rule's verb, resource, egress, zone and type must be allowed by one parent rule. Its name patterns may be covered by the name patterns of all those parent rules together: `*` and `*.**` together cover `**`. Pattern containment is decided exactly.
+- A refused child fails as a narrowing violation naming the dimension it exceeds, such as `zones` or `exp`.
 - From v2, a child keeps its parent's Identity Binding and may only add claims to it ([oidc.md](oidc.md)).
 
-Chains can go several levels deep. Each token carries the IDs of all its ancestors in `ancestors`.
+Chains can go up to eight Derived Tokens below the Root Token: a token with eight ancestors cannot issue tokens. Each token carries the IDs of all its ancestors in `ancestors`, root first. Issuing writes a `token.create` audit event naming the parent's `jti`, the new `jti` and the new token's Service Account.
 
 ## Revocation
 
@@ -510,4 +512,3 @@ A Service Token can be bound to a workload's OIDC identity: Kubernetes ServiceAc
 
 - Exact claim schema and protobuf API definition.
 - Relay framing inside the gRPC stream: OPEN/DATA/CLOSE messages, half-close, flow control, timeouts.
-- Maximum ancestor chain depth.
