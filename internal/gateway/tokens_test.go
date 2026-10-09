@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -166,6 +167,210 @@ func TestCreateTokenRejectsWiderPermissions(t *testing.T) {
 		})
 		wantNarrowingViolation(t, err, "verbs")
 	})
+}
+
+// issuing is perms and a rule granting create on tokens, so that a token
+// holding them may issue Derived Tokens.
+func issuing(perms ...token.Permission) []token.Permission {
+	return append(perms, token.Permission{Verbs: []string{"create"}, Resources: []string{"tokens"}})
+}
+
+// narrowingCase is a Derived Token request under a Parent Token, and its
+// outcome: want is "" if the token is issued, else the dimension of the
+// narrowing violation; refused is the category of any other refusal.
+type narrowingCase struct {
+	parent  []token.Permission
+	derived []*dnsgatev1.Permission
+	want    string
+	refused dnsgatev1.Error_Category
+}
+
+// check asks for the Derived Token of tc and checks its outcome.
+func (tc narrowingCase) check(t *testing.T, h *harness) {
+	t.Helper()
+
+	resp, err := h.client.CreateToken(t.Context(), &dnsgatev1.CreateTokenRequest{
+		Token: h.mint(t, nil, tc.parent...), Sub: "app", Permissions: tc.derived,
+	})
+
+	switch {
+	case tc.refused != dnsgatev1.Error_CATEGORY_UNSPECIFIED:
+		if got := dnsgatev1.ErrorDetail(status.Convert(err)).GetCategory(); got != tc.refused {
+			t.Errorf("CreateToken error = %v, want category %v", err, tc.refused)
+		}
+	case tc.want != "":
+		wantNarrowingViolation(t, err, tc.want)
+	case err != nil:
+		t.Errorf("CreateToken: %v", err)
+	}
+
+	if (err == nil) != (resp.GetToken() != "") {
+		t.Errorf("CreateToken returned token %q with error %v", resp.GetToken(), err)
+	}
+}
+
+func TestNarrowingCoversNamePatterns(t *testing.T) {
+	h := newHarness(t)
+
+	for _, tc := range []struct {
+		parent  []string
+		derived string
+		want    bool
+	}{
+		{[]string{"@"}, "@", true},
+		{[]string{"@"}, "www", false},
+		{[]string{"www"}, "@", false},
+		{[]string{"www"}, "www", true},
+		{[]string{"WWW"}, "www", true},
+		{[]string{"www"}, "*", false},
+		{[]string{"*"}, "www", true},
+		{[]string{"*"}, "@", false},
+		{[]string{"*"}, "*", true},
+		{[]string{"*"}, "**", false},
+		{[]string{"*"}, "www.apps", false},
+		{[]string{"**"}, "@", false},
+		{[]string{"**"}, "www", true},
+		{[]string{"**"}, "*", true},
+		{[]string{"**"}, "a.b.c", true},
+		{[]string{"**"}, "**.*", true},
+		{[]string{"*.apps"}, "www.apps", true},
+		{[]string{"*.apps"}, "*.apps", true},
+		{[]string{"*.apps"}, "**.apps", false},
+		{[]string{"*.apps"}, "apps", false},
+		{[]string{"**.apps"}, "*.apps", true},
+		{[]string{"**.apps"}, "a.*.apps", true},
+		{[]string{"**.apps"}, "**.apps", true},
+		{[]string{"**.apps"}, "apps", false},
+		{[]string{"**.apps"}, "**", false},
+		{[]string{"*.**"}, "**.**", true},
+		{[]string{"*.**"}, "**", false},
+		{[]string{"**.**"}, "*.**", true},
+		{[]string{"a.**.z"}, "a.b.*.z", true},
+		{[]string{"a.**.z"}, "a.z", false},
+		{[]string{"_acme-challenge.**"}, "_acme-challenge", false},
+		{[]string{"_acme-challenge", "_acme-challenge.**"}, "_acme-challenge", true},
+		// A parent rule that leaves names out allows every name.
+		{nil, "www", true},
+
+		// A pattern may be covered only by several parent patterns together.
+		{[]string{"@", "**"}, "@", true},
+		{[]string{"*", "*.**"}, "**", true},
+		{[]string{"*", "*.*"}, "**", false},
+		{[]string{"www.*", "*.*"}, "*.*", true},
+		{[]string{"a.*", "*.b"}, "*.*", false},
+	} {
+		t.Run(fmt.Sprintf("%q covers %q", tc.parent, tc.derived), func(t *testing.T) {
+			want := "names"
+			if tc.want {
+				want = ""
+			}
+
+			narrowingCase{
+				parent:  issuing(token.Permission{Verbs: []string{"get"}, Names: tc.parent}),
+				derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Names: []string{tc.derived}}},
+				want:    want,
+			}.check(t, h)
+		})
+	}
+}
+
+func TestNarrowingCoversEachDimension(t *testing.T) {
+	h := newHarness(t)
+
+	root := []token.Permission{{
+		Verbs:     []string{"get", "list", "create", "update", "patch", "delete"},
+		Resources: []string{"zones", "records", "tokens"},
+		Zones:     []string{"*"},
+		Names:     []string{"@", "**"},
+		Types:     []string{"*"},
+		Egress:    []string{"gateway", "agent"},
+	}}
+	records := issuing(token.Permission{
+		Verbs:  []string{"get", "list"},
+		Zones:  []string{"example.com"},
+		Names:  []string{"**.apps"},
+		Types:  []string{"A", "TXT"},
+		Egress: []string{"gateway"},
+	})
+
+	for name, tc := range map[string]narrowingCase{
+		"root covers itself": {parent: root, derived: []*dnsgatev1.Permission{{
+			Verbs:     []string{"get", "list", "create", "update", "patch", "delete"},
+			Resources: []string{"zones", "records", "tokens"},
+			Zones:     []string{"*"}, Names: []string{"@", "**"}, Types: []string{"*"}, Egress: []string{"gateway", "agent"},
+		}}},
+		"root covers every filter left out": {parent: root, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}}}},
+		"root covers tokens":                {parent: root, derived: []*dnsgatev1.Permission{{Verbs: []string{"create"}, Resources: []string{"tokens"}}}},
+		"filters left out on both": {
+			parent:  issuing(token.Permission{Verbs: []string{"get"}}),
+			derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}}},
+		},
+		// A request must hold rules, each with verbs.
+		"no derived rules":           {parent: records, refused: dnsgatev1.Error_CATEGORY_INVALID_REQUEST},
+		"derived rule without verbs": {parent: records, derived: []*dnsgatev1.Permission{{Zones: []string{"example.org"}}}, refused: dnsgatev1.Error_CATEGORY_INVALID_REQUEST},
+		"equal rules": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get", "list"}, Zones: []string{"example.com"}, Names: []string{"**.apps"}, Types: []string{"A", "TXT"}, Egress: []string{"gateway"},
+		}}},
+		"narrower on every filter": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Resources: []string{"records"}, Zones: []string{"Example.COM."},
+			Names: []string{"www.apps", "*.*.apps"}, Types: []string{"txt"}, Egress: []string{"gateway"},
+		}}},
+		"rules add up across parent rules": {
+			parent: issuing(
+				token.Permission{Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"*"}},
+				token.Permission{Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"*.**"}},
+				token.Permission{Verbs: []string{"list"}, Zones: []string{"example.com"}},
+			),
+			derived: []*dnsgatev1.Permission{{Verbs: []string{"get", "list"}, Zones: []string{"example.com"}, Names: []string{"**"}}},
+		},
+
+		"other verb":     {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"delete"}, Zones: []string{"example.com"}}}, want: "verbs"},
+		"other resource": {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Resources: []string{"zones"}}}, want: "resources"},
+		// A parent without create on tokens issues no tokens at all.
+		"create on tokens without the parent having it": {
+			parent:  []token.Permission{{Verbs: []string{"create"}, Resources: []string{"records"}}},
+			derived: []*dnsgatev1.Permission{{Verbs: []string{"create"}, Resources: []string{"tokens"}}},
+			refused: dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
+		},
+		"resources left out means records": {
+			parent:  issuing(token.Permission{Verbs: []string{"get"}, Resources: []string{"zones"}}),
+			derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}}},
+			want:    "resources",
+		},
+		"egress left out is any": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"www.apps"}, Types: []string{"A"},
+		}}, want: "egress"},
+		"other egress":          {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Egress: []string{"agent"}}}, want: "egress"},
+		"zones left out is any": {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Egress: []string{"gateway"}}}, want: "zones"},
+		"zone star":             {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Zones: []string{"*"}, Egress: []string{"gateway"}}}, want: "zones"},
+		"other zone":            {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Zones: []string{"example.org"}, Egress: []string{"gateway"}}}, want: "zones"},
+		"types left out is any": {parent: records, derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Zones: []string{"example.com"}, Egress: []string{"gateway"}}}, want: "types"},
+		"type star": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"*"}, Egress: []string{"gateway"},
+		}}, want: "types"},
+		"other type": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"MX"}, Egress: []string{"gateway"},
+		}}, want: "types"},
+		"names left out is any": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"A"}, Egress: []string{"gateway"},
+		}}, want: "names"},
+		"wider name": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"A"}, Names: []string{"**"}, Egress: []string{"gateway"},
+		}}, want: "names"},
+		"apex outside the patterns": {parent: records, derived: []*dnsgatev1.Permission{{
+			Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"A"}, Names: []string{"@"}, Egress: []string{"gateway"},
+		}}, want: "names"},
+		"one parent rule must cover each zone and type": {
+			parent: issuing(
+				token.Permission{Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"A"}},
+				token.Permission{Verbs: []string{"get"}, Zones: []string{"example.org"}, Types: []string{"TXT"}},
+			),
+			derived: []*dnsgatev1.Permission{{Verbs: []string{"get"}, Zones: []string{"example.com"}, Types: []string{"TXT"}}},
+			want:    "types",
+		},
+	} {
+		t.Run(name, func(t *testing.T) { tc.check(t, h) })
+	}
 }
 
 func TestCreateTokenRejectsALaterExpiry(t *testing.T) {
