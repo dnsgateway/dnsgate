@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"path/filepath"
 	"slices"
@@ -43,7 +44,9 @@ type harness struct {
 	client *client.Client
 	api    dnsgatev1.GatewayServiceClient
 	audit  *syncBuffer
-	now    time.Time
+	// logs holds the Gateway's operational logs.
+	logs *syncBuffer
+	now  time.Time
 	// fake is the Provider the Gateway calls, as "cloudflare".
 	fake *providertest.Provider
 	// keys are the keys of the Gateway last served.
@@ -91,6 +94,7 @@ func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 	h := &harness{
 		now:     time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
 		auditTo: w,
+		logs:    &syncBuffer{},
 		keyDir:  filepath.Join(t.TempDir(), "keys"),
 		fake:    providertest.New(),
 	}
@@ -141,6 +145,7 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 		BootstrapSecret: token.NewSecret(bootstrapSecret),
 		Audit:           audit.New(h.auditTo),
 		Providers:       dnsprovider.Registry{"cloudflare": h.fake.Factory()},
+		Logger:          slog.New(slog.NewTextHandler(h.logs, nil)),
 		Now:             func() time.Time { return h.now },
 	})
 

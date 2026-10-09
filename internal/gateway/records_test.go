@@ -563,6 +563,30 @@ func TestProviderErrorsReachTheClientAsCategories(t *testing.T) {
 	}
 }
 
+func TestAProviderThatCannotBeBuiltIsLoggedWithoutItsError(t *testing.T) {
+	h := newHarness(t)
+	h.addZones()
+
+	// A Provider's build error may quote what it was built from.
+	h.fake.Fail(providertest.OpNew, fmt.Errorf("%s: credential %q rejected", rawProviderMessage, cfToken))
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.ListZones(t.Context(), &dnsgatev1.ListZonesRequest{Token: root})
+	wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	logs := h.logs.String()
+	if !strings.Contains(logs, "building provider") || !strings.Contains(logs, "reason=provider_rejected_credential") {
+		t.Errorf("logs =\n%s\nwant the failed build and its reason", logs)
+	}
+
+	for _, leak := range []string{cfToken, "cloudflare says"} {
+		if strings.Contains(logs, leak) || strings.Contains(h.audit.String(), leak) || strings.Contains(err.Error(), leak) {
+			t.Errorf("%q leaked:\nlogs:\n%s\naudit:\n%s\nerror: %v", leak, logs, h.audit.String(), err)
+		}
+	}
+}
+
 func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 	h := newHarness(t)
 	h.addZones()

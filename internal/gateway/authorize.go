@@ -90,11 +90,17 @@ func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1
 
 // connect builds the token's Provider from its Provider Credential. The
 // plaintext credential lives on only inside the Provider, which the
-// caller drops when its request is done.
+// caller drops when its request is done. A failed build is logged by its
+// reason alone: the Provider's error may quote the credential.
 func (g *Gateway) connect(c *dnsCall, claims token.Claims) (dnsprovider.Provider, error) {
 	p, err := g.providers.New(claims.Provider, provider.CredentialFields(claims.Provider, claims.Credential.Value.Reveal()))
 	if err != nil {
-		g.log.Error("building provider", "request_id", c.id, "provider", claims.Provider, "error", err)
+		reason := "provider_rejected_credential"
+		if _, ok := g.providers[claims.Provider]; !ok {
+			reason = "unknown_provider"
+		}
+
+		g.log.Error("building provider", "request_id", c.id, "provider", claims.Provider, "reason", reason)
 
 		return nil, g.refuse(c, audit.ResultFailed, internal())
 	}
