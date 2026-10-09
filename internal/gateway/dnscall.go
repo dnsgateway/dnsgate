@@ -39,12 +39,23 @@ type tokenRequest interface {
 // aud, nbf and exp), check the request's form with check, if given, check
 // its Permissions and Egress, and only then build the Provider from the
 // Provider Credential. check puts the zone, record name and type of pr in
-// the form the Gateway compares. A refused request is audited, and
-// startDNSCall returns the Gateway error the client gets.
+// the form the Gateway compares, emptying any that fails. A refused
+// request is audited, and startDNSCall returns the Gateway error the
+// client gets. Its event names, from the start, the zone, record name and
+// type that passed check, so even a token that does not open is audited
+// with what it asked for; one that failed may hold anything, and stays
+// out.
 func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, pr permission.Request, check func(*permission.Request) error) (*dnsCall, error) {
+	var formErr error
+	if check != nil {
+		formErr = check(&pr)
+	}
+
 	c := &dnsCall{
 		request: r,
-		event:   audit.Event{Event: event, Verb: string(pr.Verb)},
+		event: audit.Event{
+			Event: event, Verb: string(pr.Verb), Zone: pr.Zone, RecordName: pr.Name, RecordType: pr.Type,
+		},
 	}
 
 	claims, err := g.openToken(r, c.event, req.GetToken())
@@ -55,13 +66,9 @@ func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, p
 	c.claims = claims
 	c.event.ServiceAccount, c.event.TokenID, c.event.Provider = claims.Subject, claims.ID, claims.Provider
 
-	if check != nil {
-		if err := check(&pr); err != nil {
-			return nil, g.deny(r, c.event, err)
-		}
+	if formErr != nil {
+		return nil, g.deny(r, c.event, formErr)
 	}
-
-	c.event.Zone, c.event.RecordName, c.event.RecordType = pr.Zone, pr.Name, pr.Type
 
 	if err := g.authorize(c, req.GetEgress(), pr); err != nil {
 		return nil, err

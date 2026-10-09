@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"cmp"
 	"strings"
 
 	"github.com/dnsgateway/dnsgate/internal/dnsname"
@@ -14,7 +15,7 @@ const (
 )
 
 // checkZoneOf checks the zone of pr and puts it in the form the Gateway
-// compares.
+// compares, or empties it if it fails.
 func checkZoneOf(pr *permission.Request) error {
 	zone, err := checkZone(pr.Zone)
 	pr.Zone = zone
@@ -23,25 +24,16 @@ func checkZoneOf(pr *permission.Request) error {
 }
 
 // checkRecordOf checks the zone, record name and type of pr and puts them
-// in the form the Gateway compares.
+// in the form the Gateway compares. Each that fails its check is emptied,
+// and the error is that of the first.
 func checkRecordOf(pr *permission.Request) error {
-	if err := checkZoneOf(pr); err != nil {
-		return err
-	}
-
-	name, err := checkRecordName(pr.Name)
-	if err != nil {
-		return err
-	}
-
-	typ, err := checkType(pr.Type)
-	if err != nil {
-		return err
-	}
+	zoneErr := checkZoneOf(pr)
+	name, nameErr := checkRecordName(pr.Name)
+	typ, typeErr := checkType(pr.Type)
 
 	pr.Name, pr.Type = name, typ
 
-	return nil
+	return cmp.Or(zoneErr, nameErr, typeErr)
 }
 
 // checkZone returns a zone name as the Gateway compares it, in lower case

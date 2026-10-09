@@ -662,6 +662,10 @@ func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 
 	errs = append(errs, h.call(t, tok+"x", &dnsgatev1.ListRecordsRequest{Zone: "example.com"}))
 	errs = append(errs, h.call(t, tok, &dnsgatev1.GetRecordRequest{Zone: "example.com", Name: cfToken + ".", Type: "A"}))
+	errs = append(errs, h.call(t, tok+"x", &dnsgatev1.DeleteRecordRequest{Zone: "Example.COM", Name: "WWW.apps", Type: "a"}))
+	errs = append(errs, h.call(t, tok, &dnsgatev1.CreateRecordRequest{
+		Zone: "example.com", Name: "www.apps", Type: "A-", Ttl: 300, Values: []string{"192.0.2.1"},
+	}))
 
 	events := h.auditEvents(t)
 	if len(events) != len(errs) {
@@ -679,8 +683,21 @@ func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 			"service_account": "app", "requested_egress": "agent", "record_name": "www.apps",
 		},
 		{"event": "zones.list", "result": "denied", "category": "permission_denied", "verb": "list"},
-		{"event": "records.list", "result": "denied", "category": "unauthenticated", "service_account": nil},
-		{"event": "records.get", "result": "denied", "category": "invalid_request", "record_name": nil},
+		{"event": "records.list", "result": "denied", "category": "unauthenticated", "service_account": nil, "zone": "example.com", "verb": "list"},
+		// A name that fails the Gateway's checks may hold anything and
+		// stays out; what passed them is recorded.
+		{
+			"event": "records.get", "result": "denied", "category": "invalid_request",
+			"zone": "example.com", "record_name": nil, "record_type": "A", "verb": "get",
+		},
+		{
+			"event": "records.delete", "result": "denied", "category": "unauthenticated", "service_account": nil,
+			"zone": "example.com", "record_name": "www.apps", "record_type": "A", "verb": "delete",
+		},
+		{
+			"event": "records.create", "result": "denied", "category": "invalid_request", "service_account": "app",
+			"zone": "example.com", "record_name": "www.apps", "record_type": nil, "verb": "create",
+		},
 	}
 
 	for i, fields := range want {
