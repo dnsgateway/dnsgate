@@ -39,10 +39,7 @@ func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*d
 	if err := g.revocations.Revoke(r.ctx, id, expiresAt); err != nil {
 		g.log.Error("revoking token", "request_id", r.id, "error", err)
 
-		event.Result, event.Category = audit.ResultFailed, category(internal())
-		_ = g.writeAudit(r, event)
-
-		return nil, internal()
+		return nil, g.failed(r, event, internal())
 	}
 
 	// Revoking only takes access away, so a lost event does not undo it.

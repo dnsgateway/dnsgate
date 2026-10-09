@@ -280,6 +280,18 @@ func (g *Gateway) deny(r *request, e audit.Event, err error) error {
 	return err
 }
 
+// failed audits an allowed request that failed as e, with the category
+// of err, and returns err, the Gateway error the client gets. The request
+// fails even if its event is lost.
+func (g *Gateway) failed(r *request, e audit.Event, err error) error {
+	e.Result = audit.ResultFailed
+	e.Category = category(err)
+
+	_ = g.writeAudit(r, e)
+
+	return err
+}
+
 func timestamp(d token.NumericDate) *timestamppb.Timestamp {
 	return timestamppb.New(d.Time())
 }

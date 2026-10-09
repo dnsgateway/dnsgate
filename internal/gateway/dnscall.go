@@ -197,13 +197,7 @@ func (g *Gateway) succeed(c *dnsCall) {
 }
 
 // fail audits an allowed call that failed, with the category of err, and
-// returns err. The call fails even if its event is
-// lost.
+// returns err. The call fails even if its event is lost.
 func (g *Gateway) fail(c *dnsCall, err error) error {
-	c.event.Result = audit.ResultFailed
-	c.event.Category = category(err)
-
-	_ = g.writeAudit(c.request, c.event)
-
-	return err
+	return g.failed(c.request, c.event, err)
 }
