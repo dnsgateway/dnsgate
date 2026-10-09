@@ -1,9 +1,35 @@
 package main
 
 import (
+	"net"
+	"os"
 	"strings"
 	"testing"
 )
+
+// listenOnFreePort rewrites env's config file to listen on a free port
+// instead of an ephemeral one and returns that address, for a server whose
+// logs do not tell it.
+func listenOnFreePort(t *testing.T, env *gatewayEnv) string {
+	t.Helper()
+
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr := lis.Addr().String()
+	_ = lis.Close()
+
+	config, err := os.ReadFile(env.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, env.config, strings.Replace(string(config), "listen: 127.0.0.1:0", "listen: "+addr, 1), 0o600)
+
+	return addr
+}
 
 func TestServerLogsDebugLinesAtDebug(t *testing.T) {
 	env := newGatewayEnv(t)
@@ -36,5 +62,25 @@ func TestServerTakesLogLevelFromEnvUnlessTheFlagIsSet(t *testing.T) {
 
 	if logs := startServer(t, env.config, "--log-level", "info").logs.String(); strings.Contains(logs, `"level":"DEBUG"`) {
 		t.Errorf("server logs with --log-level info over DNSGATE_LOG_LEVEL=debug have a debug line:\n%s", logs)
+	}
+}
+
+func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
+	env := newGatewayEnv(t)
+	gw := startServerAt(t, env.config, listenOnFreePort(t, env), "--log-level", "error")
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	if _, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare"); err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+
+	if logs := gw.logs.String(); strings.Contains(logs, `"msg":"serving"`) || strings.Contains(logs, `"level":"INFO"`) {
+		t.Errorf("server logs at error have info lines:\n%s", logs)
+	}
+
+	if audit := gw.audit.String(); !strings.Contains(audit, `"event":"onboard"`) {
+		t.Errorf("server audit output at error has no onboard event:\n%s", audit)
 	}
 }

@@ -159,6 +159,42 @@ var listenAddr = regexp.MustCompile(`"address":"([^"]+)"`)
 func startServer(t *testing.T, config string, args ...string) *runningGateway {
 	t.Helper()
 
+	return launchServer(t, config, args, func(gw *runningGateway) bool {
+		m := listenAddr.FindStringSubmatch(gw.logs.String())
+		if m == nil {
+			return false
+		}
+
+		gw.addr = m[1]
+
+		return true
+	})
+}
+
+// startServerAt runs "dnsgate server --config" with args until the test
+// ends and waits for it to accept connections at addr, the address its
+// config listens on. It does not rely on the server's logs.
+func startServerAt(t *testing.T, config, addr string, args ...string) *runningGateway {
+	t.Helper()
+
+	return launchServer(t, config, args, func(gw *runningGateway) bool {
+		conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", addr)
+		if err != nil {
+			return false
+		}
+
+		_ = conn.Close()
+		gw.addr = addr
+
+		return true
+	})
+}
+
+// launchServer runs "dnsgate server --config" with args until the test ends
+// and waits until ready reports it is serving.
+func launchServer(t *testing.T, config string, args []string, ready func(*runningGateway) bool) *runningGateway {
+	t.Helper()
+
 	gw := &runningGateway{audit: &syncBuffer{}, logs: &syncBuffer{}}
 
 	cmd := newRootCmd()
@@ -182,9 +218,7 @@ func startServer(t *testing.T, config string, args ...string) *runningGateway {
 	deadline := time.Now().Add(10 * time.Second)
 
 	for time.Now().Before(deadline) {
-		if m := listenAddr.FindStringSubmatch(gw.logs.String()); m != nil {
-			gw.addr = m[1]
-
+		if ready(gw) {
 			return gw
 		}
 
@@ -196,7 +230,7 @@ func startServer(t *testing.T, config string, args ...string) *runningGateway {
 		}
 	}
 
-	t.Fatalf("server did not log its address:\n%s", gw.logs.String())
+	t.Fatalf("server is not serving:\n%s", gw.logs.String())
 
 	return nil
 }
