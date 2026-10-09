@@ -7,9 +7,12 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/dnsgateway/dnsprovider"
@@ -135,6 +138,15 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now()}
 	defer func() { g.logRequest(r, err) }()
 
+	// A panic fails its request alone, with an internal error.
+	defer func() {
+		if p := recover(); p != nil {
+			g.logPanic(r, p)
+
+			err = internal()
+		}
+	}()
+
 	msg, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
 		return invalidRequest("the stream ended before a request")
@@ -230,6 +242,26 @@ func (g *Gateway) logRequest(r *request, err error) {
 		"peer", addr,
 		"duration_ms", g.now().Sub(r.start).Milliseconds(),
 		"code", status.Code(err).String(),
+	)
+}
+
+// logPanic logs the panic p of request r, with the stack it unwound. The
+// panic value may quote anything the request held, a secret included,
+// so it is logged by its type alone, unless it is a runtime error, whose
+// message the Go runtime writes from types and numbers. A stack trace
+// shows a function's arguments as machine words, never what a string
+// holds.
+func (g *Gateway) logPanic(r *request, p any) {
+	value := fmt.Sprintf("%T", p)
+	if rerr, ok := p.(runtime.Error); ok {
+		value = rerr.Error()
+	}
+
+	g.log.Error("request panicked",
+		"request_id", r.id,
+		"operation", r.operation,
+		"panic", value,
+		"stack", string(debug.Stack()),
 	)
 }
 
