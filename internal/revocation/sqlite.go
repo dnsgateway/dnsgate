@@ -52,17 +52,17 @@ func (s *SQLite) Close() error {
 }
 
 // Revoke implements Store.
-func (s *SQLite) Revoke(ctx context.Context, id string, expiresAt time.Time) error {
+func (s *SQLite) Revoke(ctx context.Context, e Entry) error {
 	var exp sql.NullInt64
-	if !expiresAt.IsZero() {
-		exp = sql.NullInt64{Int64: ceilUnix(expiresAt), Valid: true}
+	if !e.ExpiresAt.IsZero() {
+		exp = sql.NullInt64{Int64: ceilUnix(e.ExpiresAt), Valid: true}
 	}
 
 	_, err := s.db.ExecContext(ctx, `INSERT INTO revoked_tokens (id, expires_at) VALUES (?, ?)
 		ON CONFLICT (id) DO UPDATE SET expires_at = CASE
 			WHEN expires_at IS NULL OR excluded.expires_at IS NULL THEN NULL
 			ELSE max(expires_at, excluded.expires_at)
-		END`, id, exp)
+		END`, e.ID, exp)
 	if err != nil {
 		return fmt.Errorf("revoking token: %w", err)
 	}

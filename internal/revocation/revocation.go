@@ -11,15 +11,22 @@ import (
 	"time"
 )
 
+// Entry is a revoked token ID and how long to keep it.
+type Entry struct {
+	// ID is the revoked token's ID.
+	ID string
+	// ExpiresAt is the token's expiry, after which the entry may be
+	// purged. The zero time keeps the entry forever, for a token that
+	// never expires or whose expiry is not known.
+	ExpiresAt time.Time
+}
+
 // Store keeps revoked token IDs. SQLite implements it in v1; the
 // interface leaves room for PostgreSQL.
 type Store interface {
-	// Revoke records id as revoked. expiresAt is the token's expiry, after
-	// which its entry may be purged; the zero time keeps the entry
-	// forever, for a token that never expires or whose expiry is not
-	// known. Revoking an ID again keeps its entry as long as either
-	// revocation needs it.
-	Revoke(ctx context.Context, id string, expiresAt time.Time) error
+	// Revoke records e's ID as revoked. Revoking an ID again keeps its
+	// entry as long as either revocation needs it.
+	Revoke(ctx context.Context, e Entry) error
 	// AnyRevoked reports whether any of ids is revoked.
 	AnyRevoked(ctx context.Context, ids []string) (bool, error)
 	// PurgeExpired removes the entries whose expiry is not after now: their

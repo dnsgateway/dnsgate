@@ -1,11 +1,10 @@
 package gateway
 
 import (
-	"time"
-
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
+	"github.com/dnsgateway/dnsgate/internal/revocation"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -29,14 +28,14 @@ func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*d
 
 	// Only a token that may revoke gets its target parsed, or opened: a
 	// denied caller learns nothing of it, and its event names none.
-	id, expiresAt, err := g.revocationTarget(r, req)
+	entry, err := g.revocationTarget(r, req)
 	if err != nil {
 		return nil, g.deny(r, event, err)
 	}
 
-	event.RevokedTokenID = id
+	event.RevokedTokenID = entry.ID
 
-	if err := g.revocations.Revoke(r.ctx, id, expiresAt); err != nil {
+	if err := g.revocations.Revoke(r.ctx, entry); err != nil {
 		g.log.Error("revoking token", "request_id", r.id, "error", err)
 
 		return nil, g.failed(r, event, internal())
@@ -47,35 +46,35 @@ func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*d
 	_ = g.writeAudit(r, event)
 
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_RevokeToken{
-		RevokeToken: &dnsgatev1.RevokeTokenResponse{Jti: id},
+		RevokeToken: &dnsgatev1.RevokeTokenResponse{Jti: entry.ID},
 	}}, nil
 }
 
-// revocationTarget returns the ID of the token req names and the expiry
-// to keep its revocation until: the token's own, if req gives the token,
-// or the zero time, forever, if req gives only an ID, or a token that
-// never expires. A target that is malformed, or a token that does not
-// open, is an error, and its ID is left empty.
-func (g *Gateway) revocationTarget(r *request, req *dnsgatev1.RevokeTokenRequest) (string, time.Time, error) {
+// revocationTarget returns the entry to revoke the token req names: its
+// ID, kept until the token's own expiry if req gives the token, or
+// forever if req gives only an ID, or a token that never expires. A
+// target that is malformed, or a token that does not open, is an error.
+func (g *Gateway) revocationTarget(r *request, req *dnsgatev1.RevokeTokenRequest) (revocation.Entry, error) {
 	switch target := req.GetTarget().(type) {
 	case *dnsgatev1.RevokeTokenRequest_TokenId:
 		if !token.ValidID(target.TokenId) {
-			return "", time.Time{}, invalidRequest("token_id is not a token ID")
+			return revocation.Entry{}, invalidRequest("token_id is not a token ID")
 		}
 
-		return target.TokenId, time.Time{}, nil
+		return revocation.Entry{ID: target.TokenId}, nil
 	case *dnsgatev1.RevokeTokenRequest_TargetToken:
 		claims, err := g.codec.Open(r.ctx, target.TargetToken)
 		if err != nil {
-			return "", time.Time{}, invalidRequest("the token to revoke does not open; revoke it by its ID")
+			return revocation.Entry{}, invalidRequest("the token to revoke does not open; revoke it by its ID")
 		}
 
-		if claims.Expiry == nil {
-			return claims.ID, time.Time{}, nil
+		entry := revocation.Entry{ID: claims.ID}
+		if claims.Expiry != nil {
+			entry.ExpiresAt = claims.Expiry.Time()
 		}
 
-		return claims.ID, claims.Expiry.Time(), nil
+		return entry, nil
 	default:
-		return "", time.Time{}, invalidRequest("missing token_id or target_token")
+		return revocation.Entry{}, invalidRequest("missing token_id or target_token")
 	}
 }

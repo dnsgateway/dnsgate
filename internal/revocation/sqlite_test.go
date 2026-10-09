@@ -37,7 +37,7 @@ func anyRevoked(t *testing.T, s revocation.Store, ids ...string) bool {
 func revoke(t *testing.T, s revocation.Store, id string, expiresAt time.Time) {
 	t.Helper()
 
-	if err := s.Revoke(t.Context(), id, expiresAt); err != nil {
+	if err := s.Revoke(t.Context(), revocation.Entry{ID: id, ExpiresAt: expiresAt}); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
 }

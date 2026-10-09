@@ -142,7 +142,7 @@ func TestRunningServerPurgesAnEntryOnceItsTokenExpires(t *testing.T) {
 
 	// Not yet expired when the server starts, so the startup purge keeps it.
 	for id, exp := range map[string]time.Time{"tok_SOON": time.Now().Add(2 * time.Second), "tok_FOREVER": {}} {
-		if err := store.Revoke(t.Context(), id, exp); err != nil {
+		if err := store.Revoke(t.Context(), revocation.Entry{ID: id, ExpiresAt: exp}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,7 +190,7 @@ func TestServerPurgesExpiredRevocationsAtStartup(t *testing.T) {
 		"tok_LATER":   time.Now().Add(time.Hour),
 		"tok_FOREVER": {},
 	} {
-		if err := store.Revoke(t.Context(), id, exp); err != nil {
+		if err := store.Revoke(t.Context(), revocation.Entry{ID: id, ExpiresAt: exp}); err != nil {
 			t.Fatal(err)
 		}
 	}
