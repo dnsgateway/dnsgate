@@ -65,6 +65,17 @@ func TestServerTakesLogLevelFromEnvUnlessTheFlagIsSet(t *testing.T) {
 	}
 }
 
+func TestServerHelpDocumentsTheLogLevel(t *testing.T) {
+	out, err := runCLI(t, "server", "--help")
+	if err != nil {
+		t.Fatalf("server --help: %v", err)
+	}
+
+	if !strings.Contains(out, "Logs below --log-level") || !strings.Contains(out, "(env DNSGATE_LOG_LEVEL)") {
+		t.Errorf("server help does not document --log-level and DNSGATE_LOG_LEVEL:\n%s", out)
+	}
+}
+
 func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
 	env := newGatewayEnv(t)
 

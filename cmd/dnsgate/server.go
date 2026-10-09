@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -28,7 +29,9 @@ func newServerCmd(flags *Flags) *cobra.Command {
 		Use:   "server",
 		Short: "Run the Gateway",
 		Long: "Run the Gateway: serve its gRPC API over TLS, configured by a YAML file.\n\n" +
-			"Audit events are written to stdout and logs to stderr, both as JSON lines.\n\n" +
+			"Audit events are written to stdout and logs to stderr, both as JSON lines. " +
+			"Logs below --" + flagLogLevel + " (env " + envLogLevel + "; one of " + strings.Join(logLevelNames, ", ") + ", default " + defaultLogLevel + ") " +
+			"are dropped; audit events are always written.\n\n" +
 			"Configuration file, with paths relative to its directory:\n\n" +
 			"  listen: \":8443\"\n" +
 			"  tls:\n" +
