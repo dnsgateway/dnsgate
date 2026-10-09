@@ -188,23 +188,41 @@ type agentHarness struct {
 	openConns atomic.Int32
 }
 
+// providerCert is the certificate the fake Cloudflare presents.
+type providerCert int
+
+const (
+	// trustedCert is for api.cloudflare.com, issued by the CA the Gateway
+	// trusts.
+	trustedCert providerCert = iota
+	// untrustedCert is for api.cloudflare.com, issued by another CA.
+	untrustedCert
+	// wrongHostCert is issued by the CA the Gateway trusts, for another
+	// host.
+	wrongHostCert
+)
+
 // newAgentHarness returns an agentHarness whose fake Cloudflare presents
-// a certificate for api.cloudflare.com issued by the CA the Gateway
-// trusts, or, with untrusted, by another CA.
-func newAgentHarness(t *testing.T, untrusted bool) *agentHarness {
+// cert.
+func newAgentHarness(t *testing.T, cert providerCert) *agentHarness {
 	t.Helper()
 
 	cf := newFakeCloudflare()
 
 	trusted := newTestCA(t)
 
-	issuer := trusted
-	if untrusted {
+	issuer, host := trusted, cloudflareHost
+
+	switch cert {
+	case trustedCert:
+	case untrustedCert:
 		issuer = newTestCA(t)
+	case wrongHostCert:
+		host = "api.example.net"
 	}
 
 	srv := httptest.NewUnstartedServer(cf.handler())
-	srv.TLS = &tls.Config{Certificates: []tls.Certificate{issuer.issue(t, cloudflareHost)}, MinVersion: tls.VersionTLS12}
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{issuer.issue(t, host)}, MinVersion: tls.VersionTLS12}
 	srv.Config.ErrorLog = log.New(io.Discard, "", 0) // failed handshakes are expected
 
 	ah := &agentHarness{cf: cf, srv: srv}
@@ -253,7 +271,7 @@ func (cf *fakeCloudflare) gatewayTransport(srv *httptest.Server, roots *x509.Cer
 }
 
 func TestAgentEgressReadsAndChangesCloudflareRecords(t *testing.T) {
-	h := newAgentHarness(t, false)
+	h := newAgentHarness(t, trustedCert)
 
 	root := h.onboard(t, onboardRequest())
 	agent := dnsgatev1.Egress_EGRESS_AGENT
@@ -348,35 +366,42 @@ func TestAgentEgressReadsAndChangesCloudflareRecords(t *testing.T) {
 }
 
 func TestAgentEgressFailsOnABadProviderCertificate(t *testing.T) {
-	h := newAgentHarness(t, true)
+	for name, cert := range map[string]providerCert{
+		"untrusted CA": untrustedCert,
+		"wrong host":   wrongHostCert,
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newAgentHarness(t, cert)
 
-	root := h.onboard(t, onboardRequest())
+			root := h.onboard(t, onboardRequest())
 
-	_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{
-		Token: root, Egress: dnsgatev1.Egress_EGRESS_AGENT, Zone: "example.com",
-	})
-	wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
+			_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{
+				Token: root, Egress: dnsgatev1.Egress_EGRESS_AGENT, Zone: "example.com",
+			})
+			wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
 
-	if len(h.net.dials()) == 0 {
-		t.Error("the Egress Agent opened no connection")
-	}
+			if len(h.net.dials()) == 0 {
+				t.Error("the Egress Agent opened no connection")
+			}
 
-	// The handshake failed before any request, so the Provider Credential
-	// never left the Gateway.
-	h.cf.mu.Lock()
-	defer h.cf.mu.Unlock()
+			// The handshake failed before any request, so the Provider Credential
+			// never left the Gateway.
+			h.cf.mu.Lock()
+			defer h.cf.mu.Unlock()
 
-	if len(h.cf.seen) != 0 {
-		t.Errorf("Cloudflare got %d requests, want none", len(h.cf.seen))
-	}
+			if len(h.cf.seen) != 0 {
+				t.Errorf("Cloudflare got %d requests, want none", len(h.cf.seen))
+			}
 
-	if e := h.auditEvents(t); e[len(e)-1]["result"] != "failed" || e[len(e)-1]["egress"] != "agent" {
-		t.Errorf("audit event = %v, want a failed request through agent egress", e[len(e)-1])
+			if e := h.auditEvents(t); e[len(e)-1]["result"] != "failed" || e[len(e)-1]["egress"] != "agent" {
+				t.Errorf("audit event = %v, want a failed request through agent egress", e[len(e)-1])
+			}
+		})
 	}
 }
 
 func TestAgentEgressFailsWhenTheEgressAgentRefuses(t *testing.T) {
-	h := newAgentHarness(t, false)
+	h := newAgentHarness(t, trustedCert)
 
 	// The client resolves the Provider to its own network.
 	h.agent.Resolver = staticResolver{netip.MustParseAddr("10.0.0.53")}
@@ -419,7 +444,7 @@ func (h *agentHarness) settle(t *testing.T, baseline int) {
 }
 
 func TestAgentEgressRelayEndsWithTheRequest(t *testing.T) {
-	h := newAgentHarness(t, false)
+	h := newAgentHarness(t, trustedCert)
 
 	root := h.onboard(t, onboardRequest())
 	baseline := runtime.NumGoroutine()
@@ -436,7 +461,7 @@ func TestAgentEgressRelayEndsWithTheRequest(t *testing.T) {
 }
 
 func TestAgentEgressRelayEndsWhenTheClientCancels(t *testing.T) {
-	h := newAgentHarness(t, false)
+	h := newAgentHarness(t, trustedCert)
 
 	root := h.onboard(t, onboardRequest())
 	baseline := runtime.NumGoroutine()
@@ -522,7 +547,7 @@ func TestEgressSelection(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			h := newAgentHarness(t, false)
+			h := newAgentHarness(t, trustedCert)
 
 			tok := h.mint(t, nil, token.Permission{Verbs: read, Egress: tc.egress})
 
