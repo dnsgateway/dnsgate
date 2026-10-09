@@ -9,6 +9,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -198,6 +200,7 @@ func newAgentHarness(t *testing.T, untrusted bool) *agentHarness {
 
 	srv := httptest.NewUnstartedServer(cf.handler())
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{issuer.issue(t, cloudflareHost)}, MinVersion: tls.VersionTLS12}
+	srv.Config.ErrorLog = log.New(io.Discard, "", 0) // failed handshakes are expected
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
@@ -324,6 +327,64 @@ func TestAgentEgressReadsAndChangesCloudflareRecords(t *testing.T) {
 	if strings.Contains(h.audit.String(), cfToken) {
 		t.Errorf("audit log contains the Provider Credential:\n%s", h.audit.String())
 	}
+}
+
+func TestAgentEgressFailsOnABadProviderCertificate(t *testing.T) {
+	h := newAgentHarness(t, true)
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{
+		Token: root, Egress: dnsgatev1.Egress_EGRESS_AGENT, Zone: "example.com",
+	})
+	wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	if len(h.net.dials()) == 0 {
+		t.Error("the Egress Agent opened no connection")
+	}
+
+	// The handshake failed before any request, so the Provider Credential
+	// never left the Gateway.
+	h.cf.mu.Lock()
+	defer h.cf.mu.Unlock()
+
+	if len(h.cf.seen) != 0 {
+		t.Errorf("Cloudflare got %d requests, want none", len(h.cf.seen))
+	}
+
+	if e := h.auditEvents(t); e[len(e)-1]["result"] != "failed" || e[len(e)-1]["egress"] != "agent" {
+		t.Errorf("audit event = %v, want a failed request through agent egress", e[len(e)-1])
+	}
+}
+
+func TestAgentEgressFailsWhenTheEgressAgentRefuses(t *testing.T) {
+	h := newAgentHarness(t, false)
+
+	// The client resolves the Provider to its own network.
+	h.agent.Resolver = staticResolver{netip.MustParseAddr("10.0.0.53")}
+	h.serve(t, h.keys)
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.GetRecord(t.Context(), &dnsgatev1.GetRecordRequest{
+		Token: root, Egress: dnsgatev1.Egress_EGRESS_AGENT, Zone: "example.com", Name: "www.apps", Type: "A",
+	})
+	wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	if !strings.Contains(err.Error(), "egress agent") {
+		t.Errorf("error = %v, want it to name the egress agent", err)
+	}
+
+	if dials := h.net.dials(); len(dials) != 0 {
+		t.Errorf("the Egress Agent dialed %v, want nothing", dials)
+	}
+}
+
+// staticResolver resolves every host to its addresses.
+type staticResolver []netip.Addr
+
+func (r staticResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
+	return r, nil
 }
 
 func TestEgressSelection(t *testing.T) {
