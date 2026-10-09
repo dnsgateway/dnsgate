@@ -135,3 +135,7 @@ _Avoid_: router egress, direct
 **Agent Egress**:
 Egress through an Egress Agent; the provider sees the client's source IP.
 _Avoid_: client egress, proxy
+
+**Relay**:
+How Agent Egress carries the Gateway's connections to a Provider: as numbered frames inside the request's own stream, which open a connection, answer whether the Egress Agent connected, carry its bytes, and close each direction. It is the mechanism, not a component: the client that plays it is the Egress Agent.
+_Avoid_: tunnel, proxy, forwarding
