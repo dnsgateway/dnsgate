@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"sigs.k8s.io/yaml"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
@@ -21,11 +24,110 @@ func newTokenCmd(flags *Flags) *cobra.Command {
 	}
 
 	cmd.AddCommand(
+		newTokenCreateCmd(flags),
 		newTokenInspectCmd(flags),
 		newTokenResealCmd(flags),
 	)
 
 	return cmd
+}
+
+func newTokenCreateCmd(flags *Flags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Issue a Derived Token for a client",
+		Long: "Present a Parent Token, --" + flagToken + " or " + envToken + ", and print the Derived Token the Gateway " +
+			"issues for the Service Account --" + flagSub + ". The Parent Token needs create on tokens. The Derived " +
+			"Token gets the Parent Token's Provider Credential, which never leaves the Gateway.\n\n" +
+			"--" + flagPermissions + " names a YAML file of Permissions, each with verbs:\n\n" +
+			"  permissions:\n" +
+			"    - verbs: [get, list, create, update, patch, delete]\n" +
+			"      resources: [records]\n" +
+			"      zones: [example.com]\n" +
+			"      names: [\"**.apps\"]\n" +
+			"      types: [A, AAAA, TXT]\n" +
+			"      egress: [gateway, agent]\n\n" +
+			"A filter left out means any; resources left out means [records]. The Derived Token must not exceed the " +
+			"Parent Token: its Permissions must be covered by the Parent Token's, and it must expire no later.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runTokenCreate(cmd.Context(), cmd.OutOrStdout(), flags)
+		},
+	}
+
+	flags.AddTokenCreateFlags(cmd.Flags())
+
+	return cmd
+}
+
+func runTokenCreate(ctx context.Context, out io.Writer, f *Flags) error {
+	if err := checkTokenCreateFlags(f); err != nil {
+		return err
+	}
+
+	perms, err := readPermissionsFile(f.PermissionsFile)
+	if err != nil {
+		return err
+	}
+
+	req := &dnsgatev1.CreateTokenRequest{Token: f.Token, Sub: f.Sub, Permissions: perms}
+	if f.Expires != 0 {
+		req.Expires = durationpb.New(f.Expires)
+	}
+
+	resp, err := callGateway(ctx, f, "token create", (*client.Client).CreateToken, req)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(out, resp.GetToken())
+
+	return err
+}
+
+// permissionsFile is the YAML file "token create" reads Permissions from.
+type permissionsFile struct {
+	Permissions []struct {
+		Verbs     []string `json:"verbs"`
+		Resources []string `json:"resources"`
+		Zones     []string `json:"zones"`
+		Names     []string `json:"names"`
+		Types     []string `json:"types"`
+		Egress    []string `json:"egress"`
+	} `json:"permissions"`
+}
+
+// readPermissionsFile reads the Permissions of a Derived Token from the
+// YAML file path. Unknown fields are errors, and so is a Permission
+// without verbs.
+func readPermissionsFile(path string) ([]*dnsgatev1.Permission, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading permissions: %w", err)
+	}
+
+	var file permissionsFile
+	if err := yaml.UnmarshalStrict(data, &file); err != nil {
+		return nil, fmt.Errorf("permissions file %s: %w", path, err)
+	}
+
+	if len(file.Permissions) == 0 {
+		return nil, fmt.Errorf("permissions file %s has no permissions", path)
+	}
+
+	perms := make([]*dnsgatev1.Permission, 0, len(file.Permissions))
+
+	for i, p := range file.Permissions {
+		if len(p.Verbs) == 0 {
+			return nil, fmt.Errorf("permissions file %s: permission %d has no verbs", path, i+1)
+		}
+
+		perms = append(perms, &dnsgatev1.Permission{
+			Verbs: p.Verbs, Resources: p.Resources, Zones: p.Zones, Names: p.Names, Types: p.Types, Egress: p.Egress,
+		})
+	}
+
+	return perms, nil
 }
 
 func newTokenResealCmd(flags *Flags) *cobra.Command {

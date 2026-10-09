@@ -26,6 +26,8 @@ const (
 	flagExpires         = "expires"
 	flagZone            = "zone"
 	flagEgress          = "egress"
+	flagSub             = "sub"
+	flagPermissions     = "permissions"
 
 	envKeyDir          = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
@@ -50,8 +52,8 @@ const (
 const secretHelp = "; prefer the environment variable, a flag value shows in process listings"
 
 // Flags holds the parsed CLI flags. Each falls back to an environment
-// variable, then to a default, except --provider and --expires, which are
-// chosen per Onboarding.
+// variable, then to a default, except --provider, --sub, --permissions and
+// --expires, which are chosen per Onboarding or per Derived Token.
 type Flags struct {
 	KeyDir      string
 	KeyIDSuffix string
@@ -66,6 +68,9 @@ type Flags struct {
 	Credential      string
 	Provider        string
 	Expires         time.Duration
+
+	Sub             string
+	PermissionsFile string
 
 	Zone   string
 	Egress string
@@ -160,6 +165,34 @@ func (f *Flags) AddOnboardFlags(flags *pflag.FlagSet) {
 		"bootstrap secret configured on the Gateway (env "+envBootstrapSecret+secretHelp+")")
 	flags.DurationVarP(&f.Expires, flagExpires, "", f.Expires,
 		"lifetime of the Root Token, such as 720h (default: never expires)")
+}
+
+// AddTokenCreateFlags registers the flags of "token create".
+func (f *Flags) AddTokenCreateFlags(flags *pflag.FlagSet) {
+	flags.StringVarP(&f.Sub, flagSub, "", f.Sub,
+		"Service Account the Derived Token is issued for, such as external-dns-prod")
+	flags.StringVarP(&f.PermissionsFile, flagPermissions, "", f.PermissionsFile,
+		"YAML file of the Derived Token's Permissions, see the command help")
+	flags.DurationVarP(&f.Expires, flagExpires, "", f.Expires,
+		"lifetime of the Derived Token, such as 720h; required if the Parent Token expires (default: never expires)")
+	f.AddTokenFlags(flags)
+	f.AddClientFlags(flags)
+}
+
+// checkTokenCreateFlags checks the flags of "token create".
+func checkTokenCreateFlags(f *Flags) error {
+	switch {
+	case f.Token == "":
+		return errors.New("no Parent Token: set " + envToken + " or --" + flagToken)
+	case f.Sub == "":
+		return errors.New("no Service Account: set --" + flagSub)
+	case f.PermissionsFile == "":
+		return errors.New("no Permissions: set --" + flagPermissions)
+	case f.Expires < 0:
+		return errors.New("--" + flagExpires + " must not be negative")
+	}
+
+	return nil
 }
 
 func withDefaultEnv(key, def string) string {
