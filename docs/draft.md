@@ -100,7 +100,7 @@ The only readable part of a token is the outer header:
 
 ## Claims
 
-Claim names are examples. The exact schema will be fixed during implementation.
+The claim schema is fixed in [internal/token/claims.go](../internal/token/claims.go). The `credential` value and the IDs are shortened here.
 
 ```json
 {
@@ -519,5 +519,5 @@ A Service Token can be bound to a workload's OIDC identity: Kubernetes ServiceAc
 
 # Open Questions
 
-- Exact claim schema and protobuf API definition.
+- ~~Exact claim schema and protobuf API definition.~~ Decided in the protobuf API, [api/dnsgate/v1/gateway.proto](../api/dnsgate/v1/gateway.proto), and the claims in [internal/token/claims.go](../internal/token/claims.go).
 - ~~Relay framing inside the gRPC stream: OPEN/DATA/CLOSE messages, half-close, flow control, timeouts.~~ Decided in [ADR 0006](adr/0006-agent-egress-relay-framing.md).
