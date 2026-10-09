@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/dnsgateway/dnsprovider/providertest"
@@ -76,6 +77,45 @@ func TestAtDebugARequestIsLoggedWithItsMethodIDPeerDurationAndCode(t *testing.T)
 
 	if id, _ := l["request_id"].(string); !strings.HasPrefix(id, "req_") {
 		t.Errorf("request line request_id = %v, want a req_ ID", l["request_id"])
+	}
+}
+
+// TestARequestLineAndItsAuditEventAgreeOnDuration advances the Gateway's
+// clock by 1.5s while the Provider applies a record creation, and checks
+// that the request line and the audit event of that request both report
+// it.
+func TestARequestLineAndItsAuditEventAgreeOnDuration(t *testing.T) {
+	h := newDebugHarness(t)
+	h.addZones()
+	h.fake.SetBatcher(true)
+
+	root := h.onboard(t, onboardRequest())
+
+	// The Provider is called on the Gateway's goroutine, the only one
+	// reading the clock during the request.
+	h.fake.FailChanges(func(dnsprovider.Change) error {
+		h.now = h.now.Add(1500 * time.Millisecond)
+
+		return nil
+	})
+
+	if _, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 600, Values: []string{"192.0.2.30"},
+	}); err != nil {
+		t.Fatalf("CreateRecord: %v", err)
+	}
+
+	events, lines := h.auditEvents(t), h.requestLines(t)
+	if len(events) != 2 || len(lines) != 2 {
+		t.Fatalf("audit events = %v, request lines = %v, want two of each", events, lines)
+	}
+
+	if got := lines[1]["duration_ms"]; got != float64(1500) {
+		t.Errorf("request line duration_ms = %v, want 1500", got)
+	}
+
+	if got := events[1]["duration_ms"]; got != float64(1500) {
+		t.Errorf("audit event duration_ms = %v, want 1500, the request line's", got)
 	}
 }
 
