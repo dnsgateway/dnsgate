@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
 // newMutationHarness returns a harness whose fake Provider holds
@@ -460,6 +461,182 @@ func TestDeleteRecordDeletesEveryValueOfTheRRset(t *testing.T) {
 		Token: root, Zone: "example.com", Name: "www.apps", Type: "A",
 	})
 	wantError(t, err, codes.NotFound, dnsgatev1.Error_CATEGORY_NOT_FOUND)
+}
+
+// mutations returns one request of each record verb on name and type of
+// example.com, through egress.
+func mutations(name, typ string, egress dnsgatev1.Egress) map[string]any {
+	return map[string]any{
+		"create": &dnsgatev1.CreateRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Ttl: 300, Values: []string{`"v"`}},
+		"update": &dnsgatev1.UpdateRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Ttl: 300, Values: []string{`"v"`}},
+		"patch":  &dnsgatev1.PatchRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Add: []string{`"v"`}},
+		"delete": &dnsgatev1.DeleteRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress},
+	}
+}
+
+func TestMutationsOutsideThePermissionsAreDeniedBeforeTheProvider(t *testing.T) {
+	all := []string{"create", "update", "patch", "delete"}
+	acme := token.Permission{
+		Verbs: all, Zones: []string{"example.com"}, Names: []string{"_acme-challenge", "_acme-challenge.**"}, Types: []string{"TXT"},
+	}
+
+	for name, tc := range map[string]struct {
+		perm      token.Permission
+		name, typ string
+		egress    dnsgatev1.Egress
+		code      codes.Code
+		category  dnsgatev1.Error_Category
+	}{
+		"verb not granted": {
+			token.Permission{Verbs: []string{"get", "list"}},
+			"_acme-challenge.www", "TXT", 0,
+			codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
+		},
+		"name outside the filter": {
+			acme, "www", "TXT", 0, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
+		},
+		"type outside the filter": {
+			acme, "_acme-challenge.www", "A", 0, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
+		},
+		"agent egress asked": {
+			acme, "_acme-challenge.www", "TXT", dnsgatev1.Egress_EGRESS_AGENT,
+			codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
+		},
+		"agent egress only": {
+			token.Permission{Verbs: all, Egress: []string{"agent"}},
+			"_acme-challenge.www", "TXT", 0,
+			codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newMutationHarness(t)
+
+			tok := h.mint(t, nil, tc.perm)
+
+			for verb, req := range mutations(tc.name, tc.typ, tc.egress) {
+				err := h.call(t, tok, req)
+				if status.Code(err) != tc.code {
+					t.Errorf("%s: error = %v, want code %v", verb, err, tc.code)
+
+					continue
+				}
+
+				wantError(t, err, tc.code, tc.category)
+			}
+
+			if calls := h.fake.Calls(); len(calls) != 0 {
+				t.Errorf("provider calls = %+v, want none", calls)
+			}
+		})
+	}
+
+	t.Run("zone outside the filter", func(t *testing.T) {
+		h := newMutationHarness(t)
+
+		tok := h.mint(t, nil, acme)
+
+		for verb, req := range mutations("_acme-challenge", "TXT", 0) {
+			switch req := req.(type) {
+			case *dnsgatev1.CreateRecordRequest:
+				req.Zone = "example.org"
+			case *dnsgatev1.UpdateRecordRequest:
+				req.Zone = "example.org"
+			case *dnsgatev1.PatchRecordRequest:
+				req.Zone = "example.org"
+			case *dnsgatev1.DeleteRecordRequest:
+				req.Zone = "example.org"
+			}
+
+			if err := h.call(t, tok, req); status.Code(err) != codes.PermissionDenied {
+				t.Errorf("%s: error = %v, want permission denied", verb, err)
+			}
+		}
+
+		if calls := h.fake.Calls(); len(calls) != 0 {
+			t.Errorf("provider calls = %+v, want none", calls)
+		}
+	})
+}
+
+func TestEachMutationAndDenialIsAuditedOnceWithoutSecrets(t *testing.T) {
+	h := newMutationHarness(t)
+
+	tok := h.mint(t, nil, token.Permission{
+		Verbs: []string{"create", "update", "patch", "delete"}, Names: []string{"_acme-challenge.**"}, Types: []string{"TXT"},
+	})
+
+	gw := dnsgatev1.Egress_EGRESS_GATEWAY
+
+	requests := []any{
+		&dnsgatev1.CreateRecordRequest{Zone: "Example.COM", Name: "_acme-challenge.api", Type: "txt", Egress: gw, Ttl: 300, Values: []string{`"a"`}},
+		&dnsgatev1.PatchRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw, Add: []string{`"b"`}},
+		&dnsgatev1.UpdateRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw, Ttl: 60, Values: []string{`"c"`}},
+		&dnsgatev1.DeleteRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw},
+		// Denied: a name outside the token's.
+		&dnsgatev1.DeleteRecordRequest{Zone: "example.com", Name: "www.apps", Type: "TXT", Egress: gw},
+	}
+
+	var errs []error
+
+	for i, req := range requests {
+		err := h.call(t, tok, req)
+		if i < 4 && err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+
+		errs = append(errs, err)
+	}
+
+	events := h.auditEvents(t)
+	if len(events) != len(requests) {
+		t.Fatalf("audit events =\n%v\nwant one per request", h.audit.String())
+	}
+
+	ids := map[any]bool{}
+
+	for i, verb := range []string{"create", "patch", "update", "delete", "delete"} {
+		e := events[i]
+
+		name, result := "_acme-challenge.api", "ok"
+		if i == 4 {
+			name, result = "www.apps", "denied"
+		}
+
+		for field, want := range map[string]any{
+			"event": "records." + verb, "verb": verb, "result": result,
+			"service_account": "app", "jti": "tok_01TESTAPP", "provider": "cloudflare",
+			"zone": "example.com", "record_name": name, "record_type": "TXT",
+			"requested_egress": "gateway",
+		} {
+			if e[field] != want {
+				t.Errorf("event %d %s = %v, want %v", i, field, e[field], want)
+			}
+		}
+
+		if wantEgress := map[bool]any{true: "gateway", false: nil}[result == "ok"]; e["egress"] != wantEgress {
+			t.Errorf("event %d egress = %v, want %v", i, e["egress"], wantEgress)
+		}
+
+		if _, ok := e["duration_ms"].(float64); !ok {
+			t.Errorf("event %d duration_ms = %v, want a number", i, e["duration_ms"])
+		}
+
+		if id, _ := e["request_id"].(string); !strings.HasPrefix(id, "req_") || ids[id] {
+			t.Errorf("event %d request_id = %v, want a new req_ ID", i, e["request_id"])
+		}
+
+		ids[e["request_id"]] = true
+	}
+
+	if events[4]["category"] != "permission_denied" {
+		t.Errorf("denial category = %v, want permission_denied", events[4]["category"])
+	}
+
+	for _, secret := range []string{cfToken, tok} {
+		if strings.Contains(h.audit.String(), secret) || strings.Contains(h.logs.String(), secret) || strings.Contains(errs[4].Error(), secret) {
+			t.Errorf("a secret leaked:\naudit:\n%s\nlogs:\n%s\nerror: %v", h.audit.String(), h.logs.String(), errs[4])
+		}
+	}
 }
 
 func TestUpdateRecordOfAnRRsetTheZoneLacksIsNotFound(t *testing.T) {

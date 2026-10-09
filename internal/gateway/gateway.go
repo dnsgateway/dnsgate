@@ -125,7 +125,7 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		return invalidRequest("the first message of a stream must be a request")
 	}
 
-	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix)}
+	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: time.Now()}
 
 	var resp *dnsgatev1.Response
 
@@ -169,6 +169,9 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 type request struct {
 	ctx context.Context //nolint:containedctx // scoped to one request
 	id  string
+	// start is when the Gateway received the request, on the system
+	// clock, which the Gateway's own clock may stand in for in tests.
+	start time.Time
 }
 
 // newID returns prefix followed by a new ULID.
@@ -176,12 +179,14 @@ func (g *Gateway) newID(prefix string) string {
 	return prefix + ulid.MustNew(ulid.Timestamp(g.now()), rand.Reader).String()
 }
 
-// writeAudit writes e, stamped with the time and the request ID. A failed
+// writeAudit writes e, stamped with the time, the request ID and how long
+// the request has taken. A failed
 // write is logged and returned, so a caller can withhold what the event
 // records.
 func (g *Gateway) writeAudit(r *request, e audit.Event) error {
 	e.Time = g.now().UTC()
 	e.RequestID = r.id
+	e.DurationMS = time.Since(r.start).Milliseconds()
 
 	err := g.audit.Write(e)
 	if err != nil {

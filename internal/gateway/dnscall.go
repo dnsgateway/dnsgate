@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/dnsgateway/dnsprovider"
 
@@ -20,7 +19,6 @@ type dnsCall struct {
 	*request
 
 	event audit.Event
-	start time.Time
 
 	claims token.Claims
 	// perm is what the request asks, as Permissions see it, through the
@@ -47,7 +45,6 @@ func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, p
 	c := &dnsCall{
 		request: r,
 		event:   audit.Event{Event: event, Verb: string(pr.Verb)},
-		start:   time.Now(),
 	}
 
 	claims, err := g.openToken(r, c.event, req.GetToken())
@@ -162,23 +159,21 @@ func (g *Gateway) providerFailed(c *dnsCall, err error) error {
 	return g.fail(c, providerError(err))
 }
 
-// succeed audits an allowed call that changed records at the Provider,
-// with how long it took. The change is made even if its event is lost,
+// succeed audits an allowed call that changed records at the Provider.
+// The change is made even if its event is lost,
 // which is logged.
 func (g *Gateway) succeed(c *dnsCall) {
 	c.event.Result = audit.ResultOK
-	c.event.DurationMS = time.Since(c.start).Milliseconds()
 
 	_ = g.writeAudit(c.request, c.event)
 }
 
-// fail audits an allowed call that failed, with the category of err and
-// how long it took, and returns err. The call fails even if its event is
+// fail audits an allowed call that failed, with the category of err, and
+// returns err. The call fails even if its event is
 // lost.
 func (g *Gateway) fail(c *dnsCall, err error) error {
 	c.event.Result = audit.ResultFailed
 	c.event.Category = category(err)
-	c.event.DurationMS = time.Since(c.start).Milliseconds()
 
 	_ = g.writeAudit(c.request, c.event)
 

@@ -382,6 +382,18 @@ func (h *harness) call(t *testing.T, tok string, req any) error {
 	case *dnsgatev1.GetRecordRequest:
 		req.Token = tok
 		_, err = h.client.GetRecord(t.Context(), req)
+	case *dnsgatev1.CreateRecordRequest:
+		req.Token = tok
+		_, err = h.client.CreateRecord(t.Context(), req)
+	case *dnsgatev1.UpdateRecordRequest:
+		req.Token = tok
+		_, err = h.client.UpdateRecord(t.Context(), req)
+	case *dnsgatev1.PatchRecordRequest:
+		req.Token = tok
+		_, err = h.client.PatchRecord(t.Context(), req)
+	case *dnsgatev1.DeleteRecordRequest:
+		req.Token = tok
+		_, err = h.client.DeleteRecord(t.Context(), req)
 	default:
 		t.Fatalf("unknown request %T", req)
 	}

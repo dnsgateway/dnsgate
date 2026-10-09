@@ -87,9 +87,10 @@ type Event struct {
 	Category Category `json:"category,omitempty"`
 	// ProviderStatus is the HTTP status of the Provider's error answer.
 	ProviderStatus int `json:"provider_status,omitempty"`
-	// DurationMS is how long a request that reached the Provider took, in
-	// milliseconds.
-	DurationMS int64 `json:"duration_ms,omitempty"`
+	// DurationMS is how long the request took until the event, in
+	// milliseconds: for a request the Gateway carried out, including its
+	// Provider calls.
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // Log writes Events to an io.Writer, one JSON object per line.
