@@ -285,11 +285,15 @@ func (g *Gateway) readRRset(c *dnsCall) (dnsprovider.Zone, []dnsprovider.Record,
 // apply changes the records current of the call's RRset into target,
 // through one Changeset, and audits the call. It returns the RRset as the
 // Provider holds it after, nil when it holds none. When the Provider
-// fails a change, the call fails; the changes it confirmed stay made.
+// fails a change, the call fails; the changes it confirmed stay made,
+// and the audit event counts them either way.
 func (g *Gateway) apply(c *dnsCall, zone dnsprovider.Zone, current, target []dnsprovider.Record) (*dnsgatev1.RecordSet, error) {
 	changes, kept := plan(current, target)
 
 	after := kept
+
+	applied := 0
+	c.event.ChangesApplied = &applied
 
 	if len(changes) > 0 {
 		res, err := dnsprovider.Apply(c.ctx, c.provider, dnsprovider.Changeset{Zone: zone, Changes: changes})
@@ -297,10 +301,16 @@ func (g *Gateway) apply(c *dnsCall, zone dnsprovider.Zone, current, target []dns
 			return nil, g.providerFailed(c, err)
 		}
 
+		var failed error
+
 		for _, r := range res.Results {
 			if r.Err != nil {
-				return nil, g.providerFailed(c, r.Err)
+				failed = cmp.Or(failed, r.Err)
+
+				continue
 			}
+
+			applied++
 
 			if r.Change.Kind == dnsprovider.ChangeDelete {
 				continue
@@ -312,6 +322,10 @@ func (g *Gateway) apply(c *dnsCall, zone dnsprovider.Zone, current, target []dns
 			}
 
 			after = append(after, rec)
+		}
+
+		if failed != nil {
+			return nil, g.providerFailed(c, failed)
 		}
 	}
 

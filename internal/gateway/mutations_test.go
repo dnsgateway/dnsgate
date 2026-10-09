@@ -613,6 +613,12 @@ func TestEachMutationAndDenialIsAuditedOnceWithoutSecrets(t *testing.T) {
 			}
 		}
 
+		// The update modifies "a" into "c" and deletes "b"; the denial
+		// changes nothing and has no Changeset.
+		if want := []any{float64(1), float64(1), float64(2), float64(1), nil}[i]; e["changes_applied"] != want {
+			t.Errorf("event %d changes_applied = %v, want %v", i, e["changes_applied"], want)
+		}
+
 		if wantEgress := map[bool]any{true: "gateway", false: nil}[result == "ok"]; e["egress"] != wantEgress {
 			t.Errorf("event %d egress = %v, want %v", i, e["egress"], wantEgress)
 		}
@@ -739,6 +745,10 @@ func TestAChangeTheProviderFailsFailsTheCallAndTheOthersStayMade(t *testing.T) {
 	events := h.auditEvents(t)[1:]
 	if len(events) != 1 || events[0]["event"] != "records.update" || events[0]["result"] != "failed" || events[0]["provider_status"] != float64(400) {
 		t.Errorf("audit events = %v, want one failed records.update, provider status 400", events)
+	}
+
+	if got := events[0]["changes_applied"]; got != float64(1) {
+		t.Errorf("changes_applied = %v, want 1: the audit log keeps the change the Provider made", got)
 	}
 }
 

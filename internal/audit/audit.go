@@ -89,6 +89,11 @@ type Event struct {
 	Category Category `json:"category,omitempty"`
 	// ProviderStatus is the HTTP status of the Provider's error answer.
 	ProviderStatus int `json:"provider_status,omitempty"`
+	// ChangesApplied is how many changes of a mutation's Changeset the
+	// Provider confirmed, set once the Gateway applies one: on a failed
+	// mutation, the changes that stay made. nil for an event with no
+	// Changeset.
+	ChangesApplied *int `json:"changes_applied,omitempty"`
 	// DurationMS is how long the request took until the event, in
 	// milliseconds: for a request the Gateway carried out, including its
 	// Provider calls.
