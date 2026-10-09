@@ -37,6 +37,14 @@ func (c *Client) InspectToken(ctx context.Context, tok string) (*dnsgatev1.Inspe
 		(*dnsgatev1.Response).GetInspectToken)
 }
 
+// CreateToken asks the Gateway to issue a Derived Token of the Parent
+// Token in req.
+func (c *Client) CreateToken(ctx context.Context, req *dnsgatev1.CreateTokenRequest) (*dnsgatev1.CreateTokenResponse, error) {
+	return roundTrip(ctx, c, "token create",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_CreateToken{CreateToken: req}},
+		(*dnsgatev1.Response).GetCreateToken)
+}
+
 // ResealToken asks the Gateway to reseal tok under its current encryption
 // key.
 func (c *Client) ResealToken(ctx context.Context, tok string) (*dnsgatev1.ResealTokenResponse, error) {

@@ -54,6 +54,7 @@ message Request {
     GetZoneRequest get_zone = 5;
     ListRecordsRequest list_records = 6;
     GetRecordRequest get_record = 7;
+    CreateTokenRequest create_token = 8;
   }
 }
 
@@ -67,6 +68,7 @@ message Response {
     GetZoneResponse get_zone = 5;
     ListRecordsResponse list_records = 6;
     GetRecordResponse get_record = 7;
+    CreateTokenResponse create_token = 8;
   }
 }
 
@@ -123,6 +125,33 @@ message InspectTokenResponse {
   // provider names the token's Provider.
   string provider = 7;
   repeated Permission permissions = 8;
+}
+
+// CreateTokenRequest asks the Gateway to issue a Derived Token. It needs
+// create on tokens. The Derived Token gets the Parent Token's Provider and
+// Provider Credential, and must not exceed the Parent Token (Narrowing):
+// otherwise the request fails as a narrowing violation naming the
+// dimension.
+message CreateTokenRequest {
+  // token is the Parent Token.
+  string token = 1;
+  // sub is the Service Account the Derived Token is issued for.
+  string sub = 2;
+  // permissions are the Derived Token's Permissions, each with verbs. They
+  // must be covered by the Parent Token's.
+  repeated Permission permissions = 3;
+  // expires is the Derived Token's lifetime. It must end no later than the
+  // Parent Token's. Left out, the Derived Token never expires, which only
+  // a Parent Token that never expires allows.
+  optional google.protobuf.Duration expires = 4;
+}
+
+// CreateTokenResponse carries the new Derived Token.
+message CreateTokenResponse {
+  // token is the Derived Token.
+  string token = 1;
+  // jti is the Derived Token's ID.
+  string jti = 2;
 }
 
 // ResealTokenRequest asks the Gateway to reseal a Service Token: to
