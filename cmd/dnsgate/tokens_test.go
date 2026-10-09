@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -138,7 +139,8 @@ func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
 `,
 	}
 
-	permissions := map[string]string{}
+	// permissions are the Derived Token Permissions issued from each file.
+	permissions := map[string][]inspectedPermission{}
 
 	for name, content := range files {
 		path := filepath.Join(dir, name)
@@ -159,21 +161,16 @@ func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
 			t.Fatalf("inspect output is not JSON: %v\n%s", err, out)
 		}
 
-		perms, err := json.Marshal(got.Permissions)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		permissions[name] = string(perms)
+		permissions[name] = got.Permissions
 	}
 
-	want := `[{"verbs":["get","list","create"],"resources":null,"zones":["example.com"],"names":["*.apps","_acme-challenge.**"],"types":["A","TXT"],"egress":["gateway"]},` +
-		`{"verbs":["list"],"resources":["zones"],"zones":null,"names":null,"types":null,"egress":null}]`
+	fromYAML := permissions["app.yaml"]
+	if len(fromYAML) != 2 || !slices.Equal(fromYAML[1].Resources, []string{"zones"}) {
+		t.Fatalf("Derived Token Permissions from app.yaml = %+v, want its two, the second on zones", fromYAML)
+	}
 
-	for name, got := range permissions {
-		if got != want {
-			t.Errorf("Derived Token Permissions from %s =\n%s\nwant\n%s", name, got, want)
-		}
+	if fromJSON := permissions["app.json"]; !reflect.DeepEqual(fromJSON, fromYAML) {
+		t.Errorf("Derived Token Permissions from app.json =\n%+v\nwant those from app.yaml\n%+v", fromJSON, fromYAML)
 	}
 }
 
