@@ -6,7 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dnsgateway/dnsprovider"
+	"github.com/dnsgateway/dnsprovider/providertest"
+	"google.golang.org/grpc/codes"
+
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
 // newDebugHarness returns a harness whose Gateway logs at debug.
@@ -99,5 +104,70 @@ func TestARequestLineCarriesTheRequestIDOfItsAuditEvent(t *testing.T) {
 
 	if lines[0]["request_id"] == lines[1]["request_id"] {
 		t.Errorf("both requests are logged with request_id %v", lines[0]["request_id"])
+	}
+}
+
+func TestDeniedAndFailedRequestsAreLoggedWithTheirCode(t *testing.T) {
+	h := newDebugHarness(t)
+	h.addZones()
+
+	root := h.onboard(t, onboardRequest())
+	reader := h.mint(t, nil, token.Permission{
+		Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"www"}, Types: []string{"A"}, Egress: []string{"gateway"},
+	})
+
+	wrongSecret := onboardRequest()
+	wrongSecret.BootstrapSecret = "wrong"
+
+	_, err := h.client.Onboard(t.Context(), wrongSecret)
+	wantError(t, err, codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED)
+
+	err = h.call(t, root+"x", &dnsgatev1.ListZonesRequest{})
+	wantError(t, err, codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED)
+
+	err = h.call(t, reader, &dnsgatev1.ListZonesRequest{})
+	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
+
+	h.fake.Fail(providertest.OpZone, &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 500})
+
+	err = h.call(t, root, &dnsgatev1.GetZoneRequest{Zone: "example.com"})
+	wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	stream, err := h.api.Call(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = stream.Recv()
+	wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
+
+	want := []struct{ operation, code string }{
+		{"onboard", "OK"},
+		{"onboard", "Unauthenticated"},
+		{"list_zones", "Unauthenticated"},
+		{"list_zones", "PermissionDenied"},
+		{"get_zone", "Unavailable"},
+		{"", "InvalidArgument"},
+	}
+
+	lines := h.requestLines(t)
+	if len(lines) != len(want) {
+		t.Fatalf("request lines = %v, want %d", lines, len(want))
+	}
+
+	for i, w := range want {
+		l := lines[i]
+
+		if op, _ := l["operation"].(string); op != w.operation || l["code"] != w.code {
+			t.Errorf("request line %d = %v, want operation %q, code %s", i, l, w.operation, w.code)
+		}
+
+		if id, _ := l["request_id"].(string); !strings.HasPrefix(id, "req_") {
+			t.Errorf("request line %d request_id = %v, want a req_ ID", i, l["request_id"])
+		}
 	}
 }

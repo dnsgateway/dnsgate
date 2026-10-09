@@ -120,6 +120,11 @@ func New(cfg Config) *Gateway {
 
 // Call implements GatewayService.Call.
 func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dnsgatev1.CallResponse]) (err error) {
+	// The request is logged however it ends, even before it has a
+	// Request, under the ID its audit events carry.
+	id, opened, op := g.newID(requestIDPrefix), g.now(), ""
+	defer func() { g.logRequest(stream.Context(), id, op, opened, err) }()
+
 	msg, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
 		return invalidRequest("the stream ended before a request")
@@ -134,10 +139,10 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		return invalidRequest("the first message of a stream must be a request")
 	}
 
-	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now(), relay: newRelay(stream)}
-	defer r.relay.close()
+	op = operation(req)
 
-	defer func() { g.logRequest(r, operation(req), err) }()
+	r := &request{ctx: stream.Context(), id: id, start: g.now(), relay: newRelay(stream)}
+	defer r.relay.close()
 
 	var resp *dnsgatev1.Response
 
@@ -190,23 +195,24 @@ type request struct {
 	relay *relay
 }
 
-// logRequest logs, at debug, the request r that ended with err. Like an
-// audit event, the line holds only fields the Gateway produced, never what
-// the client sent.
-func (g *Gateway) logRequest(r *request, op string, err error) {
+// logRequest logs, at debug, the request id, asking for the operation op
+// on a stream opened at opened, that ended with err. Like an audit event,
+// the line holds only fields the Gateway produced, never what the client
+// sent.
+func (g *Gateway) logRequest(ctx context.Context, id, op string, opened time.Time, err error) {
 	addr := ""
-	if p, ok := peer.FromContext(r.ctx); ok && p.Addr != nil {
+	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
 		addr = p.Addr.String()
 	}
 
-	method, _ := grpc.Method(r.ctx)
+	method, _ := grpc.Method(ctx)
 
-	g.log.LogAttrs(r.ctx, slog.LevelDebug, "request",
+	g.log.LogAttrs(ctx, slog.LevelDebug, "request",
 		slog.String("method", method),
 		slog.String("operation", op),
-		slog.String("request_id", r.id),
+		slog.String("request_id", id),
 		slog.String("peer", addr),
-		slog.Int64("duration_ms", g.now().Sub(r.start).Milliseconds()),
+		slog.Int64("duration_ms", g.now().Sub(opened).Milliseconds()),
 		slog.String("code", status.Code(err).String()),
 	)
 }
