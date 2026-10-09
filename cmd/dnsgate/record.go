@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -239,16 +238,6 @@ func runRecordDelete(ctx context.Context, f *Flags, name, typ string) error {
 		&dnsgatev1.DeleteRecordRequest{Token: f.Token, Egress: egress, Zone: f.Zone, Name: name, Type: typ})
 
 	return err
-}
-
-// checkRecordFlags checks the flags of the record commands and returns
-// the Egress asked for.
-func checkRecordFlags(f *Flags) (dnsgatev1.Egress, error) {
-	if f.Zone == "" {
-		return 0, errors.New("no zone: set " + envZone + " or --" + flagZone)
-	}
-
-	return checkReadFlags(f)
 }
 
 // recordSetOutput is an RRset as "record list" and "record get" print it.

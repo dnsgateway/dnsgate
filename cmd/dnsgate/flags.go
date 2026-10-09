@@ -163,6 +163,16 @@ func (f *Flags) AddRecordFlags(flags *pflag.FlagSet) {
 	f.AddReadFlags(flags)
 }
 
+// checkRecordFlags checks the flags of the record commands and returns
+// the Egress asked for.
+func checkRecordFlags(f *Flags) (dnsgatev1.Egress, error) {
+	if f.Zone == "" {
+		return 0, errors.New("no zone: set " + envZone + " or --" + flagZone)
+	}
+
+	return checkReadFlags(f)
+}
+
 // AddRecordWriteFlags registers the flags of "record create" and "record
 // update": the record flags and the RRset's TTL.
 func (f *Flags) AddRecordWriteFlags(flags *pflag.FlagSet) {
