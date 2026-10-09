@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"google.golang.org/grpc"
@@ -64,4 +66,12 @@ func callGateway[A, R any](ctx context.Context, f *Flags, name string, op func(*
 	}
 
 	return resp, nil
+}
+
+// printJSON prints v as indented JSON.
+func printJSON(out io.Writer, v any) error {
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(v)
 }

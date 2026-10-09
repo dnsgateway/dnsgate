@@ -21,6 +21,8 @@ const (
 	flagCredential      = "provider-credential"
 	flagProvider        = "provider"
 	flagExpires         = "expires"
+	flagZone            = "zone"
+	flagEgress          = "egress"
 
 	envKeyDir          = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
@@ -30,6 +32,8 @@ const (
 	envToken           = "DNSGATE_TOKEN"
 	envBootstrapSecret = "DNSGATE_BOOTSTRAP_SECRET"
 	envCredential      = "DNSGATE_PROVIDER_CREDENTIAL"
+	envZone            = "DNSGATE_ZONE"
+	envEgress          = "DNSGATE_EGRESS"
 )
 
 const (
@@ -59,6 +63,9 @@ type Flags struct {
 	Credential      string
 	Provider        string
 	Expires         time.Duration
+
+	Zone   string
+	Egress string
 }
 
 // DefaultFlags returns the flags resolved from the environment and
@@ -73,6 +80,8 @@ func DefaultFlags() *Flags {
 		Token:           withDefaultEnv(envToken, ""),
 		BootstrapSecret: withDefaultEnv(envBootstrapSecret, ""),
 		Credential:      withDefaultEnv(envCredential, ""),
+		Zone:            withDefaultEnv(envZone, ""),
+		Egress:          withDefaultEnv(envEgress, ""),
 	}
 }
 
@@ -104,6 +113,18 @@ func (f *Flags) AddClientFlags(flags *pflag.FlagSet) {
 func (f *Flags) AddTokenFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Token, flagToken, "", f.Token,
 		"Service Token to present (env "+envToken+secretHelp+")")
+}
+
+// AddEgressFlag registers the flag of commands that reach the Provider.
+func (f *Flags) AddEgressFlag(flags *pflag.FlagSet) {
+	flags.StringVarP(&f.Egress, flagEgress, "", f.Egress,
+		"Egress to reach the Provider through: gateway or agent (default: gateway if the token allows it; env "+envEgress+")")
+}
+
+// AddZoneFlag registers the flag of record commands.
+func (f *Flags) AddZoneFlag(flags *pflag.FlagSet) {
+	flags.StringVarP(&f.Zone, flagZone, "", f.Zone,
+		"zone the records are in, such as example.com (env "+envZone+")")
 }
 
 // AddOnboardFlags registers the flags of "onboard".

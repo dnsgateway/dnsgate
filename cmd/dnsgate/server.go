@@ -16,7 +16,12 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/config"
 	"github.com/dnsgateway/dnsgate/internal/gateway"
+	"github.com/dnsgateway/dnsgate/internal/provider"
 )
+
+// providers returns the Providers the Gateway calls. Tests replace it with
+// a fake Provider.
+var providers = provider.Registry
 
 func newServerCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
@@ -90,6 +95,7 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		Keys:            src,
 		BootstrapSecret: secret,
 		Audit:           audit.New(auditOut),
+		Providers:       providers(),
 		Logger:          log,
 	}))
 
