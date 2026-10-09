@@ -341,7 +341,7 @@ func (g *Gateway) apply(c *dnsCall, zone dnsprovider.Zone, current, target []dns
 
 	g.succeed(c)
 
-	sets := recordSets(c.perm.Zone, after, func(string, string) bool { return true })
+	sets := recordSets(c.perm.Zone, after, keepAll)
 	if len(sets) == 0 {
 		return nil, nil //nolint:nilnil // an RRset the change emptied
 	}

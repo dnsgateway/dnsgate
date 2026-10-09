@@ -55,7 +55,7 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 		return nil, err
 	}
 
-	sets := recordSets(c.perm.Zone, records, func(string, string) bool { return true })
+	sets := recordSets(c.perm.Zone, records, keepAll)
 	if len(sets) == 0 {
 		return nil, notFound("no such record set")
 	}
@@ -119,3 +119,6 @@ func recordSets(zone string, records []dnsprovider.Record, keep func(name, typ s
 
 	return sets
 }
+
+// keepAll is the recordSets filter that keeps every RRset.
+func keepAll(string, string) bool { return true }
