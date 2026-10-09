@@ -25,4 +25,5 @@ The Egress Agent refuses unspecified addresses (`0.0.0.0/8`, `::`) and IPv4-mapp
 
 - A client that half-closes its side of the stream right after the request cannot act as Egress Agent. A request whose Egress is agent then fails as a failed Provider request.
 - Clients and the Gateway both close relayed connections when the stream ends, so a cancelled request leaves no connection or goroutine behind.
-- The Gateway verifies the Provider's certificate against the system's CAs. A test or private deployment may name others (`AgentEgressRootCAs`). The Egress Agent cannot weaken this check.
+- The Gateway verifies the Provider's certificate against the system's CAs, for the Provider's hostname. A test or private deployment may name other CAs (`ProviderRootCAs`). The Egress Agent cannot weaken this check.
+- Gateway Egress uses the same check: the Gateway builds its own Provider transport for it, with the same TLS settings and timeouts, rather than leaving each Provider to its default HTTP client. One `ProviderRootCAs` setting covers both Egresses. The only other seam is where Gateway Egress connects (`GatewayEgressDial`), which tests point at a fake Provider. No setting hands the Gateway a transport of its own, so none can turn verification off.
