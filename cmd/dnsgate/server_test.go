@@ -65,6 +65,19 @@ func TestServerTakesLogLevelFromEnvUnlessTheFlagIsSet(t *testing.T) {
 	}
 }
 
+func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
+	env := newGatewayEnv(t)
+
+	out, err := runCLI(t, "server", "--config", env.config, "--log-level", "verbose")
+	if err == nil || !strings.Contains(err.Error(), `"verbose"`) || !strings.Contains(err.Error(), "error, warn, info, debug") {
+		t.Errorf("server error = %v, want one naming the level and the accepted levels\n%s", err, out)
+	}
+
+	if strings.Contains(out, `"msg":"serving"`) {
+		t.Errorf("server with an unknown log level listened:\n%s", out)
+	}
+}
+
 func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
 	env := newGatewayEnv(t)
 	gw := startServerAt(t, env.config, listenOnFreePort(t, env), "--log-level", "error")
