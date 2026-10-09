@@ -120,10 +120,10 @@ func New(cfg Config) *Gateway {
 
 // Call implements GatewayService.Call.
 func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dnsgatev1.CallResponse]) (err error) {
-	// The request is logged however it ends, even before it has a
-	// Request, under the ID its audit events carry.
-	id, opened, op := g.newID(requestIDPrefix), g.now(), ""
-	defer func() { g.logRequest(stream.Context(), id, op, opened, err) }()
+	// The request is logged however it ends, even before the stream has
+	// carried a `dnsgatev1.Request`, under the ID its audit events carry.
+	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now()}
+	defer func() { g.logRequest(r, err) }()
 
 	msg, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
@@ -139,9 +139,9 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		return invalidRequest("the first message of a stream must be a request")
 	}
 
-	op = operation(req)
+	r.operation = operation(req)
+	r.relay = newRelay(stream)
 
-	r := &request{ctx: stream.Context(), id: id, start: opened, relay: newRelay(stream)}
 	defer r.relay.close()
 
 	var resp *dnsgatev1.Response
@@ -186,6 +186,10 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 type request struct {
 	ctx context.Context //nolint:containedctx // scoped to one request
 	id  string
+	// operation is the name of the operation the request asks for, such
+	// as "list_zones", or "" until the stream has carried a request that
+	// names one.
+	operation string
 	// start is when the Gateway opened the request's stream, on the
 	// Gateway's clock. Its request line and its audit events measure
 	// their duration from it, so they agree; a test clock stands in for
@@ -196,25 +200,24 @@ type request struct {
 	relay *relay
 }
 
-// logRequest logs, at debug, the request id, asking for the operation op
-// on a stream opened at opened, that ended with err. Like an audit event,
-// the line holds only fields the Gateway produced, never what the client
-// sent.
-func (g *Gateway) logRequest(ctx context.Context, id, op string, opened time.Time, err error) {
+// logRequest logs, at debug, the request r, which ended with err. Like
+// an audit event, the line holds only fields the Gateway produced, never
+// what the client sent.
+func (g *Gateway) logRequest(r *request, err error) {
 	addr := ""
-	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+	if p, ok := peer.FromContext(r.ctx); ok && p.Addr != nil {
 		addr = p.Addr.String()
 	}
 
-	method, _ := grpc.Method(ctx)
+	method, _ := grpc.Method(r.ctx)
 
-	g.log.LogAttrs(ctx, slog.LevelDebug, "request",
-		slog.String("method", method),
-		slog.String("operation", op),
-		slog.String("request_id", id),
-		slog.String("peer", addr),
-		slog.Int64("duration_ms", g.now().Sub(opened).Milliseconds()),
-		slog.String("code", status.Code(err).String()),
+	g.log.Debug("request",
+		"method", method,
+		"operation", r.operation,
+		"request_id", r.id,
+		"peer", addr,
+		"duration_ms", g.now().Sub(r.start).Milliseconds(),
+		"code", status.Code(err).String(),
 	)
 }
 
