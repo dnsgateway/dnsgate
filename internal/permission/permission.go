@@ -6,6 +6,7 @@
 package permission
 
 import (
+	"errors"
 	"slices"
 	"strings"
 
@@ -72,6 +73,55 @@ func EgressFromAPI(a dnsgatev1.Egress) (Egress, bool) {
 	}
 
 	return "", false
+}
+
+// Check returns an error for the first malformed rule of perms: one
+// without verbs, naming an unknown verb, resource or egress, or holding an
+// empty zone, type or name, or a name with an empty label or "@" among
+// other labels. Its message never quotes the rule: it may come from a
+// client.
+func Check(perms []token.Permission) error {
+	verbs := []Verb{VerbGet, VerbList, VerbCreate, VerbUpdate, VerbPatch, VerbDelete}
+	resources := []Resource{ResourceZones, ResourceRecords, ResourceTokens}
+	egress := []Egress{EgressGateway, EgressAgent}
+
+	for _, p := range perms {
+		switch {
+		case len(p.Verbs) == 0:
+			return errors.New("a permission has no verbs")
+		case !allKnown(p.Verbs, verbs):
+			return errors.New("a permission names an unknown verb")
+		case !allKnown(p.Resources, resources):
+			return errors.New("a permission names an unknown resource")
+		case !allKnown(p.Egress, egress):
+			return errors.New("a permission names an unknown egress")
+		case slices.Contains(p.Zones, ""):
+			return errors.New("a permission names an empty zone")
+		case slices.Contains(p.Types, ""):
+			return errors.New("a permission names an empty type")
+		case slices.ContainsFunc(p.Names, func(n string) bool { return !validName(n) }):
+			return errors.New("a permission names a malformed name pattern")
+		}
+	}
+
+	return nil
+}
+
+// allKnown reports whether every value is one of known.
+func allKnown[T ~string](values []string, known []T) bool {
+	return !slices.ContainsFunc(values, func(v string) bool { return !slices.Contains(known, T(v)) })
+}
+
+// validName reports whether a name pattern is the apex, or labels none of
+// which is empty or the apex.
+func validName(pattern string) bool {
+	if pattern == dnsname.Apex {
+		return true
+	}
+
+	labels := strings.Split(pattern, ".")
+
+	return !slices.Contains(labels, "") && !slices.Contains(labels, dnsname.Apex)
 }
 
 // wildcard is the zones and types filter entry that matches every value.

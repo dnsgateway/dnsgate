@@ -250,6 +250,34 @@ func TestCreateTokenRejectsALaterExpiry(t *testing.T) {
 	}
 }
 
+func TestCreateTokenRejectsMalformedRequests(t *testing.T) {
+	h := newHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	for name, edit := range map[string]func(*dnsgatev1.CreateTokenRequest){
+		"no sub":                func(r *dnsgatev1.CreateTokenRequest) { r.Sub = "" },
+		"no permissions":        func(r *dnsgatev1.CreateTokenRequest) { r.Permissions = nil },
+		"a rule without verbs":  func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Verbs = nil },
+		"unknown verb":          func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Verbs = []string{"get", "write"} },
+		"unknown resource":      func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Resources = []string{"accounts"} },
+		"unknown egress":        func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Egress = []string{"direct"} },
+		"empty zone":            func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Zones = []string{""} },
+		"empty type":            func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Types = []string{""} },
+		"empty name":            func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Names = []string{""} },
+		"name with empty label": func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Names = []string{"www..apps"} },
+		"apex in a name":        func(r *dnsgatev1.CreateTokenRequest) { r.Permissions[0].Names = []string{"www.@"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := &dnsgatev1.CreateTokenRequest{Token: root, Sub: "app", Permissions: appPermissions()}
+			edit(req)
+
+			_, err := h.client.CreateToken(t.Context(), req)
+			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
+		})
+	}
+}
+
 func TestADerivedTokenWorksWithinItsPermissionsOnly(t *testing.T) {
 	h := newHarness(t)
 	h.addZones()

@@ -26,8 +26,8 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 		return nil, g.deny(r, event, permissionDenied("the token's permissions do not allow issuing tokens"))
 	}
 
-	if req.Expires != nil && req.GetExpires().AsDuration() < time.Second {
-		return nil, g.deny(r, event, invalidRequest("expires must be at least one second"))
+	if err := checkCreateTokenRequest(req); err != nil {
+		return nil, g.deny(r, event, err)
 	}
 
 	now := g.now()
@@ -70,6 +70,25 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_CreateToken{
 		CreateToken: &dnsgatev1.CreateTokenResponse{Token: sealed, Jti: child.ID},
 	}}, nil
+}
+
+// checkCreateTokenRequest checks that req names a Service Account and
+// well-formed Permissions, each with verbs, and a usable expiry.
+func checkCreateTokenRequest(req *dnsgatev1.CreateTokenRequest) error {
+	switch {
+	case req.GetSub() == "":
+		return invalidRequest("missing sub")
+	case len(req.GetPermissions()) == 0:
+		return invalidRequest("missing permissions")
+	case req.Expires != nil && req.GetExpires().AsDuration() < time.Second:
+		return invalidRequest("expires must be at least one second")
+	}
+
+	if err := permission.Check(permissionsFromAPI(req.GetPermissions())); err != nil {
+		return invalidRequest(err.Error())
+	}
+
+	return nil
 }
 
 // dimensionExp names the expiry in a narrowing violation.
