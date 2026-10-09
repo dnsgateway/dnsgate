@@ -275,6 +275,49 @@ func TestListsShowOnlyWhatALimitedTokenCovers(t *testing.T) {
 	}
 }
 
+func TestNamePatternsOfRecordCalls(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, name, typ string
+		allowed            bool
+	}{
+		{"@", "@", "A", true},
+		{"@", "apps", "A", false},
+		{"*", "apps", "A", true},
+		{"*", "www.apps", "A", false},
+		{"*", "@", "A", false},
+		{"**", "apps", "A", true},
+		{"**", "www.apps", "A", true},
+		{"**", "_acme-challenge.www", "TXT", true},
+		{"**", "@", "A", false},
+		{"*.apps", "www.apps", "A", true},
+		{"*.apps", "apps", "A", false},
+		{"**.apps", "www.apps", "TXT", true},
+		{"**.apps", "apps", "A", false},
+	} {
+		t.Run(tc.pattern+" "+tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.addZones()
+
+			tok := h.mint(t, nil, token.Permission{Verbs: []string{"get"}, Names: []string{tc.pattern}})
+
+			err := h.call(t, tok, &dnsgatev1.GetRecordRequest{Zone: "example.com", Name: tc.name, Type: tc.typ})
+			if tc.allowed {
+				if err != nil {
+					t.Errorf("GetRecord %s under %q: %v, want it allowed", tc.name, tc.pattern, err)
+				}
+
+				return
+			}
+
+			wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
+
+			if calls := h.fake.Calls(); len(calls) != 0 {
+				t.Errorf("provider calls = %+v, want none", calls)
+			}
+		})
+	}
+}
+
 func TestRequestsOutsideThePermissionsAreDeniedBeforeTheProvider(t *testing.T) {
 	limited := token.Permission{
 		Verbs:     []string{"get"},
