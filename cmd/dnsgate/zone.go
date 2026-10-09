@@ -10,6 +10,7 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
+	"github.com/dnsgateway/dnsgate/internal/permission"
 )
 
 func newZoneCmd(flags *Flags) *cobra.Command {
@@ -113,17 +114,10 @@ func newZoneOutput(z *dnsgatev1.Zone) zoneOutput {
 	}
 }
 
-// egresses maps the --egress values to the API's Egress.
-var egresses = map[string]dnsgatev1.Egress{
-	"":        dnsgatev1.Egress_EGRESS_UNSPECIFIED,
-	"gateway": dnsgatev1.Egress_EGRESS_GATEWAY,
-	"agent":   dnsgatev1.Egress_EGRESS_AGENT,
-}
-
 // checkReadFlags checks the flags every zone and record command takes and
 // returns the Egress asked for.
 func checkReadFlags(f *Flags) (dnsgatev1.Egress, error) {
-	egress, ok := egresses[f.Egress]
+	egress, ok := permission.Egress(f.Egress).API()
 
 	switch {
 	case !ok:

@@ -169,8 +169,8 @@ func TestChooseEgress(t *testing.T) {
 
 	for name, tc := range map[string]struct {
 		perms     []token.Permission
-		requested string
-		want      string
+		requested permission.Egress
+		want      permission.Egress
 		ok        bool
 	}{
 		"none asked, both allowed":        {both, "", "gateway", true},

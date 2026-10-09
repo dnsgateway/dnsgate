@@ -25,20 +25,12 @@ type dnsCall struct {
 	start time.Time
 }
 
-func newDNSCall(r *request, event audit.Name, verb string) *dnsCall {
+func newDNSCall(r *request, event audit.Name, verb permission.Verb) *dnsCall {
 	return &dnsCall{
 		request: r,
-		event:   audit.Event{Event: event, Verb: verb},
+		event:   audit.Event{Event: event, Verb: string(verb)},
 		start:   time.Now(),
 	}
-}
-
-// egressNames maps the Egress a request asks for to its Permission name;
-// empty when the request leaves the choice to the Gateway.
-var egressNames = map[dnsgatev1.Egress]string{
-	dnsgatev1.Egress_EGRESS_UNSPECIFIED: "",
-	dnsgatev1.Egress_EGRESS_GATEWAY:     permission.EgressGateway,
-	dnsgatev1.Egress_EGRESS_AGENT:       permission.EgressAgent,
 }
 
 // openToken opens the Service Token tok and names its holder in the
@@ -62,13 +54,13 @@ func (g *Gateway) openToken(c *dnsCall, tok string) (token.Claims, error) {
 // it is refused whatever the token allows, and so is a token that allows
 // only Agent Egress, which never falls back to Gateway Egress. authorize
 // returns the Egress.
-func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1.Egress, pr permission.Request) (string, error) {
-	name, ok := egressNames[requested]
+func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1.Egress, pr permission.Request) (permission.Egress, error) {
+	name, ok := permission.EgressFromAPI(requested)
 	if !ok {
 		return "", g.refuse(c, audit.ResultDenied, invalidRequest("unknown egress"))
 	}
 
-	c.event.RequestedEgress = name
+	c.event.RequestedEgress = string(name)
 	if name == permission.EgressAgent {
 		return "", g.refuse(c, audit.ResultDenied, agentEgressNotSupported())
 	}
@@ -84,7 +76,7 @@ func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1
 		return "", g.refuse(c, audit.ResultDenied, agentEgressNotSupported())
 	}
 
-	c.event.Egress = egress
+	c.event.Egress = string(egress)
 
 	return egress, nil
 }

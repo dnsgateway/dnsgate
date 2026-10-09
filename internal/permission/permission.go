@@ -9,31 +9,69 @@ import (
 	"slices"
 	"strings"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
+// Verb is what a request does, as a rule's verbs name it.
+type Verb string
+
 // Verbs.
 const (
-	VerbGet    = "get"
-	VerbList   = "list"
-	VerbCreate = "create"
-	VerbUpdate = "update"
-	VerbPatch  = "patch"
-	VerbDelete = "delete"
+	VerbGet    Verb = "get"
+	VerbList   Verb = "list"
+	VerbCreate Verb = "create"
+	VerbUpdate Verb = "update"
+	VerbPatch  Verb = "patch"
+	VerbDelete Verb = "delete"
 )
+
+// Resource is what a request is about, as a rule's resources name it.
+type Resource string
 
 // Resources.
 const (
-	ResourceZones   = "zones"
-	ResourceRecords = "records"
-	ResourceTokens  = "tokens"
+	ResourceZones   Resource = "zones"
+	ResourceRecords Resource = "records"
+	ResourceTokens  Resource = "tokens"
 )
+
+// Egress is where the connection to the Provider leaves from, as a rule's
+// egress filter names it. The empty Egress is none in particular.
+type Egress string
 
 // Egress values.
 const (
-	EgressGateway = "gateway"
-	EgressAgent   = "agent"
+	EgressGateway Egress = "gateway"
+	EgressAgent   Egress = "agent"
 )
+
+// apiEgress maps each Egress to the API's.
+var apiEgress = map[Egress]dnsgatev1.Egress{
+	"":            dnsgatev1.Egress_EGRESS_UNSPECIFIED,
+	EgressGateway: dnsgatev1.Egress_EGRESS_GATEWAY,
+	EgressAgent:   dnsgatev1.Egress_EGRESS_AGENT,
+}
+
+// API returns the API's Egress for e, EGRESS_UNSPECIFIED for the empty
+// one, and whether e is known.
+func (e Egress) API() (dnsgatev1.Egress, bool) {
+	a, ok := apiEgress[e]
+
+	return a, ok
+}
+
+// EgressFromAPI returns the Egress the API's a names, empty for
+// EGRESS_UNSPECIFIED, and whether a is known.
+func EgressFromAPI(a dnsgatev1.Egress) (Egress, bool) {
+	for e, v := range apiEgress {
+		if v == a {
+			return e, true
+		}
+	}
+
+	return "", false
+}
 
 // Apex is the name of a zone's own name, relative to the zone.
 const Apex = "@"
@@ -49,15 +87,15 @@ const wildcard = "*"
 // it returns with a request per zone or record. An empty Egress is not checked
 // either; ChooseEgress chooses one for a request that does not ask.
 type Request struct {
-	Verb     string
-	Resource string
+	Verb     Verb
+	Resource Resource
 	// Zone is the zone's name, such as "example.com".
 	Zone string
 	// Name is the record name relative to Zone: Apex for the zone's own
 	// name, "www.apps" for www.apps.example.com.
 	Name   string
 	Type   string
-	Egress string
+	Egress Egress
 }
 
 // Allows reports whether any of perms allows r.
@@ -70,10 +108,10 @@ func Allows(perms []token.Permission, r Request) bool {
 // Left to choose, it is Gateway Egress where a rule allows it, else Agent
 // Egress: a token limited to Agent Egress never falls back to Gateway
 // Egress.
-func ChooseEgress(perms []token.Permission, r Request) (string, bool) {
-	choices := []string{EgressGateway, EgressAgent}
+func ChooseEgress(perms []token.Permission, r Request) (Egress, bool) {
+	choices := []Egress{EgressGateway, EgressAgent}
 	if r.Egress != "" {
-		choices = []string{r.Egress}
+		choices = []Egress{r.Egress}
 	}
 
 	for _, e := range choices {
@@ -92,15 +130,15 @@ func ChooseEgress(perms []token.Permission, r Request) (string, bool) {
 func allows(p token.Permission, r Request) bool {
 	resources := p.Resources
 	if len(resources) == 0 {
-		resources = []string{ResourceRecords}
+		resources = []string{string(ResourceRecords)}
 	}
 
-	return slices.Contains(p.Verbs, r.Verb) &&
-		slices.Contains(resources, r.Resource) &&
+	return slices.Contains(p.Verbs, string(r.Verb)) &&
+		slices.Contains(resources, string(r.Resource)) &&
 		(r.Zone == "" || matchAny(p.Zones, r.Zone, matchZone)) &&
 		(r.Name == "" || matchAny(p.Names, r.Name, MatchName)) &&
 		(r.Type == "" || matchAny(p.Types, r.Type, matchType)) &&
-		(r.Egress == "" || matchAny(p.Egress, r.Egress, func(e, v string) bool { return e == v }))
+		(r.Egress == "" || matchAny(p.Egress, string(r.Egress), func(e, v string) bool { return e == v }))
 }
 
 // matchAny reports whether value matches any entry of filter, or filter
