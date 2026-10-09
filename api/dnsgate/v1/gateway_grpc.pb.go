@@ -35,9 +35,12 @@ type GatewayServiceClient interface {
 	// holding a Request and the Gateway answers with one CallResponse holding
 	// the Response, or ends the stream with an error status.
 	//
-	// The stream is bidirectional so that Agent Egress can later relay the
-	// Gateway's connection to the Provider inside the same stream, as further
-	// CallRequest and CallResponse kinds, without an API break.
+	// A request that goes through Agent Egress relays the Gateway's
+	// connections to the Provider inside the same stream, before the
+	// Response: the Gateway sends RelayOpen, the client, as Egress Agent,
+	// connects and answers RelayOpened, then each side sends RelayData and
+	// ends its direction with RelayClose (ADR 0006). The client keeps its
+	// side of the stream open until the Response, so that it can relay.
 	//
 	// A failed request ends the stream with a gRPC status carrying an Error
 	// detail.
@@ -76,9 +79,12 @@ type GatewayServiceServer interface {
 	// holding a Request and the Gateway answers with one CallResponse holding
 	// the Response, or ends the stream with an error status.
 	//
-	// The stream is bidirectional so that Agent Egress can later relay the
-	// Gateway's connection to the Provider inside the same stream, as further
-	// CallRequest and CallResponse kinds, without an API break.
+	// A request that goes through Agent Egress relays the Gateway's
+	// connections to the Provider inside the same stream, before the
+	// Response: the Gateway sends RelayOpen, the client, as Egress Agent,
+	// connects and answers RelayOpened, then each side sends RelayData and
+	// ends its direction with RelayClose (ADR 0006). The client keeps its
+	// side of the stream open until the Response, so that it can relay.
 	//
 	// A failed request ends the stream with a gRPC status carrying an Error
 	// detail.

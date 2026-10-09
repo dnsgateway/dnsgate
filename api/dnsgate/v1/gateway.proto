@@ -15,9 +15,12 @@ service GatewayService {
   // holding a Request and the Gateway answers with one CallResponse holding
   // the Response, or ends the stream with an error status.
   //
-  // The stream is bidirectional so that Agent Egress can later relay the
-  // Gateway's connection to the Provider inside the same stream, as further
-  // CallRequest and CallResponse kinds, without an API break.
+  // A request that goes through Agent Egress relays the Gateway's
+  // connections to the Provider inside the same stream, before the
+  // Response: the Gateway sends RelayOpen, the client, as Egress Agent,
+  // connects and answers RelayOpened, then each side sends RelayData and
+  // ends its direction with RelayClose (ADR 0006). The client keeps its
+  // side of the stream open until the Response, so that it can relay.
   //
   // A failed request ends the stream with a gRPC status carrying an Error
   // detail.
@@ -27,21 +30,76 @@ service GatewayService {
 // CallRequest is one message the client sends on a Call stream.
 message CallRequest {
   oneof message {
-    // Request is the first and, in v1, only message of a stream.
+    // Request is the first message of a stream.
     Request request = 1;
+    // opened answers a RelayOpen.
+    RelayOpened opened = 2;
+    // data carries bytes the Provider sent on a relayed connection.
+    RelayData data = 3;
+    // close says the Provider sends no more bytes on a relayed
+    // connection.
+    RelayClose close = 4;
   }
-  // Field numbers 2 to 15 are kept for the Agent Egress relay frames.
-  reserved 2 to 15;
+  // Field numbers 5 to 15 are kept for further relay frames.
+  reserved 5 to 15;
 }
 
 // CallResponse is one message the Gateway sends on a Call stream.
 message CallResponse {
   oneof message {
-    // Response answers the stream's Request.
+    // Response answers the stream's Request. It is the last message:
+    // relayed connections still open end with it.
     Response response = 1;
+    // open asks the client, as Egress Agent, to connect to the Provider.
+    RelayOpen open = 2;
+    // data carries bytes for the Provider on a relayed connection.
+    RelayData data = 3;
+    // close says the Gateway sends no more bytes on a relayed
+    // connection.
+    RelayClose close = 4;
   }
-  // Field numbers 2 to 15 are kept for the Agent Egress relay frames.
-  reserved 2 to 15;
+  // Field numbers 5 to 15 are kept for further relay frames.
+  reserved 5 to 15;
+}
+
+// RelayOpen asks the Egress Agent to open a TCP connection to the
+// Provider and relay it. The Egress Agent connects only to port 443 of a
+// host that resolves to no loopback, private, link-local, CGNAT, unique
+// local or unspecified address (ADR 0002).
+message RelayOpen {
+  // id names the connection in the stream's later relay frames. The
+  // Gateway numbers connections from 1 and never reuses an id in a
+  // stream.
+  uint32 id = 1;
+  // host is the full hostname of the Provider's API, such as
+  // "api.cloudflare.com".
+  string host = 2;
+  uint32 port = 3;
+}
+
+// RelayOpened is the Egress Agent's answer to a RelayOpen.
+message RelayOpened {
+  // id is the RelayOpen's.
+  uint32 id = 1;
+  // error says why the Egress Agent did not connect; empty when it did.
+  string error = 2;
+}
+
+// RelayData carries bytes of a relayed connection: the TLS records the
+// Gateway and the Provider exchange, which the Egress Agent cannot read.
+message RelayData {
+  // id names the connection.
+  uint32 id = 1;
+  // data is at most 32 KiB.
+  bytes data = 2;
+}
+
+// RelayClose ends one direction of a relayed connection, like a TCP FIN:
+// its sender sends no more RelayData for id. A connection is gone once
+// both sides have sent RelayClose, or with the stream.
+message RelayClose {
+  // id names the connection.
+  uint32 id = 1;
 }
 
 // Request is one Gateway operation.
@@ -186,8 +244,8 @@ enum Egress {
   EGRESS_UNSPECIFIED = 0;
   // Gateway Egress: the Provider sees the Gateway's source IP.
   EGRESS_GATEWAY = 1;
-  // Agent Egress: the Provider sees the client's source IP. Not supported
-  // yet.
+  // Agent Egress: the Provider sees the client's source IP. The client
+  // relays the Gateway's connection inside the request's stream.
   EGRESS_AGENT = 2;
 }
 
