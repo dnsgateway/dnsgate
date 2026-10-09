@@ -119,6 +119,8 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		resp, err = g.onboard(r, op.Onboard)
 	case *dnsgatev1.Request_InspectToken:
 		resp, err = g.inspectToken(r, op.InspectToken)
+	case *dnsgatev1.Request_CreateToken:
+		resp, err = g.createToken(r, op.CreateToken)
 	case *dnsgatev1.Request_ResealToken:
 		resp, err = g.resealToken(r, op.ResealToken)
 	case *dnsgatev1.Request_ListZones:

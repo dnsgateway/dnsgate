@@ -50,9 +50,9 @@ func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, p
 		start:   time.Now(),
 	}
 
-	claims, err := g.codec.Open(c.ctx, req.GetToken())
+	claims, err := g.openToken(r, c.event, req.GetToken())
 	if err != nil {
-		return nil, g.deny(r, c.event, unauthenticated("invalid service token"))
+		return nil, err
 	}
 
 	c.claims = claims
@@ -75,6 +75,19 @@ func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, p
 	}
 
 	return c, nil
+}
+
+// openToken opens the Service Token tok presented with a request: it
+// decrypts and verifies it and checks its iss, aud, nbf and exp. A token
+// that does not open is audited as event, denied, and openToken returns
+// the Gateway error the client gets.
+func (g *Gateway) openToken(r *request, event audit.Event, tok string) (token.Claims, error) {
+	claims, err := g.codec.Open(r.ctx, tok)
+	if err != nil {
+		return token.Claims{}, g.deny(r, event, unauthenticated("invalid service token"))
+	}
+
+	return claims, nil
 }
 
 // authorize checks that the Egress is supported and that the token's

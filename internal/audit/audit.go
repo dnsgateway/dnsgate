@@ -20,6 +20,7 @@ type Name string
 // Event names.
 const (
 	EventOnboard      Name = "onboard"
+	EventTokenCreate  Name = "token.create"
 	EventTokenInspect Name = "token.inspect"
 	EventTokenReseal  Name = "token.reseal"
 	EventZonesList    Name = "zones.list"
@@ -54,8 +55,11 @@ type Event struct {
 	ServiceAccount string `json:"service_account,omitempty"`
 	// TokenID is the jti of the token the event concerns, such as the new
 	// Root Token of an onboard event.
-	TokenID  string `json:"jti,omitempty"`
-	Provider string `json:"provider,omitempty"`
+	TokenID string `json:"jti,omitempty"`
+	// ParentTokenID is the jti of the Parent Token presented to issue a
+	// Derived Token.
+	ParentTokenID string `json:"parent_jti,omitempty"`
+	Provider      string `json:"provider,omitempty"`
 	// OldKeyID and NewKeyID are the encryption kids a token event moves
 	// a token from and to, such as for Resealing. A kid is not a secret.
 	OldKeyID string `json:"old_kid,omitempty"`
