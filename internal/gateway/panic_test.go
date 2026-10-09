@@ -47,15 +47,16 @@ func newPanickingHarness(t *testing.T) (h *harness, panicking *atomic.Bool, root
 	return h, panicking, h.onboard(t, onboardRequest())
 }
 
-// panickingWriter is an audit log that panics, while panicking is set,
-// with a message quoting the Bootstrap Secret.
+// panickingWriter is an audit log that panics on its first write while
+// panicking is set, with a message quoting the Bootstrap Secret, and
+// clears panicking.
 type panickingWriter struct {
 	panicking atomic.Bool
 	buf       syncBuffer
 }
 
 func (w *panickingWriter) Write(p []byte) (int, error) {
-	if w.panicking.Load() {
+	if w.panicking.CompareAndSwap(true, false) {
 		panic("audit log refused, bootstrap secret " + bootstrapSecret)
 	}
 
@@ -83,11 +84,15 @@ func TestAPanicInARequestIsAnInternalErrorAndTheGatewayKeepsServing(t *testing.T
 
 // TestAPanicLeaksNoSecret panics while handling requests that carry the
 // Service Token, the Provider Credential and the Bootstrap Secret, with
-// panic values that quote them, and checks that neither the client's
-// error, the logs nor the audit log carry any of them.
+// panic values that quote them. It checks that the request is audited as
+// failed, internal, and that neither the client's error, the logs nor the
+// audit log carry any of them.
 func TestAPanicLeaksNoSecret(t *testing.T) {
-	for name, panicIn := range map[string]func(t *testing.T) (*harness, string, error){
-		"building the Provider": func(t *testing.T) (*harness, string, error) {
+	for name, tc := range map[string]struct {
+		panicIn func(t *testing.T) (*harness, string, error)
+		event   string
+	}{
+		"building the Provider": {func(t *testing.T) (*harness, string, error) {
 			h, panicking, root := newPanickingHarness(t)
 
 			panicking.Store(true)
@@ -95,8 +100,8 @@ func TestAPanicLeaksNoSecret(t *testing.T) {
 			_, err := h.client.ListZones(t.Context(), &dnsgatev1.ListZonesRequest{Token: root})
 
 			return h, root, err
-		},
-		"auditing Onboarding": func(t *testing.T) (*harness, string, error) {
+		}, "zones.list"},
+		"auditing Onboarding": {func(t *testing.T) (*harness, string, error) {
 			w := &panickingWriter{}
 			w.panicking.Store(true)
 
@@ -106,11 +111,20 @@ func TestAPanicLeaksNoSecret(t *testing.T) {
 			_, err := h.client.Onboard(t.Context(), onboardRequest())
 
 			return h, "", err
-		},
+		}, "onboard"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			h, serviceToken, err := panicIn(t)
+			h, serviceToken, err := tc.panicIn(t)
 			wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+			events := h.auditEvents(t)
+			if len(events) == 0 {
+				t.Fatal("no audit event")
+			}
+
+			if e := events[len(events)-1]; e["event"] != tc.event || e["result"] != "failed" || e["category"] != "internal" {
+				t.Errorf("audit event = %v, want a failed %s, category internal", e, tc.event)
+			}
 
 			logs := h.logs.String()
 			if !strings.Contains(logs, `"msg":"request panicked"`) {
