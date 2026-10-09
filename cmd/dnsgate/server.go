@@ -22,8 +22,8 @@ import (
 )
 
 // purgeInterval is how often the Gateway purges the revocations of
-// tokens that have expired.
-const purgeInterval = time.Hour
+// tokens that have expired. Tests shorten it.
+var purgeInterval = time.Hour
 
 // providers returns the Providers the Gateway calls. Tests replace it with
 // a fake Provider.
@@ -116,7 +116,7 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		return err
 	}
 
-	go purgeRevocations(ctx, revocations, log)
+	go purgeRevocations(ctx, revocations, purgeInterval, log)
 
 	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -157,11 +157,11 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 	}
 }
 
-// purgeRevocations purges, every purgeInterval until ctx is done, the
+// purgeRevocations purges, every interval until ctx is done, the
 // revocations of tokens that have expired. A failed purge is logged and
 // retried at the next interval: the entries it leaves only take space.
-func purgeRevocations(ctx context.Context, store revocation.Store, log *slog.Logger) {
-	ticker := time.NewTicker(purgeInterval)
+func purgeRevocations(ctx context.Context, store revocation.Store, interval time.Duration, log *slog.Logger) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

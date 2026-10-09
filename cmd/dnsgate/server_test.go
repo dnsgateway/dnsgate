@@ -125,6 +125,58 @@ func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
 	}
 }
 
+func TestRunningServerPurgesAnEntryOnceItsTokenExpires(t *testing.T) {
+	saved := purgeInterval
+	purgeInterval = 10 * time.Millisecond
+
+	t.Cleanup(func() { purgeInterval = saved })
+
+	env := newGatewayEnv(t)
+
+	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = store.Close() })
+
+	// Not yet expired when the server starts, so the startup purge keeps it.
+	for id, exp := range map[string]time.Time{"tok_SOON": time.Now().Add(2 * time.Second), "tok_FOREVER": {}} {
+		if err := store.Revoke(t.Context(), id, exp); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	startServer(t, env.config)
+
+	revoked := func(id string) bool {
+		t.Helper()
+
+		got, err := store.AnyRevoked(t.Context(), []string{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return got
+	}
+
+	if !revoked("tok_SOON") {
+		t.Fatal("an entry was purged before its token expired")
+	}
+
+	for deadline := time.Now().Add(10 * time.Second); revoked("tok_SOON"); {
+		if time.Now().After(deadline) {
+			t.Fatal("the running server did not purge an entry whose token expired")
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !revoked("tok_FOREVER") {
+		t.Error("the running server purged an entry kept forever")
+	}
+}
+
 func TestServerPurgesExpiredRevocationsAtStartup(t *testing.T) {
 	env := newGatewayEnv(t)
 
