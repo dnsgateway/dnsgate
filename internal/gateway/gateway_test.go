@@ -55,6 +55,9 @@ type harness struct {
 	// the Egress Transport egress.
 	providers dnsprovider.Registry
 	egress    http.RoundTripper
+	// maxAncestors is the Gateway's maximum chain depth; 0 means its
+	// default.
+	maxAncestors int
 	// keys are the keys of the Gateway last served.
 	keys keys.Source
 
@@ -157,6 +160,7 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 		Audit:           audit.New(h.auditTo),
 		Providers:       providers,
 		EgressTransport: h.egress,
+		MaxAncestors:    h.maxAncestors,
 		Logger:          slog.New(slog.NewTextHandler(h.logs, nil)),
 		Now:             func() time.Time { return h.now },
 	})

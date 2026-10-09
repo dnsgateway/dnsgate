@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -91,6 +92,45 @@ func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 		if strings.Contains(audit, secret) || strings.Contains(gw.logs.String(), secret) {
 			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gw.logs.String())
 		}
+	}
+}
+
+func TestTheConfigLimitsTheChainDepth(t *testing.T) {
+	useFakeProvider(t)
+
+	env := newGatewayEnv(t)
+
+	config, err := os.ReadFile(env.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, env.config, string(config)+"tokens:\n  maxAncestors: 1\n", 0o600)
+
+	gw := startServer(t, env.config)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	out, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare")
+	if err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+
+	issuer := filepath.Join(t.TempDir(), "issuer.yaml")
+	writeFile(t, issuer, "permissions:\n  - verbs: [create]\n    resources: [tokens]\n", 0o600)
+
+	t.Setenv("DNSGATE_TOKEN", strings.TrimSpace(out))
+
+	out, err = runClient(t, env, gw, "token", "create", "--sub", "intermediate", "--permissions", issuer)
+	if err != nil {
+		t.Fatalf("token create below the Root Token: %v", err)
+	}
+
+	t.Setenv("DNSGATE_TOKEN", strings.TrimSpace(out))
+
+	if _, err := runClient(t, env, gw, "token", "create", "--sub", "app", "--permissions", issuer); err == nil {
+		t.Error("a token with one ancestor issued one, with maxAncestors 1")
 	}
 }
 

@@ -32,6 +32,14 @@ type File struct {
 	// BootstrapSecretFile holds the secret that authorizes Onboarding. It
 	// must not be readable or writable by group or others.
 	BootstrapSecretFile string `json:"bootstrapSecretFile"`
+	Tokens              Tokens `json:"tokens"`
+}
+
+// Tokens limits the Service Tokens the Gateway issues.
+type Tokens struct {
+	// MaxAncestors is the most ancestors a Derived Token may have, the
+	// depth of a token chain below its Root Token. Unset or 0 means 8.
+	MaxAncestors int `json:"maxAncestors"`
 }
 
 // TLS is the Gateway's server certificate.
@@ -77,6 +85,10 @@ func Load(path string) (*File, error) {
 
 	if cfg.Listen == "" {
 		cfg.Listen = DefaultListen
+	}
+
+	if cfg.Tokens.MaxAncestors < 0 {
+		return nil, fmt.Errorf("config %s: tokens.maxAncestors must not be negative", path)
 	}
 
 	base := filepath.Dir(path)

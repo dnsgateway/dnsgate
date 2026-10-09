@@ -26,6 +26,10 @@ import (
 const (
 	tokenIDPrefix   = "tok_"
 	requestIDPrefix = "req_"
+
+	// defaultMaxAncestors is the maximum chain depth of a Config that
+	// sets none.
+	defaultMaxAncestors = 8
 )
 
 // Config is what a Gateway is built from.
@@ -45,6 +49,11 @@ type Config struct {
 	// a transport given here brings its own TLS settings and timeouts.
 	// Tests point it at a fake Provider API.
 	EgressTransport http.RoundTripper
+	// MaxAncestors is the most ancestors a Derived Token may have: a
+	// chain reaches at most this many Derived Tokens below its Root
+	// Token. It keeps tokens, which carry every ancestor's ID, small, and
+	// the revocation check of each request short. 0 means 8.
+	MaxAncestors int
 	// Logger receives operational logs; nil discards them.
 	Logger *slog.Logger
 	// Now is the Gateway's clock; nil means time.Now.
@@ -55,13 +64,14 @@ type Config struct {
 type Gateway struct {
 	dnsgatev1.UnimplementedGatewayServiceServer
 
-	codec     *token.Codec
-	bootstrap token.Secret
-	providers dnsprovider.Registry
-	egress    http.RoundTripper
-	audit     *audit.Log
-	log       *slog.Logger
-	now       func() time.Time
+	codec        *token.Codec
+	bootstrap    token.Secret
+	providers    dnsprovider.Registry
+	egress       http.RoundTripper
+	maxAncestors int
+	audit        *audit.Log
+	log          *slog.Logger
+	now          func() time.Time
 }
 
 var _ dnsgatev1.GatewayServiceServer = (*Gateway)(nil)
@@ -69,16 +79,21 @@ var _ dnsgatev1.GatewayServiceServer = (*Gateway)(nil)
 // New returns a Gateway built from cfg.
 func New(cfg Config) *Gateway {
 	g := &Gateway{
-		bootstrap: cfg.BootstrapSecret,
-		providers: cfg.Providers,
-		egress:    cfg.EgressTransport,
-		audit:     cfg.Audit,
-		log:       cfg.Logger,
-		now:       cfg.Now,
+		bootstrap:    cfg.BootstrapSecret,
+		providers:    cfg.Providers,
+		egress:       cfg.EgressTransport,
+		maxAncestors: cfg.MaxAncestors,
+		audit:        cfg.Audit,
+		log:          cfg.Logger,
+		now:          cfg.Now,
 	}
 
 	if g.log == nil {
 		g.log = slog.New(slog.DiscardHandler)
+	}
+
+	if g.maxAncestors <= 0 {
+		g.maxAncestors = defaultMaxAncestors
 	}
 
 	if g.now == nil {

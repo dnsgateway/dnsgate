@@ -96,6 +96,7 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		BootstrapSecret: secret,
 		Audit:           audit.New(auditOut),
 		Providers:       providers(),
+		MaxAncestors:    cfg.Tokens.MaxAncestors,
 		Logger:          log,
 	}))
 

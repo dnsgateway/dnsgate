@@ -159,7 +159,7 @@ Presenting any token that holds `create` on `tokens` lets you issue a **Derived 
 - A refused child fails as a narrowing violation naming the dimension it exceeds, such as `zones` or `exp`.
 - From v2, a child keeps its parent's Identity Binding and may only add claims to it ([oidc.md](oidc.md)).
 
-Chains can go up to eight Derived Tokens below the Root Token: a token with eight ancestors cannot issue tokens. Each token carries the IDs of all its ancestors in `ancestors`, root first. Issuing writes a `token.create` audit event naming the parent's `jti`, the new `jti` and the new token's Service Account.
+Chains can go as deep as the Gateway's `tokens.maxAncestors` setting allows, eight Derived Tokens below the Root Token by default: a token with that many ancestors cannot issue tokens. Each token carries the IDs of all its ancestors in `ancestors`, root first. Issuing writes a `token.create` audit event naming the parent's `jti`, the new `jti` and the new token's Service Account.
 
 ## Revocation
 

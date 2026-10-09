@@ -418,6 +418,17 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 			},
 			want: "enc-old.pem",
 		},
+		"negative maxAncestors": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				config, err := os.ReadFile(env.config)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				writeFile(t, env.config, string(config)+"tokens:\n  maxAncestors: -1\n", 0o600)
+			},
+			want: "tokens.maxAncestors",
+		},
 		"short bootstrap secret": {
 			edit: func(t *testing.T, env *gatewayEnv) {
 				writeFile(t, filepath.Join(env.dir, "bootstrap-secret"), "short\n", 0o600)
