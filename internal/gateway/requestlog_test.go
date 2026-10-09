@@ -171,3 +171,48 @@ func TestDeniedAndFailedRequestsAreLoggedWithTheirCode(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestLinesCarryNoSecrets sends requests carrying the Bootstrap
+// Secret, the Provider Credential and Service Tokens, successful and
+// refused, and checks that no request line carries any of them.
+func TestRequestLinesCarryNoSecrets(t *testing.T) {
+	h := newDebugHarness(t)
+	h.addZones()
+
+	root := h.onboard(t, onboardRequest())
+
+	wrongSecret := onboardRequest()
+	wrongSecret.BootstrapSecret = bootstrapSecret + "x"
+
+	if _, err := h.client.Onboard(t.Context(), wrongSecret); err == nil {
+		t.Fatal("onboard with a wrong bootstrap secret succeeded")
+	}
+
+	if err := h.call(t, root, &dnsgatev1.ListZonesRequest{}); err != nil {
+		t.Fatalf("ListZones: %v", err)
+	}
+
+	if err := h.call(t, root+"x", &dnsgatev1.ListZonesRequest{}); err == nil {
+		t.Fatal("ListZones with a tampered token succeeded")
+	}
+
+	if _, err := h.client.InspectToken(t.Context(), root); err != nil {
+		t.Fatalf("InspectToken: %v", err)
+	}
+
+	if lines := h.requestLines(t); len(lines) != 5 {
+		t.Fatalf("request lines = %v, want 5", lines)
+	}
+
+	logs := h.logs.String()
+
+	for name, secret := range map[string]string{
+		"Bootstrap Secret":    bootstrapSecret,
+		"Provider Credential": cfToken,
+		"Service Token":       root,
+	} {
+		if strings.Contains(logs, secret) {
+			t.Errorf("logs carry the %s:\n%s", name, logs)
+		}
+	}
+}
