@@ -18,11 +18,6 @@ import (
 func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*dnsgatev1.Response, error) {
 	event := audit.Event{Event: audit.EventTokenRevoke, Verb: string(permission.VerbDelete)}
 
-	// Like a record request's zone, a well-formed target names the event
-	// from the start, so even a denial records what it would revoke.
-	id, expiresAt, targetErr := g.revocationTarget(r, req)
-	event.RevokedTokenID = id
-
 	claims, err := g.openToken(r, event, req.GetToken())
 	if err != nil {
 		return nil, err
@@ -34,9 +29,14 @@ func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*d
 		return nil, g.deny(r, event, permissionDenied("the token's permissions do not allow revoking tokens"))
 	}
 
-	if targetErr != nil {
-		return nil, g.deny(r, event, targetErr)
+	// Only a token that may revoke gets its target parsed, or opened: a
+	// denied caller learns nothing of it, and its event names none.
+	id, expiresAt, err := g.revocationTarget(r, req)
+	if err != nil {
+		return nil, g.deny(r, event, err)
 	}
+
+	event.RevokedTokenID = id
 
 	if err := g.revocations.Revoke(r.ctx, id, expiresAt); err != nil {
 		g.log.Error("revoking token", "request_id", r.id, "error", err)

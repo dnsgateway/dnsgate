@@ -322,6 +322,10 @@ func TestRevokeAndItsDenialsAreAuditedWithoutSecrets(t *testing.T) {
 	target := h.createToken(t, root, "target", recordPermissions())
 	start := len(h.auditEvents(t))
 
+	// A denied caller learns nothing of the target, and its event names
+	// none: the target is only parsed, or opened, once the presented token
+	// may revoke.
+	//
 	// Denied: app lacks delete on tokens.
 	_, err = h.client.RevokeToken(t.Context(), revokeTokenRequest(app.GetToken(), target.GetToken()))
 	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
@@ -342,11 +346,11 @@ func TestRevokeAndItsDenialsAreAuditedWithoutSecrets(t *testing.T) {
 	want := []map[string]any{
 		{
 			"event": "token.revoke", "verb": "delete", "result": "denied", "category": "permission_denied",
-			"service_account": "app", "jti": app.GetJti(), "provider": "cloudflare", "revoked_jti": target.GetJti(),
+			"service_account": "app", "jti": app.GetJti(), "provider": "cloudflare", "revoked_jti": nil,
 		},
 		{
 			"event": "token.revoke", "verb": "delete", "result": "denied", "category": "unauthenticated",
-			"service_account": nil, "jti": nil, "revoked_jti": target.GetJti(),
+			"service_account": nil, "jti": nil, "revoked_jti": nil,
 		},
 		{
 			"event": "token.revoke", "verb": "delete", "result": "ok", "category": nil,
