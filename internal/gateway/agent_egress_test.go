@@ -16,9 +16,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -181,6 +183,9 @@ type agentHarness struct {
 	cf  *fakeCloudflare
 	net *agentNet
 	srv *httptest.Server
+	// openConns counts the connections to the fake Cloudflare that are
+	// open.
+	openConns atomic.Int32
 }
 
 // newAgentHarness returns an agentHarness whose fake Cloudflare presents
@@ -201,6 +206,17 @@ func newAgentHarness(t *testing.T, untrusted bool) *agentHarness {
 	srv := httptest.NewUnstartedServer(cf.handler())
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{issuer.issue(t, cloudflareHost)}, MinVersion: tls.VersionTLS12}
 	srv.Config.ErrorLog = log.New(io.Discard, "", 0) // failed handshakes are expected
+
+	ah := &agentHarness{cf: cf, srv: srv}
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		switch s { //nolint:exhaustive // the others leave the count as it is
+		case http.StateNew:
+			ah.openConns.Add(1)
+		case http.StateClosed, http.StateHijacked:
+			ah.openConns.Add(-1)
+		}
+	}
+
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
@@ -213,7 +229,9 @@ func newAgentHarness(t *testing.T, untrusted bool) *agentHarness {
 	h.agent = &client.EgressAgent{Resolver: an, Dialer: an}
 	h.serve(t, h.keys)
 
-	return &agentHarness{harness: h, cf: cf, net: an, srv: srv}
+	ah.harness, ah.net = h, an
+
+	return ah
 }
 
 // gatewayTransport is a Gateway Egress Transport that dials srv for
@@ -378,6 +396,92 @@ func TestAgentEgressFailsWhenTheEgressAgentRefuses(t *testing.T) {
 	if dials := h.net.dials(); len(dials) != 0 {
 		t.Errorf("the Egress Agent dialed %v, want nothing", dials)
 	}
+}
+
+// settle waits until the fake Cloudflare has no open connection and the
+// process runs no more goroutines than baseline, and fails the test with
+// the goroutines still running if that takes too long.
+func (h *agentHarness) settle(t *testing.T, baseline int) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for h.openConns.Load() != 0 || runtime.NumGoroutine() > baseline {
+		if time.Now().After(deadline) {
+			buf := make([]byte, 1<<20)
+			n := runtime.Stack(buf, true)
+			t.Fatalf("%d connections to Cloudflare open, %d goroutines running, want none and at most %d:\n%s",
+				h.openConns.Load(), runtime.NumGoroutine(), baseline, buf[:n])
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestAgentEgressRelayEndsWithTheRequest(t *testing.T) {
+	h := newAgentHarness(t, false)
+
+	root := h.onboard(t, onboardRequest())
+	baseline := runtime.NumGoroutine()
+
+	for range 3 {
+		if _, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{
+			Token: root, Egress: dnsgatev1.Egress_EGRESS_AGENT, Zone: "example.com",
+		}); err != nil {
+			t.Fatalf("ListRecords: %v", err)
+		}
+	}
+
+	h.settle(t, baseline)
+}
+
+func TestAgentEgressRelayEndsWhenTheClientCancels(t *testing.T) {
+	h := newAgentHarness(t, false)
+
+	root := h.onboard(t, onboardRequest())
+	baseline := runtime.NumGoroutine()
+
+	// Cloudflare holds every request until its connection closes.
+	entered := make(chan struct{}, 1)
+	h.cf.fail = func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+
+		<-r.Context().Done()
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errc := make(chan error, 1)
+
+	go func() {
+		_, err := h.client.ListRecords(ctx, &dnsgatev1.ListRecordsRequest{
+			Token: root, Egress: dnsgatev1.Egress_EGRESS_AGENT, Zone: "example.com",
+		})
+		errc <- err
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request never reached Cloudflare")
+	}
+
+	cancel()
+
+	select {
+	case err := <-errc:
+		if err == nil {
+			t.Fatal("the canceled request succeeded")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the canceled request did not return")
+	}
+
+	// The relayed connection closes, and the Gateway's and the client's
+	// goroutines for the stream end.
+	h.settle(t, baseline)
 }
 
 // staticResolver resolves every host to its addresses.
