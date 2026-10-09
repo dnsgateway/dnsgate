@@ -51,7 +51,7 @@ type harness struct {
 	// logLevel is the lowest level of the logs the Gateway writes; its
 	// zero value is info.
 	logLevel slog.Level
-	now  time.Time
+	now      time.Time
 	// fake is the Provider the Gateway calls, as "cloudflare", unless
 	// providers is set.
 	fake *providertest.Provider
