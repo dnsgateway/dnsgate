@@ -356,7 +356,7 @@ Gateway                 Client (Egress Agent)        Provider
 - TLS runs end-to-end between the Gateway and the Provider. The client relays only ciphertext and never terminates TLS. The Provider Credential is visible only inside that TLS session.
 - The Gateway verifies the Provider's certificate strictly.
 
-In Go, the Provider HTTP client uses `http.Transport` with a custom `DialContext` that returns a `net.Conn` backed by the relay stream. TLS still runs inside `http.Transport` on the Gateway.
+In Go, the Provider HTTP client uses `http.Transport` with a custom `DialContext` that returns a `net.Conn` backed by the relay stream. TLS still runs inside `http.Transport` on the Gateway. The relay frames, half-close, flow control and timeouts are in [ADR 0006](adr/0006-agent-egress-relay-framing.md).
 
 ## Agent Egress destination rules
 
@@ -520,4 +520,4 @@ A Service Token can be bound to a workload's OIDC identity: Kubernetes ServiceAc
 # Open Questions
 
 - Exact claim schema and protobuf API definition.
-- Relay framing inside the gRPC stream: OPEN/DATA/CLOSE messages, half-close, flow control, timeouts.
+- ~~Relay framing inside the gRPC stream: OPEN/DATA/CLOSE messages, half-close, flow control, timeouts.~~ Decided in [ADR 0006](adr/0006-agent-egress-relay-framing.md).
