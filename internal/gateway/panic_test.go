@@ -7,19 +7,18 @@ import (
 	"testing"
 
 	"github.com/dnsgateway/dnsprovider"
+	"github.com/dnsgateway/dnsprovider/providertest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 )
 
-// panickingProviders makes the harness Gateway's Provider panic, while
-// panicking is set, with a message quoting what it is built from: the
-// Provider Credential.
-func (h *harness) panickingProviders(t *testing.T, panicking *atomic.Bool) {
-	t.Helper()
-
-	f := h.fake.Factory()
+// panickingProviders returns the Providers of fake, as "cloudflare",
+// whose Factory panics, while panicking is set, with a message quoting
+// what it builds from: the Provider Credential.
+func panickingProviders(fake *providertest.Provider, panicking *atomic.Bool) dnsprovider.Registry {
+	f := fake.Factory()
 	build := f.New
 	f.New = func(fields map[string]string, opts ...dnsprovider.Option) (dnsprovider.Provider, error) {
 		if panicking.Load() {
@@ -29,8 +28,23 @@ func (h *harness) panickingProviders(t *testing.T, panicking *atomic.Bool) {
 		return build(fields, opts...)
 	}
 
-	h.providers = dnsprovider.Registry{"cloudflare": f}
+	return dnsprovider.Registry{"cloudflare": f}
+}
+
+// newPanickingHarness returns a harness, with its zones, whose Gateway's
+// Provider panics while the returned flag is set, and a Root Token
+// onboarded before it does.
+func newPanickingHarness(t *testing.T) (h *harness, panicking *atomic.Bool, root string) {
+	t.Helper()
+
+	h = newHarness(t)
+	h.addZones()
+
+	panicking = &atomic.Bool{}
+	h.providers = panickingProviders(h.fake, panicking)
 	h.serve(t, h.keys)
+
+	return h, panicking, h.onboard(t, onboardRequest())
 }
 
 // panickingWriter is an audit log that panics, while panicking is set,
@@ -49,13 +63,7 @@ func (w *panickingWriter) Write(p []byte) (int, error) {
 }
 
 func TestAPanicInARequestIsAnInternalErrorAndTheGatewayKeepsServing(t *testing.T) {
-	h := newHarness(t)
-	h.addZones()
-
-	var panicking atomic.Bool
-	h.panickingProviders(t, &panicking)
-
-	root := h.onboard(t, onboardRequest())
+	h, panicking, root := newPanickingHarness(t)
 
 	panicking.Store(true)
 
@@ -80,13 +88,7 @@ func TestAPanicInARequestIsAnInternalErrorAndTheGatewayKeepsServing(t *testing.T
 func TestAPanicLeaksNoSecret(t *testing.T) {
 	for name, panicIn := range map[string]func(t *testing.T) (*harness, string, error){
 		"building the Provider": func(t *testing.T) (*harness, string, error) {
-			h := newHarness(t)
-			h.addZones()
-
-			var panicking atomic.Bool
-			h.panickingProviders(t, &panicking)
-
-			root := h.onboard(t, onboardRequest())
+			h, panicking, root := newPanickingHarness(t)
 
 			panicking.Store(true)
 
