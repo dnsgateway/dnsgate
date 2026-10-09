@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,6 +18,9 @@ import (
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
 )
+
+// tokenIDPrefix starts every token ID, and no Service Token.
+const tokenIDPrefix = "tok_"
 
 func newTokenCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
@@ -27,6 +32,7 @@ func newTokenCmd(flags *Flags) *cobra.Command {
 		newTokenCreateCmd(flags),
 		newTokenInspectCmd(flags),
 		newTokenResealCmd(flags),
+		newTokenRevokeCmd(flags),
 	)
 
 	return cmd
@@ -167,6 +173,67 @@ func runTokenReseal(ctx context.Context, out io.Writer, f *Flags, args []string)
 	}
 
 	_, err = fmt.Fprintln(out, resp.GetToken())
+
+	return err
+}
+
+func newTokenRevokeCmd(flags *Flags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "revoke TOKEN_ID|TOKEN|-",
+		Short: "Revoke a Service Token and every token derived from it",
+		Long: "Revoke a Service Token for good: from the next request on, the Gateway refuses it and every token " +
+			"derived from it. Revoking a Root Token disables everything issued under its Onboarding. Print the " +
+			"revoked token's ID.\n\n" +
+			"Present a token holding delete on tokens, --" + flagToken + " or " + envToken + ". It may revoke any " +
+			"token ID: the Gateway keeps no registry of which chain a token belongs to.\n\n" +
+			"Name the token to revoke by its ID (tok_...), as \"token inspect\" shows it, or give the token " +
+			"itself, or \"-\" to read the token from stdin; a token argument shows in process listings. Given " +
+			"the token, the Gateway keeps the revocation only until the token expires. Given only its ID, it " +
+			"cannot know the expiry and keeps the revocation forever.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runTokenRevoke(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), flags, args[0])
+		},
+	}
+
+	flags.AddTokenFlags(cmd.Flags())
+	flags.AddClientFlags(cmd.Flags())
+
+	return cmd
+}
+
+func runTokenRevoke(ctx context.Context, in io.Reader, out io.Writer, f *Flags, target string) error {
+	if target == "-" {
+		line, err := bufio.NewReader(in).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reading the token to revoke: %w", err)
+		}
+
+		if target = strings.TrimSpace(line); target == "" {
+			return errors.New("no token to revoke on stdin")
+		}
+	}
+
+	switch {
+	case target == "":
+		return errors.New("no token to revoke: give its ID or the token")
+	case f.Token == "":
+		return errors.New("no Service Token: set " + envToken + " or --" + flagToken)
+	}
+
+	req := &dnsgatev1.RevokeTokenRequest{Token: f.Token}
+	if strings.HasPrefix(target, tokenIDPrefix) {
+		req.Target = &dnsgatev1.RevokeTokenRequest_TokenId{TokenId: target}
+	} else {
+		req.Target = &dnsgatev1.RevokeTokenRequest_TargetToken{TargetToken: target}
+	}
+
+	resp, err := callGateway(ctx, f, "token revoke", (*client.Client).RevokeToken, req)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(out, resp.GetJti())
 
 	return err
 }
