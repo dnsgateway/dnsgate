@@ -15,34 +15,30 @@ import (
 // Error messages never quote what the client sent: it may hold a secret.
 
 func invalidRequest(msg string) error {
-	return gatewayError(codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST, msg)
+	return statusError(codes.InvalidArgument, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_INVALID_REQUEST}, msg)
 }
 
 func unauthenticated(msg string) error {
-	return gatewayError(codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED, msg)
+	return statusError(codes.Unauthenticated, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_UNAUTHENTICATED}, msg)
 }
 
 func permissionDenied(msg string) error {
-	return gatewayError(codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED, msg)
+	return statusError(codes.PermissionDenied, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_PERMISSION_DENIED}, msg)
 }
 
 func agentEgressNotSupported() error {
-	return gatewayError(codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED, "agent egress is not supported yet")
+	return statusError(codes.Unimplemented, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED}, "agent egress is not supported yet")
 }
 
 func notFound(msg string) error {
-	return gatewayError(codes.NotFound, dnsgatev1.Error_CATEGORY_NOT_FOUND, msg)
+	return statusError(codes.NotFound, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_NOT_FOUND}, msg)
 }
 
 func internal() error {
-	return gatewayError(codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL, "internal error")
+	return statusError(codes.Internal, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_INTERNAL}, "internal error")
 }
 
-// gatewayError returns a status error with an Error detail.
-func gatewayError(code codes.Code, category dnsgatev1.Error_Category, msg string) error {
-	return statusError(code, &dnsgatev1.Error{Category: category}, msg)
-}
-
+// statusError returns a status error with an Error detail.
 func statusError(code codes.Code, detail *dnsgatev1.Error, msg string) error {
 	st, err := status.New(code, msg).WithDetails(detail)
 	if err != nil {
