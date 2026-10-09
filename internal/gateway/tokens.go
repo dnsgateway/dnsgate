@@ -104,20 +104,3 @@ func narrows(parent, derived token.Claims) (permission.Dimension, bool) {
 
 	return permission.Covers(parent.Permissions, derived.Permissions)
 }
-
-func permissionsFromAPI(perms []*dnsgatev1.Permission) []token.Permission {
-	out := make([]token.Permission, 0, len(perms))
-
-	for _, p := range perms {
-		out = append(out, token.Permission{
-			Verbs:     p.GetVerbs(),
-			Resources: p.GetResources(),
-			Zones:     p.GetZones(),
-			Names:     p.GetNames(),
-			Types:     p.GetTypes(),
-			Egress:    p.GetEgress(),
-		})
-	}
-
-	return out
-}

@@ -35,6 +35,25 @@ func (g *Gateway) inspectToken(r *request, req *dnsgatev1.InspectTokenRequest) (
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_InspectToken{InspectToken: out}}, nil
 }
 
+// permissionsFromAPI returns the API's Permissions as a token's.
+func permissionsFromAPI(perms []*dnsgatev1.Permission) []token.Permission {
+	out := make([]token.Permission, 0, len(perms))
+
+	for _, p := range perms {
+		out = append(out, token.Permission{
+			Verbs:     p.GetVerbs(),
+			Resources: p.GetResources(),
+			Zones:     p.GetZones(),
+			Names:     p.GetNames(),
+			Types:     p.GetTypes(),
+			Egress:    p.GetEgress(),
+		})
+	}
+
+	return out
+}
+
+// permissionToAPI returns a token's Permission as the API's.
 func permissionToAPI(p token.Permission) *dnsgatev1.Permission {
 	return &dnsgatev1.Permission{
 		Verbs:     p.Verbs,
