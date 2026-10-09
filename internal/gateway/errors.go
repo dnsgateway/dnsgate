@@ -10,6 +10,7 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
+	"github.com/dnsgateway/dnsgate/internal/permission"
 )
 
 // Error messages never quote what the client sent: it may hold a secret.
@@ -28,10 +29,10 @@ func permissionDenied(msg string) error {
 
 // narrowingViolation is the error of a Derived Token that would exceed its
 // Parent Token in dimension, such as "zones" or "exp".
-func narrowingViolation(dimension string) error {
+func narrowingViolation(dimension permission.Dimension) error {
 	return statusError(codes.PermissionDenied,
-		&dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_NARROWING_VIOLATION, Dimension: dimension},
-		"the token would exceed its parent token in "+dimension)
+		&dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_NARROWING_VIOLATION, Dimension: string(dimension)},
+		"the token would exceed its parent token in "+string(dimension))
 }
 
 func agentEgressNotSupported() error {

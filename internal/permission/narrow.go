@@ -10,12 +10,14 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
-// Dimension is a part of a Permission, as Narrowing names what exceeds a
-// Parent Token's Permissions.
+// Dimension is a part of a Service Token, its expiry or a part of its
+// Permissions, as Narrowing names what exceeds a Parent Token.
 type Dimension string
 
-// Permission dimensions, in the order Covers checks them.
+// Dimensions: the expiry, then the Permission dimensions in the order
+// Covers checks them.
 const (
+	DimensionExp       Dimension = "exp"
 	DimensionVerbs     Dimension = "verbs"
 	DimensionResources Dimension = "resources"
 	DimensionEgress    Dimension = "egress"

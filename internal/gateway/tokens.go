@@ -93,23 +93,16 @@ func checkCreateTokenRequest(req *dnsgatev1.CreateTokenRequest) error {
 	return nil
 }
 
-// dimensionExp names the expiry in a narrowing violation.
-const dimensionExp = "exp"
-
 // narrows reports whether derived stays within parent (Narrowing), and if
 // not, the dimension where it exceeds parent: its expiry, which must be
 // no later than the parent's, or its Permissions, which the parent's
 // must cover.
-func narrows(parent, derived token.Claims) (string, bool) {
+func narrows(parent, derived token.Claims) (permission.Dimension, bool) {
 	if parent.Expiry != nil && (derived.Expiry == nil || *derived.Expiry > *parent.Expiry) {
-		return dimensionExp, false
+		return permission.DimensionExp, false
 	}
 
-	if dim, ok := permission.Covers(parent.Permissions, derived.Permissions); !ok {
-		return string(dim), false
-	}
-
-	return "", true
+	return permission.Covers(parent.Permissions, derived.Permissions)
 }
 
 func permissionsFromAPI(perms []*dnsgatev1.Permission) []token.Permission {
