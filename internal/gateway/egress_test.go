@@ -3,6 +3,8 @@ package gateway_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -35,10 +37,24 @@ type fakeCloudflare struct {
 	seen []seenRequest
 	// dialed records each address the Egress Transport dialed.
 	dialed []string
+	// nextID numbers the records created.
+	nextID int
 }
 
 type seenRequest struct {
-	host, authorization string
+	method, host, authorization string
+}
+
+// record returns the record id of zone, nil if it has none. The caller
+// holds cf.mu.
+func (cf *fakeCloudflare) record(zone, id string) map[string]any {
+	for _, rec := range cf.records[zone] {
+		if rec["id"] == id {
+			return rec
+		}
+	}
+
+	return nil
 }
 
 // newCloudflareHarness returns a harness whose Gateway runs the real
@@ -121,6 +137,9 @@ func (cf *fakeCloudflare) handler() http.Handler {
 
 		var out []map[string]any
 
+		cf.mu.Lock()
+		defer cf.mu.Unlock()
+
 		for _, rec := range cf.records[r.PathValue("zone")] {
 			typ, _ := rec["type"].(string)
 			name, _ := rec["name"].(string)
@@ -133,9 +152,68 @@ func (cf *fakeCloudflare) handler() http.Handler {
 		writeCFList(w, out)
 	})
 
+	mux.HandleFunc("POST /client/v4/zones/{zone}/dns_records", func(w http.ResponseWriter, r *http.Request) {
+		var rec map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&rec); err != nil {
+			writeCFError(w, http.StatusBadRequest, 9207, "Request body is invalid")
+
+			return
+		}
+
+		zone := r.PathValue("zone")
+
+		cf.mu.Lock()
+		cf.nextID++
+		rec["id"] = fmt.Sprintf("new%d", cf.nextID)
+		cf.records[zone] = append(cf.records[zone], rec)
+		cf.mu.Unlock()
+
+		writeCF(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []any{}, "result": rec})
+	})
+	mux.HandleFunc("PATCH /client/v4/zones/{zone}/dns_records/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var edit map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
+			writeCFError(w, http.StatusBadRequest, 9207, "Request body is invalid")
+
+			return
+		}
+
+		cf.mu.Lock()
+		rec := cf.record(r.PathValue("zone"), r.PathValue("id"))
+		if rec != nil {
+			maps.Copy(rec, edit)
+		}
+		cf.mu.Unlock()
+
+		if rec == nil {
+			writeCFError(w, http.StatusNotFound, 81044, "Record does not exist.")
+
+			return
+		}
+
+		writeCF(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []any{}, "result": rec})
+	})
+	mux.HandleFunc("DELETE /client/v4/zones/{zone}/dns_records/{id}", func(w http.ResponseWriter, r *http.Request) {
+		zone, id := r.PathValue("zone"), r.PathValue("id")
+
+		cf.mu.Lock()
+		n := len(cf.records[zone])
+		cf.records[zone] = slices.DeleteFunc(cf.records[zone], func(rec map[string]any) bool { return rec["id"] == id })
+		deleted := len(cf.records[zone]) < n
+		cf.mu.Unlock()
+
+		if !deleted {
+			writeCFError(w, http.StatusNotFound, 81044, "Record does not exist.")
+
+			return
+		}
+
+		writeCF(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []any{}, "result": map[string]any{"id": id}})
+	})
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cf.mu.Lock()
-		cf.seen = append(cf.seen, seenRequest{host: r.Host, authorization: r.Header.Get("Authorization")})
+		cf.seen = append(cf.seen, seenRequest{method: r.Method, host: r.Host, authorization: r.Header.Get("Authorization")})
 		cf.mu.Unlock()
 
 		if cf.fail != nil {
@@ -245,6 +323,72 @@ func TestGatewayEgressReadsCloudflare(t *testing.T) {
 		if addr != cloudflareHost+":443" {
 			t.Errorf("Egress Transport dialed %s, want %s:443 alone", addr, cloudflareHost)
 		}
+	}
+}
+
+func TestGatewayEgressChangesCloudflareRecords(t *testing.T) {
+	h, cf := newCloudflareHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	if _, err := h.client.PatchRecord(t.Context(), &dnsgatev1.PatchRecordRequest{
+		Token: root, Zone: "example.com", Name: "_acme-challenge.www", Type: "TXT", Add: []string{`"def"`},
+	}); err != nil {
+		t.Fatalf("PatchRecord: %v", err)
+	}
+
+	if _, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Values: []string{"192.0.2.10", "192.0.2.12"},
+	}); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	if _, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+		Token: root, Zone: "example.com", Name: "@", Type: "A",
+	}); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+
+	if _, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "AAAA", Ttl: 120, Values: []string{"2001:db8::1"},
+	}); err != nil {
+		t.Fatalf("CreateRecord: %v", err)
+	}
+
+	records, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: root, Zone: "example.com"})
+	if err != nil {
+		t.Fatalf("ListRecords: %v", err)
+	}
+
+	var got []string
+	for _, s := range records.GetRecordSets() {
+		got = append(got, sortedSet(s))
+	}
+
+	want := []string{`_acme-challenge.www TXT 60 "abc","def"`, "api AAAA 120 2001:db8::1", "www.apps A 300 192.0.2.10,192.0.2.12"}
+	if !slices.Equal(got, want) {
+		t.Errorf("record sets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	cf.mu.Lock()
+	defer cf.mu.Unlock()
+
+	var writes []string
+
+	for _, r := range cf.seen {
+		if r.method != http.MethodGet {
+			writes = append(writes, r.method)
+		}
+
+		if r.host != cloudflareHost || r.authorization != "Bearer "+cfToken {
+			t.Errorf("request to %s with Authorization %q, want %s with the Provider Credential", r.host, r.authorization, cloudflareHost)
+		}
+	}
+
+	// One call per change: the patch's addition, the update's
+	// modification of 192.0.2.11, the deletion and the creation.
+	if wantWrites := []string{http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodPost}; !slices.Equal(writes, wantWrites) {
+		t.Errorf("writes = %v, want %v", writes, wantWrites)
 	}
 }
 
