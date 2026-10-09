@@ -79,9 +79,6 @@ type Event struct {
 	Category Category `json:"category,omitempty"`
 	// ProviderStatus is the HTTP status of the Provider's error answer.
 	ProviderStatus int `json:"provider_status,omitempty"`
-	// ProviderMessages are the Provider's own error messages, from the
-	// body of its error answer; never its headers.
-	ProviderMessages []string `json:"provider_messages,omitempty"`
 	// DurationMS is how long a request that reached the Provider took, in
 	// milliseconds.
 	DurationMS int64 `json:"duration_ms,omitempty"`

@@ -90,16 +90,6 @@ func providerStatus(err error) int {
 	return 0
 }
 
-// providerMessages returns the Provider's own messages in its error
-// answer, or nil if err is not one.
-func providerMessages(err error) []string {
-	if apiErr, ok := errors.AsType[*dnsprovider.APIError](err); ok {
-		return apiErr.Messages
-	}
-
-	return nil
-}
-
 // category returns the category of a Gateway error for audit events, as
 // its enum name in lower case without the prefix, such as
 // "unauthenticated" or "permission_denied".

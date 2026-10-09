@@ -103,11 +103,9 @@ func (g *Gateway) connect(c *dnsCall, claims token.Claims) (dnsprovider.Provider
 }
 
 // providerFailed audits a failed Provider call and returns the Gateway
-// error the client gets. The Provider's own messages go to the audit
-// event alone.
+// error the client gets. The Provider's own messages go to neither.
 func (g *Gateway) providerFailed(c *dnsCall, err error) error {
 	c.event.ProviderStatus = providerStatus(err)
-	c.event.ProviderMessages = providerMessages(err)
 
 	return g.refuse(c, audit.ResultFailed, providerError(err))
 }

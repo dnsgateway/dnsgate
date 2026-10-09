@@ -455,7 +455,7 @@ func TestEgressSelection(t *testing.T) {
 }
 
 // rawProviderMessage is in every scripted Provider error answer; it must
-// never reach the client.
+// never reach the client or the audit log.
 const rawProviderMessage = "cloudflare says: request for zone 023e105f4ecef8ad9ca31a8372d0c353 failed"
 
 func TestProviderErrorsReachTheClientAsCategories(t *testing.T) {
@@ -530,6 +530,12 @@ func TestProviderErrorsReachTheClientAsCategories(t *testing.T) {
 				if strings.Contains(err.Error(), "cloudflare says") || strings.Contains(fmt.Sprint(st.Proto()), "cloudflare says") {
 					t.Errorf("error %v carries the raw Provider answer", err)
 				}
+			}
+
+			// The audit fields are an allowlist, which leaves out the
+			// Provider's own messages.
+			if strings.Contains(h.audit.String(), "cloudflare says") {
+				t.Errorf("audit log carries the raw Provider answer:\n%s", h.audit.String())
 			}
 
 			for _, e := range h.auditEvents(t)[1:] {
