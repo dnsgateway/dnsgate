@@ -42,9 +42,9 @@ func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (
 		return nil, err
 	}
 
-	target, err := g.checkRecords(c, req.GetTtl(), req.GetValues())
+	target, err := c.checkRecords(req.GetTtl(), req.GetValues())
 	if err != nil {
-		return nil, err
+		return nil, g.fail(c, err)
 	}
 
 	zone, current, err := g.readRRset(c)
@@ -75,9 +75,9 @@ func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (
 		return nil, err
 	}
 
-	target, err := g.checkRecords(c, req.GetTtl(), req.GetValues())
+	target, err := c.checkRecords(req.GetTtl(), req.GetValues())
 	if err != nil {
-		return nil, err
+		return nil, g.fail(c, err)
 	}
 
 	zone, current, err := g.readRRset(c)
@@ -115,14 +115,14 @@ func (g *Gateway) patchRecord(r *request, req *dnsgatev1.PatchRecordRequest) (*d
 		return nil, g.fail(c, invalidRequest("nothing to add or remove"))
 	}
 
-	if err := g.checkValues(c, slices.Concat(add, remove)); err != nil {
-		return nil, err
+	if err := c.checkValues(slices.Concat(add, remove)); err != nil {
+		return nil, g.fail(c, err)
 	}
 
 	ttl := req.GetTtl()
 	if ttl != 0 {
-		if err := g.checkTTL(c, ttl); err != nil {
-			return nil, err
+		if err := c.checkTTL(ttl); err != nil {
+			return nil, g.fail(c, err)
 		}
 	}
 
@@ -195,19 +195,18 @@ func rrsetTTL(records []dnsprovider.Record) uint32 {
 }
 
 // checkRecords checks the TTL and values of a create or update and
-// returns the records they make of the call's RRset. A request the
-// Permissions allowed but whose records are malformed is audited as
-// failed.
-func (g *Gateway) checkRecords(c *dnsCall, ttl uint32, values []string) ([]dnsprovider.Record, error) {
+// returns the records they make of the call's RRset, or the Gateway error
+// of the first that is malformed.
+func (c *dnsCall) checkRecords(ttl uint32, values []string) ([]dnsprovider.Record, error) {
 	if len(values) == 0 {
-		return nil, g.fail(c, invalidRequest("no values: a record set holds at least one"))
+		return nil, invalidRequest("no values: a record set holds at least one")
 	}
 
-	if err := g.checkValues(c, values); err != nil {
+	if err := c.checkValues(values); err != nil {
 		return nil, err
 	}
 
-	if err := g.checkTTL(c, ttl); err != nil {
+	if err := c.checkTTL(ttl); err != nil {
 		return nil, err
 	}
 
@@ -216,23 +215,23 @@ func (g *Gateway) checkRecords(c *dnsCall, ttl uint32, values []string) ([]dnspr
 
 // checkValues checks that each value is given once and is in the form
 // the call's record type takes.
-func (g *Gateway) checkValues(c *dnsCall, values []string) error {
+func (c *dnsCall) checkValues(values []string) error {
 	typ := c.perm.Type
 	if !dnsprovider.Editable(typ) {
-		return g.fail(c, invalidRecord("records of this type cannot be changed through the gateway"))
+		return invalidRecord("records of this type cannot be changed through the gateway")
 	}
 
 	seen := make(map[string]bool, len(values))
 
 	for _, v := range values {
 		if seen[v] {
-			return g.fail(c, invalidRequest("a value is given twice"))
+			return invalidRequest("a value is given twice")
 		}
 
 		seen[v] = true
 
 		if err := dnsprovider.CheckValue(typ, v); err != nil {
-			return g.fail(c, invalidRecord("a value is not in the form its record type takes"))
+			return invalidRecord("a value is not in the form its record type takes")
 		}
 	}
 
@@ -240,9 +239,9 @@ func (g *Gateway) checkValues(c *dnsCall, values []string) error {
 }
 
 // checkTTL checks that ttl is in the range the call's Provider takes.
-func (g *Gateway) checkTTL(c *dnsCall, ttl uint32) error {
+func (c *dnsCall) checkTTL(ttl uint32) error {
 	if err := dnsprovider.TTLRangeOf(c.provider).Check(ttl); err != nil {
-		return g.fail(c, invalidRecord(err.Error()))
+		return invalidRecord(err.Error())
 	}
 
 	return nil
