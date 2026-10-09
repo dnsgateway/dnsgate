@@ -71,8 +71,12 @@ func TestServerHelpDocumentsTheLogLevel(t *testing.T) {
 		t.Fatalf("server --help: %v", err)
 	}
 
-	if !strings.Contains(out, "Logs below --log-level") || !strings.Contains(out, "(env DNSGATE_LOG_LEVEL)") {
-		t.Errorf("server help does not document --log-level and DNSGATE_LOG_LEVEL:\n%s", out)
+	if !strings.Contains(out, "Logs below --log-level are dropped; audit events are always written.") {
+		t.Errorf("server help does not say what --log-level drops:\n%s", out)
+	}
+
+	if !strings.Contains(out, "error, warn, info, debug (env DNSGATE_LOG_LEVEL)") || !strings.Contains(out, `(default "info")`) {
+		t.Errorf("server help does not list the log levels, DNSGATE_LOG_LEVEL and the default:\n%s", out)
 	}
 }
 

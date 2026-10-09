@@ -29,8 +29,7 @@ func newServerCmd(flags *Flags) *cobra.Command {
 		Short: "Run the Gateway",
 		Long: "Run the Gateway: serve its gRPC API over TLS, configured by a YAML file.\n\n" +
 			"Audit events are written to stdout and logs to stderr, both as JSON lines. " +
-			"Logs below --" + flagLogLevel + " (env " + envLogLevel + "; one of " + logLevelNames() + ", default " + defaultLogLevel + ") " +
-			"are dropped; audit events are always written.\n\n" +
+			"Logs below --" + flagLogLevel + " are dropped; audit events are always written.\n\n" +
 			"Configuration file, with paths relative to its directory:\n\n" +
 			"  listen: \":8443\"\n" +
 			"  tls:\n" +
