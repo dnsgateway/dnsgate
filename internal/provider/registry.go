@@ -10,10 +10,15 @@ import (
 // Cloudflare is the Registry key of the Cloudflare Provider.
 const Cloudflare = "cloudflare"
 
-// credentialTypes maps each supported Provider to the type of the Provider
-// Credential onboarded for it.
-var credentialTypes = map[string]string{
-	Cloudflare: "api-token",
+// credential is the Provider Credential onboarded for a Provider: its
+// type, and the field of the Provider's Factory its value fills.
+type credential struct {
+	typ, field string
+}
+
+// credentials maps each supported Provider to its Provider Credential.
+var credentials = map[string]credential{
+	Cloudflare: {typ: "api-token", field: cloudflare.FieldToken},
 }
 
 // Registry returns the Providers whose Provider Credentials can be
@@ -34,18 +39,18 @@ func Names() []string {
 // with the Provider Credential value. The map holds the plaintext
 // credential: drop it with the Provider built from it.
 func CredentialFields(name, value string) map[string]string {
-	switch name {
-	case Cloudflare:
-		return map[string]string{cloudflare.FieldToken: value}
-	default:
+	c, ok := credentials[name]
+	if !ok {
 		return nil
 	}
+
+	return map[string]string{c.field: value}
 }
 
 // CredentialType returns the type of the Provider Credential onboarded for
 // the Provider name, and whether name is a supported Provider.
 func CredentialType(name string) (string, bool) {
-	t, ok := credentialTypes[name]
+	c, ok := credentials[name]
 
-	return t, ok
+	return c.typ, ok
 }
