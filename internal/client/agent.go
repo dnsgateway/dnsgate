@@ -16,8 +16,6 @@ import (
 
 // The relay framing is recorded in ADR 0006.
 const (
-	// relayFrameSize is the most bytes one RelayData carries.
-	relayFrameSize = 32 << 10
 	// dialTimeout bounds the default Dialer's connection to a Provider.
 	dialTimeout = 10 * time.Second
 	// writeTimeout bounds each write of the Gateway's bytes to a
@@ -226,7 +224,7 @@ func (rl *relay) open(o *dnsgatev1.RelayOpen) {
 // pump sends what the Provider sends on c to the Gateway, then a
 // RelayClose once the Provider is done or the connection fails.
 func (rl *relay) pump(id uint32, c *agentConn) {
-	buf := make([]byte, relayFrameSize)
+	buf := make([]byte, dnsgatev1.RelayFrameSize)
 
 	for {
 		n, err := c.conn.Read(buf)

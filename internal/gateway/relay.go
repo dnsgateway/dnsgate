@@ -18,8 +18,6 @@ import (
 
 // The relay framing is recorded in ADR 0006.
 const (
-	// relayFrameSize is the most bytes one RelayData carries.
-	relayFrameSize = 32 << 10
 	// relayOpenTimeout bounds how long the Gateway waits for the Egress
 	// Agent to answer a RelayOpen.
 	relayOpenTimeout = 15 * time.Second
@@ -221,7 +219,7 @@ func (rl *relay) pump(c *relayConn) {
 	defer rl.forget(c)
 	defer c.remote.Close()
 
-	buf := make([]byte, relayFrameSize)
+	buf := make([]byte, dnsgatev1.RelayFrameSize)
 
 	for {
 		n, err := c.remote.Read(buf)
