@@ -56,9 +56,48 @@ func WithEgressAgent(a EgressAgent) Option {
 	return func(c *Client) { c.agent = a }
 }
 
-// connect resolves host and connects to port on its first address that
-// answers.
+// providerPort is the only port the Egress Agent connects to (ADR 0002).
+const providerPort = 443
+
+// forbiddenPrefixes are the addresses the Egress Agent never connects to
+// (ADR 0002): a Provider's API is on none of them, and reaching them from
+// the client's network would let the Gateway into it.
+var forbiddenPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),      // unspecified, "this network"
+	netip.MustParsePrefix("127.0.0.0/8"),    // loopback
+	netip.MustParsePrefix("10.0.0.0/8"),     // RFC1918
+	netip.MustParsePrefix("172.16.0.0/12"),  // RFC1918
+	netip.MustParsePrefix("192.168.0.0/16"), // RFC1918
+	netip.MustParsePrefix("169.254.0.0/16"), // link-local, cloud metadata 169.254.169.254
+	netip.MustParsePrefix("100.64.0.0/10"),  // CGNAT
+	netip.MustParsePrefix("::/128"),         // unspecified
+	netip.MustParsePrefix("::1/128"),        // loopback
+	netip.MustParsePrefix("fe80::/10"),      // link-local
+	netip.MustParsePrefix("fc00::/7"),       // unique local
+}
+
+// forbidden reports whether addr is one the Egress Agent never connects to.
+func forbidden(addr netip.Addr) bool {
+	addr = addr.Unmap()
+
+	for _, p := range forbiddenPrefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// connect connects to port of host, as the Gateway asked in a RelayOpen,
+// if the destination rules allow it: port must be 443, and host must
+// resolve to no forbidden address. It connects to the first address that
+// answers, by the address it checked rather than by name.
 func (a EgressAgent) connect(ctx context.Context, host string, port uint32) (net.Conn, error) {
+	if port != providerPort {
+		return nil, fmt.Errorf("port %d refused: the egress agent connects to port %d alone", port, providerPort)
+	}
+
 	resolver := a.Resolver
 	if resolver == nil {
 		resolver = net.DefaultResolver
@@ -69,15 +108,24 @@ func (a EgressAgent) connect(ctx context.Context, host string, port uint32) (net
 		dialer = &net.Dialer{Timeout: dialTimeout}
 	}
 
-	addrs, err := resolver.LookupNetIP(ctx, "ip", host)
-	if err != nil {
+	var addrs []netip.Addr
+
+	if addr, err := netip.ParseAddr(host); err == nil {
+		addrs = []netip.Addr{addr}
+	} else if addrs, err = resolver.LookupNetIP(ctx, "ip", host); err != nil {
 		return nil, errors.New("resolving the provider host failed")
+	}
+
+	for _, addr := range addrs {
+		if forbidden(addr) {
+			return nil, fmt.Errorf("address %s refused: the egress agent connects to public addresses alone", addr)
+		}
 	}
 
 	var dialErr error
 
 	for _, addr := range addrs {
-		conn, err := dialer.DialContext(ctx, "tcp", netip.AddrPortFrom(addr.Unmap(), uint16(port)).String())
+		conn, err := dialer.DialContext(ctx, "tcp", netip.AddrPortFrom(addr.Unmap(), providerPort).String())
 		if err == nil {
 			return conn, nil
 		}
