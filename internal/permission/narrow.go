@@ -87,7 +87,7 @@ func coversEntries(parent []token.Permission, verb, res, egress, zone, typ strin
 			return slices.Contains(orDefault(p.Resources, string(ResourceRecords)), res)
 		}},
 		{DimensionEgress, func(p token.Permission) bool {
-			return matchAny(p.Egress, egress, func(e, v string) bool { return e == v })
+			return matchAny(p.Egress, egress, matchEgress)
 		}},
 		{DimensionZones, func(p token.Permission) bool { return matchAny(p.Zones, zone, matchZone) }},
 		{DimensionTypes, func(p token.Permission) bool { return matchAny(p.Types, typ, matchType) }},
@@ -113,15 +113,6 @@ func coversEntries(parent []token.Permission, verb, res, egress, zone, typ strin
 	}
 
 	return "", true
-}
-
-// orDefault returns filter, or def if filter was left out.
-func orDefault(filter []string, def ...string) []string {
-	if len(filter) == 0 {
-		return def
-	}
-
-	return filter
 }
 
 // coversName reports whether every record name the name pattern derived

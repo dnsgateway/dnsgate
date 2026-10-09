@@ -176,17 +176,21 @@ func ChooseEgress(perms []token.Permission, r Request) (Egress, bool) {
 // or empty, takes its default: resources ["records"], any zone, name, type
 // and egress. Verbs have no default: a rule without them grants nothing.
 func allows(p token.Permission, r Request) bool {
-	resources := p.Resources
-	if len(resources) == 0 {
-		resources = []string{string(ResourceRecords)}
-	}
-
 	return slices.Contains(p.Verbs, string(r.Verb)) &&
-		slices.Contains(resources, string(r.Resource)) &&
+		slices.Contains(orDefault(p.Resources, string(ResourceRecords)), string(r.Resource)) &&
 		(r.Zone == "" || matchAny(p.Zones, r.Zone, matchZone)) &&
 		(r.Name == "" || matchAny(p.Names, r.Name, MatchName)) &&
 		(r.Type == "" || matchAny(p.Types, r.Type, matchType)) &&
-		(r.Egress == "" || matchAny(p.Egress, string(r.Egress), func(e, v string) bool { return e == v }))
+		(r.Egress == "" || matchAny(p.Egress, string(r.Egress), matchEgress))
+}
+
+// orDefault returns filter, or def if filter was left out.
+func orDefault(filter []string, def ...string) []string {
+	if len(filter) == 0 {
+		return def
+	}
+
+	return filter
 }
 
 // matchAny reports whether value matches any entry of filter, or filter
@@ -203,6 +207,11 @@ func matchAny(filter []string, value string, match func(entry, value string) boo
 // exact zone name, ignoring case and a trailing dot.
 func matchZone(entry, zone string) bool {
 	return entry == wildcard || dnsname.Zone(entry) == dnsname.Zone(zone)
+}
+
+// matchEgress matches an Egress against an egress filter entry.
+func matchEgress(entry, egress string) bool {
+	return entry == egress
 }
 
 // matchType matches a record type against a types filter entry: "*" or a
