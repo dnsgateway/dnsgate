@@ -28,6 +28,9 @@ const (
 	flagEgress          = "egress"
 	flagSub             = "sub"
 	flagPermissions     = "permissions"
+	flagTTL             = "ttl"
+	flagAdd             = "add"
+	flagRemove          = "remove"
 
 	envKeyDir          = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
@@ -53,7 +56,8 @@ const secretHelp = "; prefer the environment variable, a flag value shows in pro
 
 // Flags holds the parsed CLI flags. Each falls back to an environment
 // variable, then to a default, except --provider, --sub, --permissions and
-// --expires, which are chosen per Onboarding or per Derived Token.
+// --expires, which are chosen per Onboarding or per Derived Token, and
+// --ttl, --add and --remove, which are chosen per record change.
 type Flags struct {
 	KeyDir      string
 	KeyIDSuffix string
@@ -74,6 +78,10 @@ type Flags struct {
 
 	Zone   string
 	Egress string
+
+	TTL    uint32
+	Add    []string
+	Remove []string
 }
 
 // DefaultFlags returns the flags resolved from the environment and
@@ -153,6 +161,36 @@ func (f *Flags) AddRecordFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Zone, flagZone, "", f.Zone,
 		"zone the records are in, such as example.com (env "+envZone+")")
 	f.AddReadFlags(flags)
+}
+
+// AddRecordWriteFlags registers the flags of "record create" and "record
+// update": the record flags and the RRset's TTL.
+func (f *Flags) AddRecordWriteFlags(flags *pflag.FlagSet) {
+	flags.Uint32VarP(&f.TTL, flagTTL, "", f.TTL,
+		"TTL of the records in seconds, such as 300; required")
+	f.AddRecordFlags(flags)
+}
+
+// checkRecordWriteFlags checks the flags of "record create" and "record
+// update" and returns the Egress asked for.
+func checkRecordWriteFlags(f *Flags) (dnsgatev1.Egress, error) {
+	if f.TTL == 0 {
+		return 0, errors.New("no TTL: set --" + flagTTL)
+	}
+
+	return checkRecordFlags(f)
+}
+
+// AddRecordPatchFlags registers the flags of "record patch": the record
+// flags, the values to add and remove, and the TTL of those added.
+func (f *Flags) AddRecordPatchFlags(flags *pflag.FlagSet) {
+	flags.StringArrayVarP(&f.Add, flagAdd, "", f.Add,
+		"value to add to the RRset; repeat it to add several")
+	flags.StringArrayVarP(&f.Remove, flagRemove, "", f.Remove,
+		"value to remove from the RRset; repeat it to remove several")
+	flags.Uint32VarP(&f.TTL, flagTTL, "", f.TTL,
+		"TTL of the records added in seconds; required to create the RRset (default: the RRset's TTL)")
+	f.AddRecordFlags(flags)
 }
 
 // AddOnboardFlags registers the flags of "onboard".

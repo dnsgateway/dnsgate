@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -190,6 +191,134 @@ func TestReadRecordsFailures(t *testing.T) {
 	for _, c := range fake.Calls() {
 		if c.Op == providertest.OpRecords && c.RecordFilter.Type != "AAAA" {
 			t.Errorf("provider call %+v, want only the AAAA read", c)
+		}
+	}
+}
+
+func TestChangeRecordsEndToEnd(t *testing.T) {
+	useFakeProvider(t)
+
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	out, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare")
+	if err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+
+	root := strings.TrimSpace(out)
+	t.Setenv("DNSGATE_TOKEN", root)
+	t.Setenv("DNSGATE_ZONE", "example.com")
+
+	for _, step := range []struct {
+		args []string
+		// want is the RRset printed, "" for nothing.
+		want string
+	}{
+		{[]string{"record", "create", "api", "A", "192.0.2.30", "192.0.2.31", "--ttl", "600"}, "api A 600 192.0.2.30,192.0.2.31"},
+		{[]string{"record", "update", "api", "A", "192.0.2.31", "192.0.2.32", "--ttl", "300"}, "api A 300 192.0.2.31,192.0.2.32"},
+		{[]string{"record", "patch", "_acme-challenge", "TXT", "--add", `"def"`, "--add", `"g,h"`}, `_acme-challenge TXT 60 "abc","def","g,h"`},
+		{[]string{"record", "patch", "_acme-challenge", "TXT", "--remove", `"abc"`}, `_acme-challenge TXT 60 "def","g,h"`},
+		{[]string{"record", "patch", "_acme-challenge", "TXT", "--remove", `"def"`, "--remove", `"g,h"`}, ""},
+		{[]string{"record", "delete", "api", "A"}, ""},
+	} {
+		out, err := runClient(t, env, gw, step.args...)
+		if err != nil {
+			t.Fatalf("%v: %v", step.args, err)
+		}
+
+		got := ""
+		if out != "" {
+			s := decode[recordSetJSON](t, out)
+			slices.Sort(s.Values)
+			got = fmt.Sprintf("%s %s %d %s", s.Name, s.Type, s.TTL, strings.Join(s.Values, ","))
+		}
+
+		if got != step.want {
+			t.Errorf("%v printed %q, want %q", step.args, got, step.want)
+		}
+	}
+
+	out, err = runClient(t, env, gw, "record", "list")
+	if err != nil {
+		t.Fatalf("record list: %v", err)
+	}
+
+	var names []string
+	for _, s := range decode[[]recordSetJSON](t, out) {
+		names = append(names, s.Name+" "+s.Type)
+	}
+
+	if want := []string{"@ A", "www.apps A"}; !slices.Equal(names, want) {
+		t.Errorf("record list = %v, want %v", names, want)
+	}
+
+	for _, verb := range []string{"create", "update", "patch", "delete"} {
+		if !strings.Contains(gw.audit.String(), `"event":"records.`+verb+`"`) {
+			t.Errorf("audit output lacks records.%s:\n%s", verb, gw.audit.String())
+		}
+	}
+
+	for _, secret := range []string{testCFToken, testBootstrapSecret, root} {
+		if strings.Contains(gw.audit.String(), secret) || strings.Contains(gw.logs.String(), secret) {
+			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", gw.audit.String(), gw.logs.String())
+		}
+	}
+}
+
+func TestChangeRecordsFailures(t *testing.T) {
+	fake := useFakeProvider(t)
+
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	out, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare")
+	if err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+
+	t.Setenv("DNSGATE_TOKEN", strings.TrimSpace(out))
+	t.Setenv("DNSGATE_ZONE", "example.com")
+
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"create without TTL":       {[]string{"record", "create", "api", "A", "192.0.2.1"}, "no TTL"},
+		"create without values":    {[]string{"record", "create", "api", "A", "--ttl", "300"}, "requires at least 3 arg(s)"},
+		"update without TTL":       {[]string{"record", "update", "www.apps", "A", "192.0.2.1"}, "no TTL"},
+		"patch with nothing to do": {[]string{"record", "patch", "www.apps", "A"}, "nothing to add or remove"},
+		"create of an RRset held": {
+			[]string{"record", "create", "www.apps", "A", "192.0.2.1", "--ttl", "300"}, "conflict: the record set already exists",
+		},
+		"update of an RRset the zone lacks": {
+			[]string{"record", "update", "api", "A", "192.0.2.1", "--ttl", "300"}, "not found",
+		},
+		"malformed value": {
+			[]string{"record", "create", "api", "A", "www", "--ttl", "300"}, "invalid record",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := runClient(t, env, gw, tc.args...)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want one containing %q", err, tc.want)
+			}
+
+			if out != "" {
+				t.Errorf("printed %q, want nothing", out)
+			}
+		})
+	}
+
+	for _, c := range fake.Calls() {
+		if c.Op == providertest.OpCreateRecord || c.Op == providertest.OpUpdateRecord || c.Op == providertest.OpDeleteRecord {
+			t.Errorf("provider call %+v, want no write", c)
 		}
 	}
 }
