@@ -73,6 +73,30 @@ func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
 	}
 }
 
+func TestServerLogsEachRequestAtDebugOnly(t *testing.T) {
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	for level, want := range map[string]bool{"debug": true, "info": false} {
+		t.Run(level, func(t *testing.T) {
+			env := newGatewayEnvAt(t, freePort(t))
+			gw := startServerAt(t, env, "--log-level", level)
+
+			if _, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare"); err != nil {
+				t.Fatalf("onboard: %v", err)
+			}
+
+			logs := gw.logs.String()
+
+			logged := strings.Contains(logs, `"msg":"request"`) && strings.Contains(logs, `"operation":"onboard"`) &&
+				strings.Contains(logs, `"code":"OK"`) && strings.Contains(logs, `"peer":"127.0.0.1:`)
+			if logged != want {
+				t.Errorf("server logs at %s: request line logged = %v, want %v:\n%s", level, logged, want, logs)
+			}
+		})
+	}
+}
+
 func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
 	env := newGatewayEnvAt(t, freePort(t))
 	gw := startServerAt(t, env, "--log-level", "error")
