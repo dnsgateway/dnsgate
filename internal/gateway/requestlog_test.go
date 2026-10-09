@@ -19,8 +19,7 @@ func newDebugHarness(t *testing.T) *harness {
 	t.Helper()
 
 	h := newHarness(t)
-	h.logLevel = slog.LevelDebug
-	h.serve(t, h.keys)
+	h.logLevel.Set(slog.LevelDebug)
 
 	return h
 }

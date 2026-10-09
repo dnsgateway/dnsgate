@@ -48,9 +48,9 @@ type harness struct {
 	audit  *syncBuffer
 	// logs holds the Gateway's operational logs, as JSON lines.
 	logs *syncBuffer
-	// logLevel is the lowest level of the logs the Gateway writes; its
-	// zero value is info.
-	logLevel slog.Level
+	// logLevel is the lowest level of the logs the Gateway writes, info
+	// unless a test lowers it.
+	logLevel *slog.LevelVar
 	now      time.Time
 	// fake is the Provider the Gateway calls, as "cloudflare", unless
 	// providers is set.
@@ -110,11 +110,12 @@ func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 	t.Helper()
 
 	h := &harness{
-		now:     time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
-		auditTo: w,
-		logs:    &syncBuffer{},
-		keyDir:  filepath.Join(t.TempDir(), "keys"),
-		fake:    providertest.New(),
+		now:      time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
+		auditTo:  w,
+		logs:     &syncBuffer{},
+		logLevel: &slog.LevelVar{},
+		keyDir:   filepath.Join(t.TempDir(), "keys"),
+		fake:     providertest.New(),
 	}
 
 	if _, err := keys.Generate(h.keyDir, "test"); err != nil {
