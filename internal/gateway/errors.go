@@ -85,7 +85,9 @@ func providerError(err error) error {
 		code, detail.Category, msg = codes.PermissionDenied, dnsgatev1.Error_CATEGORY_DENIED_BY_PROVIDER, "the provider denied the request"
 	case errors.Is(err, dnsprovider.ErrNotFound):
 		code, detail.Category, msg = codes.NotFound, dnsgatev1.Error_CATEGORY_NOT_FOUND, "not found at the provider"
-	case errors.Is(err, dnsprovider.ErrConflict), detail.ProviderStatus == http.StatusBadRequest,
+	case errors.Is(err, dnsprovider.ErrConflict), errors.Is(err, dnsprovider.ErrStale):
+		code, detail.Category, msg = codes.Aborted, dnsgatev1.Error_CATEGORY_CONFLICT, "the change collides with what the provider holds"
+	case detail.ProviderStatus == http.StatusBadRequest,
 		detail.ProviderStatus == http.StatusUnprocessableEntity:
 		code, detail.Category, msg = codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD, "the provider rejected the record"
 	default:

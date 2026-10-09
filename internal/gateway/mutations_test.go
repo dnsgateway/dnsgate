@@ -639,6 +639,109 @@ func TestEachMutationAndDenialIsAuditedOnceWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestProviderFailuresOfAChangesetReachTheClientAsCategories(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err      error
+		code     codes.Code
+		category dnsgatev1.Error_Category
+		status   int32
+	}{
+		"record refused": {
+			&dnsprovider.APIError{Provider: "cloudflare", StatusCode: 400, Messages: []string{rawProviderMessage}},
+			codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD, 400,
+		},
+		"denied": {
+			&dnsprovider.APIError{Provider: "cloudflare", StatusCode: 403, Messages: []string{rawProviderMessage}},
+			codes.PermissionDenied, dnsgatev1.Error_CATEGORY_DENIED_BY_PROVIDER, 403,
+		},
+		"rate limited": {
+			&dnsprovider.APIError{Provider: "cloudflare", StatusCode: 429, Messages: []string{rawProviderMessage}},
+			codes.ResourceExhausted, dnsgatev1.Error_CATEGORY_RATE_LIMITED, 429,
+		},
+		"records changed at the provider": {
+			fmt.Errorf("%s: %w", rawProviderMessage, dnsprovider.ErrStale),
+			codes.Aborted, dnsgatev1.Error_CATEGORY_CONFLICT, 0,
+		},
+		"record collides": {
+			fmt.Errorf("%s: %w", rawProviderMessage, dnsprovider.ErrConflict),
+			codes.Aborted, dnsgatev1.Error_CATEGORY_CONFLICT, 0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newMutationHarness(t)
+			h.fake.Fail(providertest.OpApply, tc.err)
+
+			root := h.onboard(t, onboardRequest())
+
+			for verb, req := range mutations("_acme-challenge.www", "TXT", 0) {
+				switch r := req.(type) {
+				case *dnsgatev1.PatchRecordRequest:
+					r.Add = []string{`"new"`}
+				case *dnsgatev1.CreateRecordRequest:
+					r.Name = "_acme-challenge.api"
+				}
+
+				err := h.call(t, root, req)
+				if status.Code(err) != tc.code {
+					t.Errorf("%s: error = %v, want code %v", verb, err, tc.code)
+
+					continue
+				}
+
+				wantError(t, err, tc.code, tc.category)
+
+				if got := dnsgatev1.ErrorDetail(status.Convert(err)).GetProviderStatus(); got != tc.status {
+					t.Errorf("%s: provider status = %d, want %d", verb, got, tc.status)
+				}
+
+				if strings.Contains(err.Error(), "cloudflare says") {
+					t.Errorf("%s: error %v carries the raw Provider answer", verb, err)
+				}
+			}
+
+			if strings.Contains(h.audit.String(), "cloudflare says") {
+				t.Errorf("audit log carries the raw Provider answer:\n%s", h.audit.String())
+			}
+
+			for _, e := range h.auditEvents(t)[1:] {
+				if e["result"] != "failed" || e["category"] != tc.category.Name() || e["provider_status"] != statusField(tc.status) {
+					t.Errorf("audit event = %v, want failed, category %s, provider status %d", e, tc.category.Name(), tc.status)
+				}
+			}
+		})
+	}
+}
+
+func TestAChangeTheProviderFailsFailsTheCallAndTheOthersStayMade(t *testing.T) {
+	h := newHarness(t)
+	h.addZones()
+
+	// The Provider takes one change at a time and refuses the new value.
+	h.fake.FailChanges(func(c dnsprovider.Change) error {
+		if c.After.Value == "192.0.2.13" {
+			return &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 400}
+		}
+
+		return nil
+	})
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Values: []string{"192.0.2.12", "192.0.2.13"},
+	})
+	wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD)
+
+	if got, want := h.readSet(t, root, "www.apps", "A"), "www.apps A 120 192.0.2.11,192.0.2.12"; got != want {
+		t.Errorf("RRset = %q, want %q: the change the Provider made stays", got, want)
+	}
+
+	events := h.auditEvents(t)[1:]
+	if len(events) != 1 || events[0]["event"] != "records.update" || events[0]["result"] != "failed" || events[0]["provider_status"] != float64(400) {
+		t.Errorf("audit events = %v, want one failed records.update, provider status 400", events)
+	}
+}
+
 func TestUpdateRecordOfAnRRsetTheZoneLacksIsNotFound(t *testing.T) {
 	h := newMutationHarness(t)
 
