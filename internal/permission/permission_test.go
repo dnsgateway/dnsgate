@@ -138,6 +138,11 @@ func TestAllows(t *testing.T) {
 			permission.Request{Verb: "get", Resource: "zones", Zone: "example.com", Egress: "gateway"},
 			true,
 		},
+		"a request for any zone ignores zones": {
+			[]token.Permission{{Verbs: []string{"list"}, Resources: []string{"zones"}, Zones: []string{"example.org"}}},
+			permission.Request{Verb: "list", Resource: "zones", Egress: "gateway"},
+			true,
+		},
 		"a request for any record of a zone ignores names and types": {
 			[]token.Permission{{Verbs: []string{"list"}, Names: []string{"www"}, Types: []string{"TXT"}}},
 			permission.Request{Verb: "list", Resource: "records", Zone: "example.com", Egress: "gateway"},

@@ -43,10 +43,10 @@ const wildcard = "*"
 
 // Request is what a request asks to do, as Permissions see it.
 //
-// Name and Type are left empty for a request that is not about one record
-// name or type, such as reading a zone or listing a zone's records: no
-// names or types filter is checked then, and the caller filters what it
-// returns with a request per record. An empty Egress is not checked
+// Zone, Name and Type are left empty for a request that is not about one
+// zone, record name or type, such as listing zones or listing a zone's
+// records: that filter is not checked then, and the caller filters what
+// it returns with a request per zone or record. An empty Egress is not checked
 // either; ChooseEgress chooses one for a request that does not ask.
 type Request struct {
 	Verb     string
@@ -97,7 +97,7 @@ func allows(p token.Permission, r Request) bool {
 
 	return slices.Contains(p.Verbs, r.Verb) &&
 		slices.Contains(resources, r.Resource) &&
-		matchAny(p.Zones, r.Zone, matchZone) &&
+		(r.Zone == "" || matchAny(p.Zones, r.Zone, matchZone)) &&
 		(r.Name == "" || matchAny(p.Names, r.Name, MatchName)) &&
 		(r.Type == "" || matchAny(p.Types, r.Type, matchType)) &&
 		(r.Egress == "" || matchAny(p.Egress, r.Egress, func(e, v string) bool { return e == v }))
@@ -116,7 +116,7 @@ func matchAny(filter []string, value string, match func(entry, value string) boo
 // matchZone matches a zone name against a zones filter entry: "*" or an
 // exact zone name, ignoring case and a trailing dot.
 func matchZone(entry, zone string) bool {
-	return entry == wildcard || zoneName(entry) == zoneName(zone)
+	return entry == wildcard || ZoneName(entry) == ZoneName(zone)
 }
 
 // matchType matches a record type against a types filter entry: "*" or a
@@ -125,9 +125,9 @@ func matchType(entry, typ string) bool {
 	return entry == wildcard || strings.EqualFold(entry, typ)
 }
 
-// zoneName returns a zone name as zones filters compare it: in lower case,
+// ZoneName returns a zone name as zones filters compare it: in lower case,
 // without a trailing dot.
-func zoneName(name string) string {
+func ZoneName(name string) string {
 	return strings.ToLower(strings.TrimSuffix(name, "."))
 }
 
