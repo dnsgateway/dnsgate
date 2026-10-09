@@ -3,6 +3,7 @@ package gateway
 import (
 	"strings"
 
+	"github.com/dnsgateway/dnsgate/internal/dnsname"
 	"github.com/dnsgateway/dnsgate/internal/permission"
 )
 
@@ -46,7 +47,7 @@ func checkRecordOf(pr *permission.Request) error {
 // checkZone returns a zone name as the Gateway compares it, in lower case
 // without a trailing dot, or an invalid request error.
 func checkZone(name string) (string, error) {
-	zone := permission.ZoneName(name)
+	zone := dnsname.Zone(name)
 	if !validLabels(zone, false) {
 		return "", invalidRequest("invalid zone name")
 	}
@@ -60,7 +61,7 @@ func checkZone(name string) (string, error) {
 // wildcard record.
 func checkRecordName(name string) (string, error) {
 	name = strings.ToLower(name)
-	if name != permission.Apex && !validLabels(name, true) {
+	if name != dnsname.Apex && !validLabels(name, true) {
 		return "", invalidRequest("invalid record name: give it relative to the zone, @ for the zone itself")
 	}
 
@@ -102,27 +103,4 @@ func validLabels(name string, star bool) bool {
 	}
 
 	return true
-}
-
-// absoluteName returns the absolute name of a record name relative to
-// zone.
-func absoluteName(zone, name string) string {
-	if name == permission.Apex {
-		return zone
-	}
-
-	return name + "." + zone
-}
-
-// relativeName returns the name of a Provider's record relative to zone,
-// and whether the record is in the zone at all.
-func relativeName(zone, absolute string) (string, bool) {
-	absolute = permission.ZoneName(absolute)
-	if absolute == zone {
-		return permission.Apex, true
-	}
-
-	name, ok := strings.CutSuffix(absolute, "."+zone)
-
-	return name, ok && name != ""
 }

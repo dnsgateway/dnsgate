@@ -9,6 +9,7 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
+	"github.com/dnsgateway/dnsgate/internal/dnsname"
 	"github.com/dnsgateway/dnsgate/internal/permission"
 )
 
@@ -53,7 +54,7 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 
 	// Contains narrows the Provider's answer to names ending in this one;
 	// the exact name is matched below.
-	records, err := g.readRecords(c, dnsprovider.RecordFilter{Type: typ, Contains: absoluteName(zone, name) + "."})
+	records, err := g.readRecords(c, dnsprovider.RecordFilter{Type: typ, Contains: dnsname.Absolute(zone, name) + "."})
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,7 @@ func recordSets(zone string, records []dnsprovider.Record, keep func(name, typ s
 	var sets []*dnsgatev1.RecordSet
 
 	for _, rec := range records {
-		name, ok := relativeName(zone, rec.Name)
+		name, ok := dnsname.Relative(zone, rec.Name)
 		if !ok {
 			continue
 		}

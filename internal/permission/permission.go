@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/dnsname"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -73,9 +74,6 @@ func EgressFromAPI(a dnsgatev1.Egress) (Egress, bool) {
 	return "", false
 }
 
-// Apex is the name of a zone's own name, relative to the zone.
-const Apex = "@"
-
 // wildcard is the zones and types filter entry that matches every value.
 const wildcard = "*"
 
@@ -91,8 +89,8 @@ type Request struct {
 	Resource Resource
 	// Zone is the zone's name, such as "example.com".
 	Zone string
-	// Name is the record name relative to Zone: Apex for the zone's own
-	// name, "www.apps" for www.apps.example.com.
+	// Name is the record name relative to Zone: dnsname.Apex for the
+	// zone's own name, "www.apps" for www.apps.example.com.
 	Name   string
 	Type   string
 	Egress Egress
@@ -154,19 +152,13 @@ func matchAny(filter []string, value string, match func(entry, value string) boo
 // matchZone matches a zone name against a zones filter entry: "*" or an
 // exact zone name, ignoring case and a trailing dot.
 func matchZone(entry, zone string) bool {
-	return entry == wildcard || ZoneName(entry) == ZoneName(zone)
+	return entry == wildcard || dnsname.Zone(entry) == dnsname.Zone(zone)
 }
 
 // matchType matches a record type against a types filter entry: "*" or a
 // type, ignoring case.
 func matchType(entry, typ string) bool {
 	return entry == wildcard || strings.EqualFold(entry, typ)
-}
-
-// ZoneName returns a zone name as zones filters compare it: in lower case,
-// without a trailing dot.
-func ZoneName(name string) string {
-	return strings.ToLower(strings.TrimSuffix(name, "."))
 }
 
 // Name pattern wildcards.
@@ -178,12 +170,13 @@ const (
 )
 
 // MatchName reports whether the zone-relative record name matches the
-// name pattern, ignoring case. Apex matches only itself, and neither
+// name pattern, ignoring case. The apex, dnsname.Apex, matches only
+// itself, and neither
 // wildcard matches it: "*.apps" matches "www.apps" but not "apps".
 func MatchName(pattern, name string) bool {
 	pattern, name = strings.ToLower(pattern), strings.ToLower(name)
 
-	if pattern == Apex || name == Apex {
+	if pattern == dnsname.Apex || name == dnsname.Apex {
 		return pattern == name
 	}
 

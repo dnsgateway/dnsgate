@@ -5,6 +5,7 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
+	"github.com/dnsgateway/dnsgate/internal/dnsname"
 	"github.com/dnsgateway/dnsgate/internal/permission"
 )
 
@@ -62,7 +63,7 @@ var zoneStates = map[dnsprovider.HostingState]dnsgatev1.Zone_State{
 
 func zoneToAPI(z dnsprovider.Zone) *dnsgatev1.Zone {
 	return &dnsgatev1.Zone{
-		Name:        permission.ZoneName(z.Name),
+		Name:        dnsname.Zone(z.Name),
 		State:       zoneStates[z.State],
 		Nameservers: z.Nameservers,
 	}
