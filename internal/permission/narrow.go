@@ -51,19 +51,16 @@ func Covers(parent, derived []token.Permission) (Dimension, bool) {
 var allNames = []string{dnsname.Apex, AnyLabels}
 
 func coversRule(parent []token.Permission, d token.Permission) (Dimension, bool) {
-	resources := orDefault(d.Resources, string(ResourceRecords))
-	egress := orDefault(d.Egress, asStrings(egresses)...)
-	zones := orDefault(d.Zones, wildcard)
-	types := orDefault(d.Types, wildcard)
 	names := orDefault(d.Names, allNames...)
 
 	for _, verb := range d.Verbs {
-		for _, res := range resources {
-			for _, e := range egress {
-				for _, zone := range zones {
-					for _, typ := range types {
-						if d, ok := coversEntries(parent, verb, res, e, zone, typ, names); !ok {
-							return d, false
+		for _, res := range orDefault(d.Resources, string(ResourceRecords)) {
+			for _, egress := range orDefault(d.Egress, asStrings(egresses)...) {
+				for _, zone := range orDefault(d.Zones, wildcard) {
+					for _, typ := range orDefault(d.Types, wildcard) {
+						r := Request{Verb: Verb(verb), Resource: Resource(res), Egress: Egress(egress), Zone: zone, Type: typ}
+						if dim, ok := coversEntries(parent, r, names); !ok {
+							return dim, false
 						}
 					}
 				}
@@ -74,23 +71,21 @@ func coversRule(parent []token.Permission, d token.Permission) (Dimension, bool)
 	return "", true
 }
 
-// coversEntries reports whether the parent rules allow names under one
-// verb, resource, egress, zone entry and type entry of a derived rule, and
-// if not, which dimension none of them allows.
-func coversEntries(parent []token.Permission, verb, res, egress, zone, typ string, names []string) (Dimension, bool) {
+// coversEntries reports whether the parent rules allow names under r: one
+// verb, resource, egress, zone entry and type entry of a derived rule. If
+// not, it returns the dimension none of them allows.
+func coversEntries(parent []token.Permission, r Request, names []string) (Dimension, bool) {
 	steps := []struct {
 		dim   Dimension
 		allow func(token.Permission) bool
 	}{
-		{DimensionVerbs, func(p token.Permission) bool { return slices.Contains(p.Verbs, verb) }},
+		{DimensionVerbs, func(p token.Permission) bool { return slices.Contains(p.Verbs, string(r.Verb)) }},
 		{DimensionResources, func(p token.Permission) bool {
-			return slices.Contains(orDefault(p.Resources, string(ResourceRecords)), res)
+			return slices.Contains(orDefault(p.Resources, string(ResourceRecords)), string(r.Resource))
 		}},
-		{DimensionEgress, func(p token.Permission) bool {
-			return matchAny(p.Egress, egress, matchEgress)
-		}},
-		{DimensionZones, func(p token.Permission) bool { return matchAny(p.Zones, zone, matchZone) }},
-		{DimensionTypes, func(p token.Permission) bool { return matchAny(p.Types, typ, matchType) }},
+		{DimensionEgress, func(p token.Permission) bool { return matchAny(p.Egress, string(r.Egress), matchEgress) }},
+		{DimensionZones, func(p token.Permission) bool { return matchAny(p.Zones, r.Zone, matchZone) }},
+		{DimensionTypes, func(p token.Permission) bool { return matchAny(p.Types, r.Type, matchType) }},
 	}
 
 	rules := parent
