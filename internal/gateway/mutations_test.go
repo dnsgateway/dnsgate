@@ -432,6 +432,36 @@ func TestMalformedPatchesAreRefused(t *testing.T) {
 	}
 }
 
+func TestDeleteRecordDeletesEveryValueOfTheRRset(t *testing.T) {
+	h := newMutationHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	if _, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A",
+	}); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+
+	wantChangesets(t, h, []string{
+		"delete A www.apps.example.com 192.0.2.10 300",
+		"delete A www.apps.example.com 192.0.2.11 120",
+	})
+
+	if got := h.readSet(t, root, "www.apps", "A"); got != "" {
+		t.Errorf("RRset read back = %q, want it gone", got)
+	}
+
+	if got, want := h.readSet(t, root, "www.apps", "TXT"), `www.apps TXT 300 "v=1"`; got != want {
+		t.Errorf("TXT RRset = %q, want %q", got, want)
+	}
+
+	_, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A",
+	})
+	wantError(t, err, codes.NotFound, dnsgatev1.Error_CATEGORY_NOT_FOUND)
+}
+
 func TestUpdateRecordOfAnRRsetTheZoneLacksIsNotFound(t *testing.T) {
 	h := newMutationHarness(t)
 

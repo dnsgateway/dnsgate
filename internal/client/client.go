@@ -102,6 +102,13 @@ func (c *Client) PatchRecord(ctx context.Context, req *dnsgatev1.PatchRecordRequ
 		(*dnsgatev1.Response).GetPatchRecord)
 }
 
+// DeleteRecord deletes an RRset.
+func (c *Client) DeleteRecord(ctx context.Context, req *dnsgatev1.DeleteRecordRequest) (*dnsgatev1.DeleteRecordResponse, error) {
+	return roundTrip(ctx, c, "record delete",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_DeleteRecord{DeleteRecord: req}},
+		(*dnsgatev1.Response).GetDeleteRecord)
+}
+
 // roundTrip sends req, named op in errors, and returns the result that
 // result picks from the Response. A Response holding another operation's
 // result is an error.

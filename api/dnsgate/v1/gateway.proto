@@ -58,6 +58,7 @@ message Request {
     CreateRecordRequest create_record = 9;
     UpdateRecordRequest update_record = 10;
     PatchRecordRequest patch_record = 11;
+    DeleteRecordRequest delete_record = 12;
   }
 }
 
@@ -75,6 +76,7 @@ message Response {
     CreateRecordResponse create_record = 9;
     UpdateRecordResponse update_record = 10;
     PatchRecordResponse patch_record = 11;
+    DeleteRecordResponse delete_record = 12;
   }
 }
 
@@ -363,6 +365,25 @@ message PatchRecordResponse {
   // value.
   RecordSet record_set = 1;
 }
+
+// DeleteRecordRequest asks to delete an RRset: every record of a name and
+// type. It needs delete on records for the zone, name and type. The zone
+// must hold the RRset.
+message DeleteRecordRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+  // name is the record name relative to the zone, "@" for the zone's own
+  // name.
+  string name = 4;
+  // type is the record type, such as "A" or "TXT".
+  string type = 5;
+}
+
+// DeleteRecordResponse confirms the RRset is deleted.
+message DeleteRecordResponse {}
 
 // RecordSet is an RRset: the records of one name and type.
 message RecordSet {

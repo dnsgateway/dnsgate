@@ -30,6 +30,7 @@ const (
 	EventRecordsCreate Name = "records.create"
 	EventRecordsUpdate Name = "records.update"
 	EventRecordsPatch  Name = "records.patch"
+	EventRecordsDelete Name = "records.delete"
 )
 
 // Result is the outcome of the request an Event records.

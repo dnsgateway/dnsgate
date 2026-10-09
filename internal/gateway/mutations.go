@@ -158,6 +158,32 @@ func (g *Gateway) patchRecord(r *request, req *dnsgatev1.PatchRecordRequest) (*d
 	}}, nil
 }
 
+// deleteRecord deletes every record of an RRset the zone holds. The token
+// needs delete on records for its zone, name and type.
+func (g *Gateway) deleteRecord(r *request, req *dnsgatev1.DeleteRecordRequest) (*dnsgatev1.Response, error) {
+	c, err := g.startMutation(r, audit.EventRecordsDelete, permission.VerbDelete, req)
+	if err != nil {
+		return nil, err
+	}
+
+	zone, current, err := g.readRRset(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(current) == 0 {
+		return nil, g.fail(c, notFound("no such record set"))
+	}
+
+	if _, err := g.apply(c, zone, current, nil); err != nil {
+		return nil, err
+	}
+
+	return &dnsgatev1.Response{Result: &dnsgatev1.Response_DeleteRecord{
+		DeleteRecord: &dnsgatev1.DeleteRecordResponse{},
+	}}, nil
+}
+
 // rrsetTTL returns the TTL of an RRset, the lowest of its records', or
 // zero for none.
 func rrsetTTL(records []dnsprovider.Record) uint32 {
