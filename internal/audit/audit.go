@@ -23,6 +23,7 @@ const (
 	EventTokenCreate   Name = "token.create"
 	EventTokenInspect  Name = "token.inspect"
 	EventTokenReseal   Name = "token.reseal"
+	EventTokenRevoke   Name = "token.revoke"
 	EventZonesList     Name = "zones.list"
 	EventZonesGet      Name = "zones.get"
 	EventRecordsList   Name = "records.list"
@@ -66,6 +67,9 @@ type Event struct {
 	// Derived Token.
 	ParentTokenID string `json:"parent_jti,omitempty"`
 	Provider      string `json:"provider,omitempty"`
+	// RevokedTokenID is the jti of the token a revocation names, once
+	// the Gateway has checked its form.
+	RevokedTokenID string `json:"revoked_jti,omitempty"`
 	// OldKeyID and NewKeyID are the encryption kids a token event moves
 	// a token from and to, such as for Resealing. A kid is not a secret.
 	OldKeyID string `json:"old_kid,omitempty"`

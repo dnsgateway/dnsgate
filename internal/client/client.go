@@ -61,6 +61,14 @@ func (c *Client) ResealToken(ctx context.Context, tok string) (*dnsgatev1.Reseal
 		(*dnsgatev1.Response).GetResealToken)
 }
 
+// RevokeToken asks the Gateway to revoke the token req names, and every
+// token derived from it.
+func (c *Client) RevokeToken(ctx context.Context, req *dnsgatev1.RevokeTokenRequest) (*dnsgatev1.RevokeTokenResponse, error) {
+	return roundTrip(ctx, c, "token revoke",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_RevokeToken{RevokeToken: req}},
+		(*dnsgatev1.Response).GetRevokeToken)
+}
+
 // ListZones lists the zones the token in req covers.
 func (c *Client) ListZones(ctx context.Context, req *dnsgatev1.ListZonesRequest) (*dnsgatev1.ListZonesResponse, error) {
 	return roundTrip(ctx, c, "zone list",

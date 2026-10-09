@@ -117,6 +117,7 @@ message Request {
     UpdateRecordRequest update_record = 10;
     PatchRecordRequest patch_record = 11;
     DeleteRecordRequest delete_record = 12;
+    RevokeTokenRequest revoke_token = 13;
   }
 }
 
@@ -135,6 +136,7 @@ message Response {
     UpdateRecordResponse update_record = 10;
     PatchRecordResponse patch_record = 11;
     DeleteRecordResponse delete_record = 12;
+    RevokeTokenResponse revoke_token = 13;
   }
 }
 
@@ -235,6 +237,34 @@ message ResealTokenResponse {
   // token holds the same claims and signature as the request's token,
   // sealed under the current encryption key.
   string token = 1;
+}
+
+// RevokeTokenRequest asks the Gateway to revoke a Service Token: it, and
+// every token derived from it, stops working from the next request on,
+// for good. It needs delete on tokens. Such a token may revoke any token
+// ID, since the Gateway keeps no registry of which chain an ID belongs to
+// (ADR 0001).
+message RevokeTokenRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  // target names the token to revoke.
+  oneof target {
+    // token_id is the ID (jti) of the token to revoke. The Gateway cannot
+    // learn a token's expiry from its ID, so it keeps the revocation
+    // forever.
+    string token_id = 2;
+    // target_token is the Service Token to revoke. It must open: valid,
+    // not expired, and sealed under a key that is not retired. The
+    // Gateway keeps the revocation until the token expires, or forever if
+    // it never does.
+    string target_token = 3;
+  }
+}
+
+// RevokeTokenResponse confirms a revocation.
+message RevokeTokenResponse {
+  // jti is the ID of the token revoked.
+  string jti = 1;
 }
 
 // Egress is where the connection to the Provider leaves from.

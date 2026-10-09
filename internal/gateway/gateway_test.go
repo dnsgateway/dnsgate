@@ -33,6 +33,7 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/client"
 	"github.com/dnsgateway/dnsgate/internal/gateway"
 	"github.com/dnsgateway/dnsgate/internal/keys"
+	"github.com/dnsgateway/dnsgate/internal/revocation"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -69,6 +70,10 @@ type harness struct {
 	maxAncestors int
 	// keys are the keys of the Gateway last served.
 	keys keys.Source
+	// dbFile is the SQLite file of revoked token IDs; revocations is the
+	// store of the Gateway last served, open on it.
+	dbFile      string
+	revocations *revocation.SQLite
 
 	auditTo io.Writer
 	keyDir  string
@@ -115,6 +120,7 @@ func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 		logs:     &syncBuffer{},
 		logLevel: &slog.LevelVar{},
 		keyDir:   filepath.Join(t.TempDir(), "keys"),
+		dbFile:   filepath.Join(t.TempDir(), "dnsgate.db"),
 		fake:     providertest.New(),
 	}
 
@@ -159,6 +165,8 @@ func (h *harness) rotate(t *testing.T, retireAt time.Time) string {
 func (h *harness) serve(t *testing.T, src keys.Source) {
 	t.Helper()
 
+	h.openRevocations(t)
+
 	providers := h.providers
 	if providers == nil {
 		providers = dnsprovider.Registry{"cloudflare": h.fake.Factory()}
@@ -172,6 +180,7 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 		EgressTransport:    h.egress,
 		AgentEgressRootCAs: h.agentRoots,
 		MaxAncestors:       h.maxAncestors,
+		Revocations:        h.revocations,
 		Logger:             slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: h.logLevel})),
 		Now:                func() time.Time { return h.now },
 	})
@@ -203,6 +212,35 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 
 	h.client = client.New(conn, opts...)
 	h.api = dnsgatev1.NewGatewayServiceClient(conn)
+}
+
+// openRevocations opens the revocation store on dbFile, closing the one
+// of the Gateway served before, as a restarted Gateway would.
+func (h *harness) openRevocations(t *testing.T) {
+	t.Helper()
+
+	if h.revocations != nil {
+		if err := h.revocations.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	store, err := revocation.OpenSQLite(t.Context(), h.dbFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h.revocations = store
+
+	t.Cleanup(func() { _ = store.Close() })
+}
+
+// restart serves a new Gateway with the same keys and revocation
+// database, as after a restart.
+func (h *harness) restart(t *testing.T) {
+	t.Helper()
+
+	h.serve(t, h.keys)
 }
 
 func onboardRequest() *dnsgatev1.OnboardRequest {

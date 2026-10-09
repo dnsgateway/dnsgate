@@ -10,7 +10,8 @@ import (
 
 // resealToken reseals the token in req under the current encryption key.
 // The token authorizes its own Resealing: the resealed token has the same
-// claims and signature, so it grants its holder nothing new.
+// claims and signature, so it grants its holder nothing new. A revoked
+// token is not resealed.
 func (g *Gateway) resealToken(r *request, req *dnsgatev1.ResealTokenRequest) (*dnsgatev1.Response, error) {
 	resealed, err := g.codec.Reseal(r.ctx, req.GetToken())
 
@@ -23,16 +24,24 @@ func (g *Gateway) resealToken(r *request, req *dnsgatev1.ResealTokenRequest) (*d
 		return nil, internal()
 	}
 
-	// Like the token it replaces, a resealed token must be traceable.
-	if err := g.writeAudit(r, audit.Event{
+	event := audit.Event{
 		Event:          audit.EventTokenReseal,
 		ServiceAccount: resealed.Claims.Subject,
 		TokenID:        resealed.Claims.ID,
 		Provider:       resealed.Claims.Provider,
 		OldKeyID:       resealed.OldKeyID,
 		NewKeyID:       resealed.NewKeyID,
-		Result:         audit.ResultOK,
-	}); err != nil {
+	}
+
+	// A revoked token stays revoked under any key, but is not resealed.
+	if err := g.checkRevoked(r, event, resealed.Claims); err != nil {
+		return nil, err
+	}
+
+	// Like the token it replaces, a resealed token must be traceable.
+	event.Result = audit.ResultOK
+
+	if err := g.writeAudit(r, event); err != nil {
 		return nil, internal()
 	}
 

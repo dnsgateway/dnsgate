@@ -36,9 +36,10 @@ type tokenRequest interface {
 
 // startDNSCall takes a zone or record request through the Gateway's checks
 // in the documented order: open the token (decrypt, verify, check iss,
-// aud, nbf and exp), check the request's form with check, if given, check
-// its Permissions and Egress, and only then build the Provider from the
-// Provider Credential. check puts the zone, record name and type of pr in
+// aud, nbf and exp, then check it and its ancestors are not revoked),
+// check the request's form with check, if given, check its Permissions
+// and Egress, and only then build the Provider from the Provider
+// Credential. check puts the zone, record name and type of pr in
 // the form the Gateway compares, emptying any that fails. A refused
 // request is audited, and startDNSCall returns the Gateway error the
 // client gets. Its event names, from the start, the zone, record name and
@@ -82,16 +83,40 @@ func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, p
 }
 
 // openToken opens the Service Token tok presented with a request: it
-// decrypts and verifies it and checks its iss, aud, nbf and exp. A token
-// that does not open is audited as event, denied, and openToken returns
-// the Gateway error the client gets.
+// decrypts and verifies it, checks its iss, aud, nbf and exp, then checks
+// that neither it nor any of its ancestors is revoked. A token that does
+// not open, or is revoked, is audited as event, denied, and openToken
+// returns the Gateway error the client gets.
 func (g *Gateway) openToken(r *request, event audit.Event, tok string) (token.Claims, error) {
 	claims, err := g.codec.Open(r.ctx, tok)
 	if err != nil {
 		return token.Claims{}, g.deny(r, event, unauthenticated("invalid service token"))
 	}
 
+	if err := g.checkRevoked(r, event, claims); err != nil {
+		return token.Claims{}, err
+	}
+
 	return claims, nil
+}
+
+// checkRevoked refuses a token that is revoked, or whose ancestor is:
+// revoking a token revokes every token derived from it. A refused token
+// is audited as event, denied. If the store cannot answer, the token is
+// refused too.
+func (g *Gateway) checkRevoked(r *request, event audit.Event, claims token.Claims) error {
+	revoked, err := g.revocations.AnyRevoked(r.ctx, append([]string{claims.ID}, claims.Ancestors...))
+
+	switch {
+	case err != nil:
+		g.log.Error("checking revoked tokens", "request_id", r.id, "error", err)
+
+		return g.deny(r, event, internal())
+	case revoked:
+		return g.deny(r, event, unauthenticated("revoked service token"))
+	}
+
+	return nil
 }
 
 // authorize checks that the token's Permissions allow pr through the

@@ -23,6 +23,7 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/keys"
 	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsgate/internal/revocation"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -61,6 +62,10 @@ type Config struct {
 	// Token. It keeps tokens, which carry every ancestor's ID, small, and
 	// the revocation check of each request short. 0 means 8.
 	MaxAncestors int
+	// Revocations holds the revoked token IDs; it is required. Every
+	// request is refused whose token, or one of its ancestors, is
+	// revoked.
+	Revocations revocation.Store
 	// Logger receives operational logs; nil discards them.
 	Logger *slog.Logger
 	// Now is the Gateway's clock; nil means time.Now.
@@ -77,6 +82,7 @@ type Gateway struct {
 	egress       http.RoundTripper
 	agentRoots   *x509.CertPool
 	maxAncestors int
+	revocations  revocation.Store
 	audit        *audit.Log
 	log          *slog.Logger
 	now          func() time.Time
@@ -92,9 +98,14 @@ func New(cfg Config) *Gateway {
 		egress:       cfg.EgressTransport,
 		agentRoots:   cfg.AgentEgressRootCAs,
 		maxAncestors: cfg.MaxAncestors,
+		revocations:  cfg.Revocations,
 		audit:        cfg.Audit,
 		log:          cfg.Logger,
 		now:          cfg.Now,
+	}
+
+	if g.revocations == nil {
+		panic("gateway: Config.Revocations is required")
 	}
 
 	if g.log == nil {
@@ -155,6 +166,8 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		resp, err = g.createToken(r, op.CreateToken)
 	case *dnsgatev1.Request_ResealToken:
 		resp, err = g.resealToken(r, op.ResealToken)
+	case *dnsgatev1.Request_RevokeToken:
+		resp, err = g.revokeToken(r, op.RevokeToken)
 	case *dnsgatev1.Request_ListZones:
 		resp, err = g.listZones(r, op.ListZones)
 	case *dnsgatev1.Request_GetZone:
