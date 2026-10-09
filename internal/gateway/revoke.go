@@ -35,7 +35,7 @@ func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*d
 
 	event.RevokedTokenID = entry.ID
 
-	if err := g.revocations.Revoke(r.ctx, entry); err != nil {
+	if err := g.revokedIDs.Revoke(r.ctx, entry); err != nil {
 		g.log.Error("revoking token", "request_id", r.id, "error", err)
 
 		return nil, g.failed(r, event, internal())

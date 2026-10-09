@@ -247,7 +247,7 @@ func TestRevocationIsKeptUntilTheRevokedTokenExpires(t *testing.T) {
 	purge := func(at time.Time) {
 		t.Helper()
 
-		if err := h.revocations.PurgeExpired(t.Context(), at); err != nil {
+		if err := h.revokedIDs.PurgeExpired(t.Context(), at); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -255,7 +255,7 @@ func TestRevocationIsKeptUntilTheRevokedTokenExpires(t *testing.T) {
 	revoked := func(id string) bool {
 		t.Helper()
 
-		got, err := h.revocations.AnyRevoked(t.Context(), []string{id})
+		got, err := h.revokedIDs.AnyRevoked(t.Context(), []string{id})
 		if err != nil {
 			t.Fatal(err)
 		}

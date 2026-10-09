@@ -186,8 +186,8 @@ func newTokenRevokeCmd(flags *Flags) *cobra.Command {
 			"token ID: the Gateway keeps no registry of which chain a token belongs to.\n\n" +
 			"Name the token to revoke by its ID (tok_...), as \"token inspect\" shows it, or give the token " +
 			"itself, or \"-\" to read the token from stdin; a token argument shows in process listings. Given " +
-			"the token, the Gateway keeps the revocation only until the token expires. Given only its ID, it " +
-			"cannot know the expiry and keeps the revocation forever.",
+			"the token, the Gateway keeps its revoked ID only until the token expires. Given only its ID, it " +
+			"cannot know the expiry and keeps the ID forever.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTokenRevoke(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), flags, args[0])

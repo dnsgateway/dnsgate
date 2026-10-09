@@ -177,7 +177,7 @@ func TestRunningServerPurgesAnEntryOnceItsTokenExpires(t *testing.T) {
 	}
 }
 
-func TestServerPurgesExpiredRevocationsAtStartup(t *testing.T) {
+func TestServerPurgesExpiredEntriesAtStartup(t *testing.T) {
 	env := newGatewayEnv(t)
 
 	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))

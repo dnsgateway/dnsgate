@@ -21,7 +21,7 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/revocation"
 )
 
-// purgeInterval is how often the Gateway purges the revocations of
+// purgeInterval is how often the Gateway purges the entries of revoked
 // tokens that have expired. Tests shorten it.
 var purgeInterval = time.Hour
 
@@ -52,7 +52,7 @@ func newServerCmd(flags *Flags) *cobra.Command {
 			"  database:\n" +
 			"    sqliteFile: dnsgate.db\n\n" +
 			"The database holds only revoked token IDs. It is created if missing; keep it across restarts and " +
-			"upgrades, or revoked tokens work again. Revocations of tokens that have expired are purged at startup " +
+			"upgrades, or revoked tokens work again. Entries of revoked tokens that have expired are purged at startup " +
 			"and every hour.\n\n" +
 			"To rotate the encryption key:\n\n" +
 			"  1. Run \"dnsgate keys generate\" with a new --" + flagKeyIDSuffix + ". Only its enc- key file is used; " +
@@ -105,18 +105,18 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 	log := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: level}))
 	log.Debug("loaded config", "file", f.Config, "listen", cfg.Listen)
 
-	revocations, err := revocation.OpenSQLite(ctx, cfg.Database.SQLiteFile)
+	revokedIDs, err := revocation.OpenSQLite(ctx, cfg.Database.SQLiteFile)
 	if err != nil {
 		return err
 	}
 
-	defer revocations.Close()
+	defer revokedIDs.Close()
 
-	if err := revocations.PurgeExpired(ctx, time.Now()); err != nil {
+	if err := revokedIDs.PurgeExpired(ctx, time.Now()); err != nil {
 		return err
 	}
 
-	go purgeRevocations(ctx, revocations, purgeInterval, log)
+	go purgeExpiredEntries(ctx, revokedIDs, purgeInterval, log)
 
 	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -129,7 +129,7 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		Audit:           audit.New(auditOut),
 		Providers:       providers(),
 		MaxAncestors:    cfg.Tokens.MaxAncestors,
-		Revocations:     revocations,
+		RevokedIDs:      revokedIDs,
 		Logger:          log,
 	}))
 
@@ -157,10 +157,10 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 	}
 }
 
-// purgeRevocations purges, every interval until ctx is done, the
-// revocations of tokens that have expired. A failed purge is logged and
+// purgeExpiredEntries purges, every interval until ctx is done, the
+// entries of revoked tokens that have expired. A failed purge is logged and
 // retried at the next interval: the entries it leaves only take space.
-func purgeRevocations(ctx context.Context, store revocation.Store, interval time.Duration, log *slog.Logger) {
+func purgeExpiredEntries(ctx context.Context, store revocation.Store, interval time.Duration, log *slog.Logger) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -170,7 +170,7 @@ func purgeRevocations(ctx context.Context, store revocation.Store, interval time
 			return
 		case now := <-ticker.C:
 			if err := store.PurgeExpired(ctx, now); err != nil && ctx.Err() == nil {
-				log.Error("purging expired revocations", "error", err)
+				log.Error("purging expired entries", "error", err)
 			}
 		}
 	}

@@ -95,7 +95,7 @@ func (s *SQLite) AnyRevoked(ctx context.Context, ids []string) (bool, error) {
 // PurgeExpired implements Store.
 func (s *SQLite) PurgeExpired(ctx context.Context, now time.Time) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM revoked_tokens WHERE expires_at <= ?`, now.Unix()); err != nil {
-		return fmt.Errorf("purging expired revocations: %w", err)
+		return fmt.Errorf("purging expired entries: %w", err)
 	}
 
 	return nil

@@ -105,7 +105,7 @@ func (g *Gateway) openToken(r *request, event audit.Event, tok string) (token.Cl
 // is audited as event, denied. If the store cannot answer, the token is
 // refused too.
 func (g *Gateway) checkRevoked(r *request, event audit.Event, claims token.Claims) error {
-	revoked, err := g.revocations.AnyRevoked(r.ctx, append([]string{claims.ID}, claims.Ancestors...))
+	revoked, err := g.revokedIDs.AnyRevoked(r.ctx, append([]string{claims.ID}, claims.Ancestors...))
 
 	switch {
 	case err != nil:

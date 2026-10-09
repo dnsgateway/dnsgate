@@ -70,10 +70,10 @@ type harness struct {
 	maxAncestors int
 	// keys are the keys of the Gateway last served.
 	keys keys.Source
-	// dbFile is the SQLite file of revoked token IDs; revocations is the
+	// dbFile is the SQLite file of revoked token IDs; revokedIDs is the
 	// store of the Gateway last served, open on it.
-	dbFile      string
-	revocations *revocation.SQLite
+	dbFile     string
+	revokedIDs *revocation.SQLite
 
 	auditTo io.Writer
 	keyDir  string
@@ -165,7 +165,7 @@ func (h *harness) rotate(t *testing.T, retireAt time.Time) string {
 func (h *harness) serve(t *testing.T, src keys.Source) {
 	t.Helper()
 
-	h.openRevocations(t)
+	h.openRevokedIDs(t)
 
 	providers := h.providers
 	if providers == nil {
@@ -180,7 +180,7 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 		EgressTransport:    h.egress,
 		AgentEgressRootCAs: h.agentRoots,
 		MaxAncestors:       h.maxAncestors,
-		Revocations:        h.revocations,
+		RevokedIDs:         h.revokedIDs,
 		Logger:             slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: h.logLevel})),
 		Now:                func() time.Time { return h.now },
 	})
@@ -214,13 +214,13 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 	h.api = dnsgatev1.NewGatewayServiceClient(conn)
 }
 
-// openRevocations opens the revocation store on dbFile, closing the one
+// openRevokedIDs opens the revocation store on dbFile, closing the one
 // of the Gateway served before, as a restarted Gateway would.
-func (h *harness) openRevocations(t *testing.T) {
+func (h *harness) openRevokedIDs(t *testing.T) {
 	t.Helper()
 
-	if h.revocations != nil {
-		if err := h.revocations.Close(); err != nil {
+	if h.revokedIDs != nil {
+		if err := h.revokedIDs.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -230,7 +230,7 @@ func (h *harness) openRevocations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h.revocations = store
+	h.revokedIDs = store
 
 	t.Cleanup(func() { _ = store.Close() })
 }

@@ -61,10 +61,10 @@ type Config struct {
 	// Token. It keeps tokens, which carry every ancestor's ID, small, and
 	// the revocation check of each request short. 0 means 8.
 	MaxAncestors int
-	// Revocations holds the revoked token IDs; it is required. Every
-	// request is refused whose token, or one of its ancestors, is
-	// revoked.
-	Revocations revocation.Store
+	// RevokedIDs is the revocation store, holding the revoked token IDs;
+	// it is required. Every request is refused whose token, or one of its
+	// ancestors, is revoked.
+	RevokedIDs revocation.Store
 	// Logger receives operational logs; nil discards them.
 	Logger *slog.Logger
 	// Now is the Gateway's clock; nil means time.Now.
@@ -81,7 +81,7 @@ type Gateway struct {
 	egress       http.RoundTripper
 	agentRoots   *x509.CertPool
 	maxAncestors int
-	revocations  revocation.Store
+	revokedIDs   revocation.Store
 	audit        *audit.Log
 	log          *slog.Logger
 	now          func() time.Time
@@ -97,14 +97,14 @@ func New(cfg Config) *Gateway {
 		egress:       cfg.EgressTransport,
 		agentRoots:   cfg.AgentEgressRootCAs,
 		maxAncestors: cfg.MaxAncestors,
-		revocations:  cfg.Revocations,
+		revokedIDs:   cfg.RevokedIDs,
 		audit:        cfg.Audit,
 		log:          cfg.Logger,
 		now:          cfg.Now,
 	}
 
-	if g.revocations == nil {
-		panic("gateway: Config.Revocations is required")
+	if g.revokedIDs == nil {
+		panic("gateway: Config.RevokedIDs is required")
 	}
 
 	if g.log == nil {
