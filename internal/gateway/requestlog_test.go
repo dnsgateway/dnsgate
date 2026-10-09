@@ -74,3 +74,30 @@ func TestAtDebugARequestIsLoggedWithItsMethodIDPeerDurationAndCode(t *testing.T)
 		t.Errorf("request line request_id = %v, want a req_ ID", l["request_id"])
 	}
 }
+
+func TestARequestLineCarriesTheRequestIDOfItsAuditEvent(t *testing.T) {
+	h := newDebugHarness(t)
+	h.addZones()
+
+	root := h.onboard(t, onboardRequest())
+
+	// A successful read writes no audit event; a denied one does.
+	if _, err := h.client.ListZones(t.Context(), &dnsgatev1.ListZonesRequest{Token: root + "x"}); err == nil {
+		t.Fatal("ListZones with a tampered token succeeded")
+	}
+
+	events, lines := h.auditEvents(t), h.requestLines(t)
+	if len(events) != 2 || len(lines) != 2 {
+		t.Fatalf("audit events = %v, request lines = %v, want two of each", events, lines)
+	}
+
+	for i := range events {
+		if lines[i]["request_id"] != events[i]["request_id"] {
+			t.Errorf("request line %d request_id = %v, want %v, its audit event's", i, lines[i]["request_id"], events[i]["request_id"])
+		}
+	}
+
+	if lines[0]["request_id"] == lines[1]["request_id"] {
+		t.Errorf("both requests are logged with request_id %v", lines[0]["request_id"])
+	}
+}
