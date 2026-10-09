@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"strings"
 
@@ -10,7 +9,6 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
-	"github.com/dnsgateway/dnsgate/internal/permission"
 )
 
 func newZoneCmd(flags *Flags) *cobra.Command {
@@ -39,9 +37,7 @@ func newZoneListCmd(flags *Flags) *cobra.Command {
 		},
 	}
 
-	flags.AddTokenFlags(cmd.Flags())
-	flags.AddEgressFlag(cmd.Flags())
-	flags.AddClientFlags(cmd.Flags())
+	flags.AddReadFlags(cmd.Flags())
 
 	return cmd
 }
@@ -77,9 +73,7 @@ func newZoneGetCmd(flags *Flags) *cobra.Command {
 		},
 	}
 
-	flags.AddTokenFlags(cmd.Flags())
-	flags.AddEgressFlag(cmd.Flags())
-	flags.AddClientFlags(cmd.Flags())
+	flags.AddReadFlags(cmd.Flags())
 
 	return cmd
 }
@@ -112,19 +106,4 @@ func newZoneOutput(z *dnsgatev1.Zone) zoneOutput {
 		State:       strings.ToLower(strings.TrimPrefix(z.GetState().String(), "STATE_")),
 		Nameservers: z.GetNameservers(),
 	}
-}
-
-// checkReadFlags checks the flags every zone and record command takes and
-// returns the Egress asked for.
-func checkReadFlags(f *Flags) (dnsgatev1.Egress, error) {
-	egress, ok := permission.Egress(f.Egress).API()
-
-	switch {
-	case !ok:
-		return 0, errors.New(`unknown egress "` + f.Egress + `": use gateway or agent`)
-	case f.Token == "":
-		return 0, errors.New("no Service Token: set " + envToken + " or --" + flagToken)
-	}
-
-	return egress, nil
 }

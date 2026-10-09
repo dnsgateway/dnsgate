@@ -1,12 +1,15 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/permission"
 	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 
@@ -115,16 +118,36 @@ func (f *Flags) AddTokenFlags(flags *pflag.FlagSet) {
 		"Service Token to present (env "+envToken+secretHelp+")")
 }
 
-// AddEgressFlag registers the flag of commands that reach the Provider.
-func (f *Flags) AddEgressFlag(flags *pflag.FlagSet) {
+// AddReadFlags registers the flags of every zone and record command: they
+// present a Service Token to the Gateway to reach the Provider.
+func (f *Flags) AddReadFlags(flags *pflag.FlagSet) {
+	f.AddTokenFlags(flags)
 	flags.StringVarP(&f.Egress, flagEgress, "", f.Egress,
 		"Egress to reach the Provider through: gateway or agent (default: gateway if the token allows it; env "+envEgress+")")
+	f.AddClientFlags(flags)
 }
 
-// AddZoneFlag registers the flag of record commands.
-func (f *Flags) AddZoneFlag(flags *pflag.FlagSet) {
+// checkReadFlags checks the flags every zone and record command takes and
+// returns the Egress asked for.
+func checkReadFlags(f *Flags) (dnsgatev1.Egress, error) {
+	egress, ok := permission.Egress(f.Egress).API()
+
+	switch {
+	case !ok:
+		return 0, errors.New(`unknown egress "` + f.Egress + `": use gateway or agent`)
+	case f.Token == "":
+		return 0, errors.New("no Service Token: set " + envToken + " or --" + flagToken)
+	}
+
+	return egress, nil
+}
+
+// AddRecordFlags registers the flags of every record command: the read
+// flags and the zone the records are in.
+func (f *Flags) AddRecordFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Zone, flagZone, "", f.Zone,
 		"zone the records are in, such as example.com (env "+envZone+")")
+	f.AddReadFlags(flags)
 }
 
 // AddOnboardFlags registers the flags of "onboard".

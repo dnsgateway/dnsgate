@@ -40,10 +40,7 @@ func newRecordListCmd(flags *Flags) *cobra.Command {
 		},
 	}
 
-	flags.AddZoneFlag(cmd.Flags())
-	flags.AddTokenFlags(cmd.Flags())
-	flags.AddEgressFlag(cmd.Flags())
-	flags.AddClientFlags(cmd.Flags())
+	flags.AddRecordFlags(cmd.Flags())
 
 	return cmd
 }
@@ -80,10 +77,7 @@ func newRecordGetCmd(flags *Flags) *cobra.Command {
 		},
 	}
 
-	flags.AddZoneFlag(cmd.Flags())
-	flags.AddTokenFlags(cmd.Flags())
-	flags.AddEgressFlag(cmd.Flags())
-	flags.AddClientFlags(cmd.Flags())
+	flags.AddRecordFlags(cmd.Flags())
 
 	return cmd
 }
