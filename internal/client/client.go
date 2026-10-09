@@ -95,6 +95,13 @@ func (c *Client) UpdateRecord(ctx context.Context, req *dnsgatev1.UpdateRecordRe
 		(*dnsgatev1.Response).GetUpdateRecord)
 }
 
+// PatchRecord adds values to an RRset and removes others from it.
+func (c *Client) PatchRecord(ctx context.Context, req *dnsgatev1.PatchRecordRequest) (*dnsgatev1.PatchRecordResponse, error) {
+	return roundTrip(ctx, c, "record patch",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_PatchRecord{PatchRecord: req}},
+		(*dnsgatev1.Response).GetPatchRecord)
+}
+
 // roundTrip sends req, named op in errors, and returns the result that
 // result picks from the Response. A Response holding another operation's
 // result is an error.

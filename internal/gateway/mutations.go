@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/dnsgateway/dnsprovider"
@@ -95,6 +97,75 @@ func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_UpdateRecord{
 		UpdateRecord: &dnsgatev1.UpdateRecordResponse{RecordSet: set},
 	}}, nil
+}
+
+// patchRecord adds values to an RRset and removes others, leaving the
+// rest of its records as they are. The token needs patch on records for
+// its zone, name and type. A value added that the RRset holds and one
+// removed that it does not hold change nothing. Values added take the
+// request's TTL, or else the RRset's, the lowest of its records'.
+func (g *Gateway) patchRecord(r *request, req *dnsgatev1.PatchRecordRequest) (*dnsgatev1.Response, error) {
+	c, err := g.startMutation(r, audit.EventRecordsPatch, permission.VerbPatch, req)
+	if err != nil {
+		return nil, err
+	}
+
+	add, remove := req.GetAdd(), req.GetRemove()
+	if len(add) == 0 && len(remove) == 0 {
+		return nil, g.deny(c.request, c.event, invalidRequest("nothing to add or remove"))
+	}
+
+	if err := g.checkValues(c, slices.Concat(add, remove)); err != nil {
+		return nil, err
+	}
+
+	ttl := req.GetTtl()
+	if ttl != 0 {
+		if err := g.checkTTL(c, ttl); err != nil {
+			return nil, err
+		}
+	}
+
+	zone, current, err := g.readRRset(c)
+	if err != nil {
+		return nil, err
+	}
+
+	target := slices.DeleteFunc(slices.Clone(current), func(rec dnsprovider.Record) bool { return slices.Contains(remove, rec.Value) })
+
+	added := slices.DeleteFunc(slices.Clone(add), func(v string) bool {
+		return slices.ContainsFunc(current, func(rec dnsprovider.Record) bool { return rec.Value == v })
+	})
+	if len(added) > 0 {
+		if ttl == 0 {
+			ttl = rrsetTTL(current)
+		}
+
+		if ttl == 0 {
+			return nil, g.deny(c.request, c.event, invalidRecord("no TTL: give one to create the record set"))
+		}
+
+		target = append(target, c.records(ttl, added)...)
+	}
+
+	set, err := g.apply(c, zone, current, target)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnsgatev1.Response{Result: &dnsgatev1.Response_PatchRecord{
+		PatchRecord: &dnsgatev1.PatchRecordResponse{RecordSet: set},
+	}}, nil
+}
+
+// rrsetTTL returns the TTL of an RRset, the lowest of its records', or
+// zero for none.
+func rrsetTTL(records []dnsprovider.Record) uint32 {
+	if len(records) == 0 {
+		return 0
+	}
+
+	return slices.MinFunc(records, func(a, b dnsprovider.Record) int { return cmp.Compare(a.TTL, b.TTL) }).TTL
 }
 
 // checkRecords checks the TTL and values of a create or update and

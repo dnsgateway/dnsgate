@@ -150,6 +150,8 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		resp, err = g.createRecord(r, op.CreateRecord)
 	case *dnsgatev1.Request_UpdateRecord:
 		resp, err = g.updateRecord(r, op.UpdateRecord)
+	case *dnsgatev1.Request_PatchRecord:
+		resp, err = g.patchRecord(r, op.PatchRecord)
 	default:
 		err = invalidRequest("unknown operation")
 	}

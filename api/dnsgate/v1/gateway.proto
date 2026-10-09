@@ -57,6 +57,7 @@ message Request {
     CreateTokenRequest create_token = 8;
     CreateRecordRequest create_record = 9;
     UpdateRecordRequest update_record = 10;
+    PatchRecordRequest patch_record = 11;
   }
 }
 
@@ -73,6 +74,7 @@ message Response {
     CreateTokenResponse create_token = 8;
     CreateRecordResponse create_record = 9;
     UpdateRecordResponse update_record = 10;
+    PatchRecordResponse patch_record = 11;
   }
 }
 
@@ -325,6 +327,40 @@ message UpdateRecordRequest {
 
 // UpdateRecordResponse carries the RRset as replaced.
 message UpdateRecordResponse {
+  RecordSet record_set = 1;
+}
+
+// PatchRecordRequest asks to add values to an RRset and remove others
+// from it, leaving its other records as they are, as an ACME client does
+// with its TXT values. It needs patch on records for the zone, name and
+// type. Adding a value the RRset holds and removing one it does not hold
+// change nothing. Adding to an RRset the zone lacks creates it; removing
+// its last value deletes it.
+message PatchRecordRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+  // name is the record name relative to the zone, "@" for the zone's own
+  // name.
+  string name = 4;
+  // type is the record type, such as "A" or "TXT".
+  string type = 5;
+  // ttl is the TTL of the records added, in seconds. Left out, they take
+  // the RRset's TTL; it is needed to create an RRset.
+  uint32 ttl = 6;
+  // add are the values to add, in zone-file presentation form.
+  repeated string add = 7;
+  // remove are the values to remove. A value is given once, in add or in
+  // remove.
+  repeated string remove = 8;
+}
+
+// PatchRecordResponse carries the RRset as patched.
+message PatchRecordResponse {
+  // record_set is left out when the patch removed the RRset's last
+  // value.
   RecordSet record_set = 1;
 }
 

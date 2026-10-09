@@ -297,6 +297,141 @@ func TestUpdateRecordWithTheValuesTheRRsetHoldsChangesNothing(t *testing.T) {
 	wantChangesets(t, h)
 }
 
+func TestPatchRecordAddsAndRemovesSingleValues(t *testing.T) {
+	const acme = "_acme-challenge.www.example.com"
+
+	for name, tc := range map[string]struct {
+		req     *dnsgatev1.PatchRecordRequest
+		changes []string
+		// want is the RRset after, as sortedSet formats it; "" when the
+		// zone no longer holds it.
+		want string
+	}{
+		"add a value with the RRset's TTL": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Add: []string{`"def"`}},
+			[]string{`add TXT ` + acme + ` "def" 60`},
+			`_acme-challenge.www TXT 60 "abc","def"`,
+		},
+		"add a value with its own TTL": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Ttl: 120, Add: []string{`"def"`}},
+			[]string{`add TXT ` + acme + ` "def" 120`},
+			`_acme-challenge.www TXT 60 "abc","def"`,
+		},
+		"remove one value of two": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Remove: []string{"192.0.2.10"}},
+			[]string{"delete A www.apps.example.com 192.0.2.10 300"},
+			"www.apps A 120 192.0.2.11",
+		},
+		"add one value and remove another": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Add: []string{`"def"`}, Remove: []string{`"abc"`}},
+			[]string{`modify TXT ` + acme + ` "abc" 60 -> "def" 60`},
+			`_acme-challenge.www TXT 60 "def"`,
+		},
+		"add a value held and remove one not held": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"192.0.2.10"}, Remove: []string{"192.0.2.99"}},
+			nil,
+			"www.apps A 120 192.0.2.10,192.0.2.11",
+		},
+		"add to an RRset the zone lacks": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Ttl: 120, Add: []string{`"xyz"`}},
+			[]string{`add TXT _acme-challenge.api.example.com "xyz" 120`},
+			`_acme-challenge.api TXT 120 "xyz"`,
+		},
+		"remove the last value": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Remove: []string{`"abc"`}},
+			[]string{`delete TXT ` + acme + ` "abc" 60`},
+			"",
+		},
+		"remove from an RRset the zone lacks": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Remove: []string{`"xyz"`}},
+			nil,
+			"",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newMutationHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			req := tc.req
+			req.Token, req.Zone = root, "example.com"
+
+			resp, err := h.client.PatchRecord(t.Context(), req)
+			if err != nil {
+				t.Fatalf("PatchRecord: %v", err)
+			}
+
+			got := ""
+			if resp.GetRecordSet() != nil {
+				got = sortedSet(resp.GetRecordSet())
+			}
+
+			if got != tc.want {
+				t.Errorf("patched RRset = %q, want %q", got, tc.want)
+			}
+
+			if tc.changes == nil {
+				wantChangesets(t, h)
+			} else {
+				wantChangesets(t, h, tc.changes)
+			}
+
+			if got := h.readSet(t, root, req.GetName(), req.GetType()); got != tc.want {
+				t.Errorf("RRset read back = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMalformedPatchesAreRefused(t *testing.T) {
+	for name, tc := range map[string]struct {
+		req      *dnsgatev1.PatchRecordRequest
+		category dnsgatev1.Error_Category
+	}{
+		"nothing to add or remove": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A"},
+			dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
+		},
+		"value added and removed": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"192.0.2.10"}, Remove: []string{"192.0.2.10"}},
+			dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
+		},
+		"value added twice": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"192.0.2.12", "192.0.2.12"}},
+			dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
+		},
+		"malformed value": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"www"}},
+			dnsgatev1.Error_CATEGORY_INVALID_RECORD,
+		},
+		"TTL out of range": {
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Ttl: 5, Add: []string{"192.0.2.12"}},
+			dnsgatev1.Error_CATEGORY_INVALID_RECORD,
+		},
+		"no TTL for a new RRset": {
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Add: []string{`"xyz"`}},
+			dnsgatev1.Error_CATEGORY_INVALID_RECORD,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newMutationHarness(t)
+
+			req := tc.req
+			req.Token, req.Zone = h.onboard(t, onboardRequest()), "example.com"
+
+			_, err := h.client.PatchRecord(t.Context(), req)
+			wantError(t, err, codes.InvalidArgument, tc.category)
+
+			wantChangesets(t, h)
+
+			events := h.auditEvents(t)[1:]
+			if len(events) != 1 || events[0]["event"] != "records.patch" || events[0]["result"] != "denied" || events[0]["category"] != tc.category.Name() {
+				t.Errorf("audit events = %v, want one denied records.patch, category %s", events, tc.category.Name())
+			}
+		})
+	}
+}
+
 func TestUpdateRecordOfAnRRsetTheZoneLacksIsNotFound(t *testing.T) {
 	h := newMutationHarness(t)
 
