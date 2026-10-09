@@ -35,6 +35,10 @@ const (
 // relay.
 var errAgentConnect = errors.New("the egress agent did not connect to the provider")
 
+// errResponseSent is the error of a relay frame sent after the Response,
+// which ends the stream.
+var errResponseSent = errors.New("the response is sent: the relay sends nothing more")
+
 type callStream = grpc.BidiStreamingServer[dnsgatev1.CallRequest, dnsgatev1.CallResponse]
 
 // relay carries the Agent Egress connections of one Call stream, and its
@@ -242,7 +246,7 @@ func (rl *relay) send(msg *dnsgatev1.CallResponse) error {
 	defer rl.sendMu.Unlock()
 
 	if rl.done {
-		return errAgentConnect
+		return errResponseSent
 	}
 
 	return rl.stream.Send(msg)
