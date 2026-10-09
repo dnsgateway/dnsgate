@@ -141,7 +141,7 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 
 	op = operation(req)
 
-	r := &request{ctx: stream.Context(), id: id, start: g.now(), relay: newRelay(stream)}
+	r := &request{ctx: stream.Context(), id: id, start: opened, relay: newRelay(stream)}
 	defer r.relay.close()
 
 	var resp *dnsgatev1.Response
@@ -186,9 +186,10 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 type request struct {
 	ctx context.Context //nolint:containedctx // scoped to one request
 	id  string
-	// start is when the Gateway received the request, on the Gateway's
-	// clock, which audit durations are measured on too: a test clock
-	// stands in for both.
+	// start is when the Gateway opened the request's stream, on the
+	// Gateway's clock. Its request line and its audit events measure
+	// their duration from it, so they agree; a test clock stands in for
+	// the Gateway's.
 	start time.Time
 	// relay carries the request's Agent Egress connections, inside its
 	// stream, and sends its Response.
