@@ -39,7 +39,7 @@ func (g *Gateway) startMutation(r *request, event audit.Name, verb permission.Ve
 func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (*dnsgatev1.Response, error) {
 	set, err := g.setRecord(r, audit.EventRecordsCreate, permission.VerbCreate, req, func(current []dnsprovider.Record) error {
 		if len(current) > 0 {
-			return alreadyExists("the record set already exists: update or patch it")
+			return alreadyExists("the RRset already exists: update or patch it")
 		}
 
 		return nil
@@ -59,7 +59,7 @@ func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (
 func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (*dnsgatev1.Response, error) {
 	set, err := g.setRecord(r, audit.EventRecordsUpdate, permission.VerbUpdate, req, func(current []dnsprovider.Record) error {
 		if len(current) == 0 {
-			return notFound("no such record set: create it")
+			return notFound("no such RRset: create it")
 		}
 
 		return nil
@@ -153,7 +153,7 @@ func (g *Gateway) patchRecord(r *request, req *dnsgatev1.PatchRecordRequest) (*d
 		}
 
 		if ttl == 0 {
-			return nil, g.fail(c, invalidRecord("no TTL: give one to create the record set"))
+			return nil, g.fail(c, invalidRecord("no TTL: give one to create the RRset"))
 		}
 
 		target = append(target, c.records(ttl, added)...)
@@ -183,7 +183,7 @@ func (g *Gateway) deleteRecord(r *request, req *dnsgatev1.DeleteRecordRequest) (
 	}
 
 	if len(current) == 0 {
-		return nil, g.fail(c, notFound("no such record set"))
+		return nil, g.fail(c, notFound("no such RRset"))
 	}
 
 	if _, err := g.apply(c, zone, current, nil); err != nil {
@@ -210,7 +210,7 @@ func rrsetTTL(records []dnsprovider.Record) uint32 {
 // of the first that is malformed.
 func (c *dnsCall) checkRecords(ttl uint32, values []string) ([]dnsprovider.Record, error) {
 	if len(values) == 0 {
-		return nil, invalidRequest("no values: a record set holds at least one")
+		return nil, invalidRequest("no values: an RRset holds at least one")
 	}
 
 	if err := c.checkValues(values); err != nil {

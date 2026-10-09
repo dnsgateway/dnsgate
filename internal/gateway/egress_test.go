@@ -293,7 +293,7 @@ func TestGatewayEgressReadsCloudflare(t *testing.T) {
 
 	want := []string{"@ A 300 192.0.2.1", `_acme-challenge.www TXT 60 "abc"`, "www.apps A 120 192.0.2.10,192.0.2.11"}
 	if got := recordSets(records.GetRecordSets()); !slices.Equal(got, want) {
-		t.Errorf("record sets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		t.Errorf("RRsets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
 	record, err := h.client.GetRecord(t.Context(), &dnsgatev1.GetRecordRequest{Token: root, Zone: "example.com", Name: "www.apps", Type: "A"})
@@ -302,7 +302,7 @@ func TestGatewayEgressReadsCloudflare(t *testing.T) {
 	}
 
 	if got := recordSets([]*dnsgatev1.RecordSet{record.GetRecordSet()}); got[0] != want[2] {
-		t.Errorf("record set = %q, want %q", got[0], want[2])
+		t.Errorf("RRset = %q, want %q", got[0], want[2])
 	}
 
 	// The Provider Credential went to Cloudflare alone.
@@ -367,7 +367,7 @@ func TestGatewayEgressChangesCloudflareRecords(t *testing.T) {
 
 	want := []string{`_acme-challenge.www TXT 60 "abc","def"`, "api AAAA 120 2001:db8::1", "www.apps A 300 192.0.2.10,192.0.2.12"}
 	if !slices.Equal(got, want) {
-		t.Errorf("record sets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		t.Errorf("RRsets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
 	cf.mu.Lock()

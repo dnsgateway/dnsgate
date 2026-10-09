@@ -172,7 +172,7 @@ func TestListRecordsWithRootTokenReturnsRRsets(t *testing.T) {
 	}
 
 	if got := recordSets(resp.GetRecordSets()); !slices.Equal(got, want) {
-		t.Errorf("record sets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		t.Errorf("RRsets =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 
@@ -269,7 +269,7 @@ func TestListsShowOnlyWhatALimitedTokenCovers(t *testing.T) {
 			}
 
 			if !slices.Equal(got, tc.records) {
-				t.Errorf("record sets = %v, want %v", got, tc.records)
+				t.Errorf("RRsets = %v, want %v", got, tc.records)
 			}
 		})
 	}

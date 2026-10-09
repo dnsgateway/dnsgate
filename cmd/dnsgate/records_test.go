@@ -165,7 +165,7 @@ func TestReadRecordsFailures(t *testing.T) {
 			[]string{"record", "get", "www", "A", "--zone", "example.com", "--token", root + "x"},
 			"unauthenticated: invalid service token",
 		},
-		"record set not found": {
+		"RRset not found": {
 			[]string{"record", "get", "www", "AAAA", "--zone", "example.com", "--token", root},
 			"not found",
 		},
@@ -295,7 +295,7 @@ func TestChangeRecordsFailures(t *testing.T) {
 		"update without TTL":       {[]string{"record", "update", "www.apps", "A", "192.0.2.1"}, "no TTL"},
 		"patch with nothing to do": {[]string{"record", "patch", "www.apps", "A"}, "nothing to add or remove"},
 		"create of an RRset held": {
-			[]string{"record", "create", "www.apps", "A", "192.0.2.1", "--ttl", "300"}, "conflict: the record set already exists",
+			[]string{"record", "create", "www.apps", "A", "192.0.2.1", "--ttl", "300"}, "conflict: the RRset already exists",
 		},
 		"update of an RRset the zone lacks": {
 			[]string{"record", "update", "api", "A", "192.0.2.1", "--ttl", "300"}, "not found",

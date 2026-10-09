@@ -160,9 +160,9 @@ const (
 	Error_CATEGORY_EGRESS_NOT_SUPPORTED Error_Category = 9
 	// The Gateway failed; the details are in its logs.
 	Error_CATEGORY_INTERNAL Error_Category = 10
-	// The request collides with what the Provider holds, such as a record
-	// set that already exists, or records that changed at the Provider
-	// while the Gateway changed them.
+	// The request collides with what the Provider holds, such as an RRset
+	// that already exists, or records that changed at the Provider while
+	// the Gateway changed them.
 	Error_CATEGORY_CONFLICT Error_Category = 11
 )
 

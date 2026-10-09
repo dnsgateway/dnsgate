@@ -102,6 +102,16 @@ _Avoid_: expiry, key expiration, grace period
 The secret that authenticates to a Provider's API. Every Service Token is bound to exactly one. Clients never see it in plaintext.
 _Avoid_: master key, provider token, API key, provider account
 
+### Records
+
+**RRset**:
+Every record of one name and type in a zone. It is what the record verbs act on: `create`, `update` and `delete` take a whole RRset, `patch` single values inside one.
+_Avoid_: record set, record group, record
+
+**Changeset**:
+The changes (add, modify, delete) to one zone's records that the Gateway applies through the Provider to carry out one record verb. A Provider that confirms each change on its own may make some of them and fail others.
+_Avoid_: batch, transaction, diff, patch
+
 ### ACME
 
 **Challenge Target**:

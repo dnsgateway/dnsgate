@@ -433,9 +433,9 @@ message Error {
     CATEGORY_EGRESS_NOT_SUPPORTED = 9;
     // The Gateway failed; the details are in its logs.
     CATEGORY_INTERNAL = 10;
-    // The request collides with what the Provider holds, such as a record
-    // set that already exists, or records that changed at the Provider
-    // while the Gateway changed them.
+    // The request collides with what the Provider holds, such as an RRset
+    // that already exists, or records that changed at the Provider while
+    // the Gateway changed them.
     CATEGORY_CONFLICT = 11;
   }
 

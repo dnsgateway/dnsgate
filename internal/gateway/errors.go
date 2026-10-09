@@ -47,7 +47,7 @@ func invalidRecord(msg string) error {
 	return statusError(codes.InvalidArgument, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_INVALID_RECORD}, msg)
 }
 
-// alreadyExists is the error of a create whose record set the zone
+// alreadyExists is the error of a create whose RRset the zone
 // already holds.
 func alreadyExists(msg string) error {
 	return statusError(codes.AlreadyExists, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_CONFLICT}, msg)

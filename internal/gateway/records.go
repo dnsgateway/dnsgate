@@ -57,7 +57,7 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 
 	sets := recordSets(c.perm.Zone, records, keepAll)
 	if len(sets) == 0 {
-		return nil, notFound("no such record set")
+		return nil, notFound("no such RRset")
 	}
 
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_GetRecord{
