@@ -205,6 +205,8 @@ Permissions follow the **Kubernetes RBAC** style.
 | `patch` | add or remove single values inside an RRset (e.g. ACME TXT values) |
 | `delete` | delete an RRset |
 
+`patch` alone may also create and delete an RRset: adding a value to an RRset the zone lacks creates it, and removing its last value deletes it. An ACME client needs both, and holds only `patch`. A token limited to `patch` can therefore still create and empty RRsets within its zones, names and types; what it cannot do is replace or delete an RRset whole in one request.
+
 On `tokens`, `create` issues a Derived Token and `delete` revokes a token.
 
 ## Name patterns
@@ -290,6 +292,7 @@ Conceptual request:
 - A request never names a provider and never contains a Provider Credential.
 - Responses are filtered: `list` returns only zones and records the token covers.
 - Provider errors are mapped to Gateway errors that carry the Provider's HTTP status and a category (`denied by provider`, `not found`, `rate limited`, `invalid record`). The full Provider response, with credentials removed, goes only to the audit log.
+- Amendment to spec #1: a mutation that collides with what the Provider holds fails with the category `conflict`: a `create` of an RRset the zone already holds (gRPC `AlreadyExists`), and a Changeset the Provider refuses because records changed underneath it or a record collides (gRPC `Aborted`). Retrying after reading the RRset again may succeed.
 
 ## Request execution order
 
@@ -407,6 +410,12 @@ type Provider interface {
 Every mutation and every denied request produces one structured JSON log event.
 
 Fields: timestamp, request ID, Service Account, token `jti`, provider, zone, record name, record type, verb, requested egress, actual egress, result, Provider response status, duration. For a Bound Token (v2), also the Identity Token's issuer and `sub` and the bound claim values.
+
+Results: `ok`; `denied` for a request outside the token's Permissions or refused before they are checked (a token that does not open, a malformed zone, name or type); `failed` for a request the Permissions allowed that then failed, such as malformed record values or TTL, an RRset that already exists or is missing, or a Provider error. Every denial carries the verb, and the zone, record name and type that passed the Gateway's form checks, even when the token does not open; one that failed them may hold anything and is left out.
+
+Mutation events also carry `changes_applied`, the number of changes of the Changeset the Provider confirmed. A Provider that confirms changes one at a time may make some and fail others: the request fails, the changes made stay, and `changes_applied` says how many there were.
+
+An audit event of a zone or record request that cannot be written is logged as an operational error, naming the request ID and event. A denied or failed request is refused to the client either way. A mutation the Provider already made stays made and is answered as successful: the change cannot be withheld, so its only trace is then that operational log line.
 
 Never logged: the Provider Credential, the Service Token itself, Identity Tokens, authorization headers, raw Provider HTTP headers.
 

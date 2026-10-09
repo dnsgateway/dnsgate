@@ -179,8 +179,9 @@ func newRecordPatchCmd(flags *Flags) *cobra.Command {
 		Short: "Add values to an RRset and remove others",
 		Long: "Add each --" + flagAdd + " value to the RRset of NAME and TYPE in --" + flagZone + " and remove each --" + flagRemove +
 			" value from it, leaving its other records as they are, and print the RRset as JSON, or nothing once it holds no value. " +
-			"Adding a value it holds and removing one it does not hold change nothing; adding to an RRset the zone lacks creates it. " +
-			"The token needs patch on records for the zone, name and type. " + valuesHelp + " " + namesHelp,
+			"Adding a value it holds and removing one it does not hold change nothing; adding to an RRset the zone lacks creates it, " +
+			"and removing its last value deletes it. The token needs patch on records for the zone, name and type, and nothing more: " +
+			"a token that holds only patch can thereby create and empty RRsets. " + valuesHelp + " " + namesHelp,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRecordPatch(cmd.Context(), cmd.OutOrStdout(), flags, args[0], args[1])
