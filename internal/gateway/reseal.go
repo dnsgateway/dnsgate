@@ -13,30 +13,42 @@ import (
 // claims and signature, so it grants its holder nothing new. A revoked
 // token is not resealed.
 func (g *Gateway) resealToken(r *request, req *dnsgatev1.ResealTokenRequest) (*dnsgatev1.Response, error) {
-	resealed, err := g.codec.Reseal(r.ctx, req.GetToken())
+	claims, err := g.codec.Open(r.ctx, req.GetToken())
 
 	switch {
 	case errors.Is(err, token.ErrInvalid):
 		return nil, g.deny(r, audit.Event{Event: audit.EventTokenReseal}, unauthenticated("invalid service token"))
 	case err != nil:
-		g.log.Error("resealing token", "request_id", r.id, "error", err)
+		g.log.Error("opening token to reseal", "request_id", r.id, "error", err)
 
 		return nil, internal()
 	}
 
 	event := audit.Event{
 		Event:          audit.EventTokenReseal,
-		ServiceAccount: resealed.Claims.Subject,
-		TokenID:        resealed.Claims.ID,
-		Provider:       resealed.Claims.Provider,
-		OldKeyID:       resealed.OldKeyID,
-		NewKeyID:       resealed.NewKeyID,
+		ServiceAccount: claims.Subject,
+		TokenID:        claims.ID,
+		Provider:       claims.Provider,
 	}
 
-	// A revoked token stays revoked under any key, but is not resealed.
-	if err := g.checkRevoked(r, event, resealed.Claims); err != nil {
+	// A revoked token stays revoked under any key, and is refused before
+	// it is resealed.
+	if err := g.checkRevoked(r, event, claims); err != nil {
 		return nil, err
 	}
+
+	resealed, err := g.codec.Reseal(r.ctx, req.GetToken())
+
+	switch {
+	case errors.Is(err, token.ErrInvalid):
+		return nil, g.deny(r, event, unauthenticated("invalid service token"))
+	case err != nil:
+		g.log.Error("resealing token", "request_id", r.id, "error", err)
+
+		return nil, internal()
+	}
+
+	event.OldKeyID, event.NewKeyID = resealed.OldKeyID, resealed.NewKeyID
 
 	// Like the token it replaces, a resealed token must be traceable.
 	event.Result = audit.ResultOK

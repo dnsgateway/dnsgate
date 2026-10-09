@@ -389,3 +389,19 @@ func TestRevocationTakesEffectEvenWhenItsAuditEventIsLost(t *testing.T) {
 	_, err := h.client.InspectToken(t.Context(), tok)
 	wantError(t, err, codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED)
 }
+
+// TestARevokedTokenIsRefusedBeforeItIsResealed: the revocation check comes
+// before Resealing, so a revoked token is refused as revoked even when the
+// Gateway could not seal it anyway.
+func TestARevokedTokenIsRefusedBeforeItIsResealed(t *testing.T) {
+	h := newHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+	app := h.createToken(t, root, "app", recordPermissions())
+	h.revokeID(t, root, app.GetJti())
+
+	h.serve(t, unusableEncryptionKey{Source: h.loadKeys(t, "enc-test")})
+
+	_, err := h.client.ResealToken(t.Context(), app.GetToken())
+	wantError(t, err, codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED)
+}
