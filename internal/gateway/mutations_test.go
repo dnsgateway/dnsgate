@@ -9,6 +9,7 @@ import (
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/dnsgateway/dnsprovider/providertest"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 )
@@ -188,4 +189,123 @@ func TestMalformedRecordsAreRefusedBeforeTheProvider(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sortedSet formats an RRset as recordSets does, its values sorted.
+func sortedSet(s *dnsgatev1.RecordSet) string {
+	values := slices.Sorted(slices.Values(s.GetValues()))
+
+	return fmt.Sprintf("%s %s %d %s", s.GetName(), s.GetType(), s.GetTtl(), strings.Join(values, ","))
+}
+
+// readSet reads one RRset of example.com with tok, formatted by
+// sortedSet; "" when the zone does not hold it.
+func (h *harness) readSet(t *testing.T, tok, name, typ string) string {
+	t.Helper()
+
+	resp, err := h.client.GetRecord(t.Context(), &dnsgatev1.GetRecordRequest{Token: tok, Zone: "example.com", Name: name, Type: typ})
+	if status.Code(err) == codes.NotFound {
+		return ""
+	}
+
+	if err != nil {
+		t.Fatalf("GetRecord %s %s: %v", name, typ, err)
+	}
+
+	return sortedSet(resp.GetRecordSet())
+}
+
+func TestUpdateRecordReplacesEveryValueOfTheRRset(t *testing.T) {
+	for name, tc := range map[string]struct {
+		ttl     uint32
+		values  []string
+		changes []string
+		want    string
+	}{
+		"more values": {
+			300,
+			[]string{"192.0.2.11", "192.0.2.12", "192.0.2.13"},
+			[]string{
+				"modify A www.apps.example.com 192.0.2.11 120 -> 192.0.2.11 300",
+				"modify A www.apps.example.com 192.0.2.10 300 -> 192.0.2.12 300",
+				"add A www.apps.example.com 192.0.2.13 300",
+			},
+			"www.apps A 300 192.0.2.11,192.0.2.12,192.0.2.13",
+		},
+		"fewer values": {
+			300,
+			[]string{"192.0.2.10"},
+			[]string{"delete A www.apps.example.com 192.0.2.11 120"},
+			"www.apps A 300 192.0.2.10",
+		},
+		"other values": {
+			60,
+			[]string{"192.0.2.50"},
+			[]string{
+				"modify A www.apps.example.com 192.0.2.10 300 -> 192.0.2.50 60",
+				"delete A www.apps.example.com 192.0.2.11 120",
+			},
+			"www.apps A 60 192.0.2.50",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newMutationHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			resp, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+				Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: tc.ttl, Values: tc.values,
+			})
+			if err != nil {
+				t.Fatalf("UpdateRecord: %v", err)
+			}
+
+			if got := sortedSet(resp.GetRecordSet()); got != tc.want {
+				t.Errorf("updated RRset = %q, want %q", got, tc.want)
+			}
+
+			wantChangesets(t, h, tc.changes)
+
+			if got := h.readSet(t, root, "www.apps", "A"); got != tc.want {
+				t.Errorf("RRset read back = %q, want %q", got, tc.want)
+			}
+
+			// The RRset of the same name and another type is left alone.
+			if got, want := h.readSet(t, root, "www.apps", "TXT"), `www.apps TXT 300 "v=1"`; got != want {
+				t.Errorf("TXT RRset = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestUpdateRecordWithTheValuesTheRRsetHoldsChangesNothing(t *testing.T) {
+	h := newMutationHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	resp, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "@", Type: "A", Ttl: 300, Values: []string{"192.0.2.1"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	if got, want := sortedSet(resp.GetRecordSet()), "@ A 300 192.0.2.1"; got != want {
+		t.Errorf("RRset = %q, want %q", got, want)
+	}
+
+	wantChangesets(t, h)
+}
+
+func TestUpdateRecordOfAnRRsetTheZoneLacksIsNotFound(t *testing.T) {
+	h := newMutationHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 300, Values: []string{"192.0.2.1"},
+	})
+	wantError(t, err, codes.NotFound, dnsgatev1.Error_CATEGORY_NOT_FOUND)
+
+	wantChangesets(t, h)
 }

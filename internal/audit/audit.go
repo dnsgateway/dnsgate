@@ -28,6 +28,7 @@ const (
 	EventRecordsList   Name = "records.list"
 	EventRecordsGet    Name = "records.get"
 	EventRecordsCreate Name = "records.create"
+	EventRecordsUpdate Name = "records.update"
 )
 
 // Result is the outcome of the request an Event records.

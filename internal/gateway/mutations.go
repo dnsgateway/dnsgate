@@ -64,6 +64,39 @@ func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (
 	}}, nil
 }
 
+// updateRecord replaces every record of an RRset the zone holds with the
+// request's values. The token needs update on records for its zone, name
+// and type.
+func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (*dnsgatev1.Response, error) {
+	c, err := g.startMutation(r, audit.EventRecordsUpdate, permission.VerbUpdate, req)
+	if err != nil {
+		return nil, err
+	}
+
+	target, err := g.checkRecords(c, req.GetTtl(), req.GetValues())
+	if err != nil {
+		return nil, err
+	}
+
+	zone, current, err := g.readRRset(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(current) == 0 {
+		return nil, g.fail(c, notFound("no such record set: create it"))
+	}
+
+	set, err := g.apply(c, zone, current, target)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnsgatev1.Response{Result: &dnsgatev1.Response_UpdateRecord{
+		UpdateRecord: &dnsgatev1.UpdateRecordResponse{RecordSet: set},
+	}}, nil
+}
+
 // checkRecords checks the TTL and values of a create or update and
 // returns the records they make of the call's RRset. A refused request is
 // audited as denied.

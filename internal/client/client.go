@@ -88,6 +88,13 @@ func (c *Client) CreateRecord(ctx context.Context, req *dnsgatev1.CreateRecordRe
 		(*dnsgatev1.Response).GetCreateRecord)
 }
 
+// UpdateRecord replaces an RRset.
+func (c *Client) UpdateRecord(ctx context.Context, req *dnsgatev1.UpdateRecordRequest) (*dnsgatev1.UpdateRecordResponse, error) {
+	return roundTrip(ctx, c, "record update",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_UpdateRecord{UpdateRecord: req}},
+		(*dnsgatev1.Response).GetUpdateRecord)
+}
+
 // roundTrip sends req, named op in errors, and returns the result that
 // result picks from the Response. A Response holding another operation's
 // result is an error.

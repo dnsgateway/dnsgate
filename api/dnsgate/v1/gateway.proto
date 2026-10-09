@@ -56,6 +56,7 @@ message Request {
     GetRecordRequest get_record = 7;
     CreateTokenRequest create_token = 8;
     CreateRecordRequest create_record = 9;
+    UpdateRecordRequest update_record = 10;
   }
 }
 
@@ -71,6 +72,7 @@ message Response {
     GetRecordResponse get_record = 7;
     CreateTokenResponse create_token = 8;
     CreateRecordResponse create_record = 9;
+    UpdateRecordResponse update_record = 10;
   }
 }
 
@@ -295,6 +297,34 @@ message CreateRecordRequest {
 
 // CreateRecordResponse carries the RRset as created.
 message CreateRecordResponse {
+  RecordSet record_set = 1;
+}
+
+// UpdateRecordRequest asks to replace an RRset: afterwards the zone holds
+// one record of the name and type per value, and no other. It needs
+// update on records for the zone, name and type. The zone must hold the
+// RRset already.
+message UpdateRecordRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+  // name is the record name relative to the zone, "@" for the zone's own
+  // name.
+  string name = 4;
+  // type is the record type, such as "A" or "TXT".
+  string type = 5;
+  // ttl is the TTL of every record, in seconds, in the range the Provider
+  // takes.
+  uint32 ttl = 6;
+  // values are the records' values in zone-file presentation form, at
+  // least one and each once.
+  repeated string values = 7;
+}
+
+// UpdateRecordResponse carries the RRset as replaced.
+message UpdateRecordResponse {
   RecordSet record_set = 1;
 }
 
