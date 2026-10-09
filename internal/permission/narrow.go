@@ -107,7 +107,7 @@ func coversEntries(parent []token.Permission, verb, res, egress, zone, typ strin
 	}
 
 	for _, n := range names {
-		if !CoversName(patterns, n) {
+		if !coversName(patterns, n) {
 			return DimensionNames, false
 		}
 	}
@@ -124,7 +124,7 @@ func orDefault(filter []string, def ...string) []string {
 	return filter
 }
 
-// CoversName reports whether every record name the name pattern child
+// coversName reports whether every record name the name pattern child
 // matches is matched by one of patterns, ignoring case. The patterns may
 // cover child only together: "*" and "*.**" cover "**".
 //
@@ -133,7 +133,7 @@ func orDefault(filter []string, def ...string) []string {
 // as any other such label, so following the labels the patterns name, plus
 // one they do not, is enough. Every name child may take is followed
 // through all patterns at once, until child ends where none of them does.
-func CoversName(patterns []string, child string) bool {
+func coversName(patterns []string, child string) bool {
 	c := nameLabels(child)
 
 	ps := make([][]string, 0, len(patterns))
