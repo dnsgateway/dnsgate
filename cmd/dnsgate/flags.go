@@ -120,29 +120,41 @@ func (f *Flags) AddServerFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Config, flagConfig, "", f.Config,
 		"Gateway configuration file (env "+envConfig+")")
 	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
-		"lowest level of the logs written: "+strings.Join(logLevelNames, ", ")+" (env "+envLogLevel+")")
+		"lowest level of the logs written: "+logLevelNames()+" (env "+envLogLevel+")")
 }
 
-// logLevelNames are the accepted --log-level values, most severe first.
-var logLevelNames = []string{"error", "warn", "info", "debug"}
+// logLevels are the accepted --log-level values and their slog levels,
+// most severe first.
+var logLevels = []struct {
+	name  string
+	level slog.Level
+}{
+	{"error", slog.LevelError},
+	{"warn", slog.LevelWarn},
+	{"info", slog.LevelInfo},
+	{"debug", slog.LevelDebug},
+}
 
-// logLevels maps each accepted --log-level value to its slog level.
-var logLevels = map[string]slog.Level{
-	"error": slog.LevelError,
-	"warn":  slog.LevelWarn,
-	"info":  slog.LevelInfo,
-	"debug": slog.LevelDebug,
+// logLevelNames returns the accepted --log-level values, most severe first.
+func logLevelNames() string {
+	names := make([]string, len(logLevels))
+	for i, l := range logLevels {
+		names[i] = l.name
+	}
+
+	return strings.Join(names, ", ")
 }
 
 // checkServerFlags checks the flags of "server" and returns the log level
 // asked for.
 func checkServerFlags(f *Flags) (slog.Level, error) {
-	level, ok := logLevels[f.LogLevel]
-	if !ok {
-		return 0, errors.New(`unknown log level "` + f.LogLevel + `": use ` + strings.Join(logLevelNames, ", "))
+	for _, l := range logLevels {
+		if l.name == f.LogLevel {
+			return l.level, nil
+		}
 	}
 
-	return level, nil
+	return 0, errors.New(`unknown log level "` + f.LogLevel + `": use ` + logLevelNames())
 }
 
 // AddClientFlags registers the flags of every command that calls the
