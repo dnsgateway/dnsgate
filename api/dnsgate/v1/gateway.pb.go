@@ -25,6 +25,118 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Egress is where the connection to the Provider leaves from.
+type Egress int32
+
+const (
+	// The request does not ask for an Egress: the Gateway uses Gateway
+	// Egress if the token allows it, else Agent Egress.
+	Egress_EGRESS_UNSPECIFIED Egress = 0
+	// Gateway Egress: the Provider sees the Gateway's source IP.
+	Egress_EGRESS_GATEWAY Egress = 1
+	// Agent Egress: the Provider sees the client's source IP. Not supported
+	// yet.
+	Egress_EGRESS_AGENT Egress = 2
+)
+
+// Enum value maps for Egress.
+var (
+	Egress_name = map[int32]string{
+		0: "EGRESS_UNSPECIFIED",
+		1: "EGRESS_GATEWAY",
+		2: "EGRESS_AGENT",
+	}
+	Egress_value = map[string]int32{
+		"EGRESS_UNSPECIFIED": 0,
+		"EGRESS_GATEWAY":     1,
+		"EGRESS_AGENT":       2,
+	}
+)
+
+func (x Egress) Enum() *Egress {
+	p := new(Egress)
+	*p = x
+	return p
+}
+
+func (x Egress) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Egress) Descriptor() protoreflect.EnumDescriptor {
+	return file_dnsgate_v1_gateway_proto_enumTypes[0].Descriptor()
+}
+
+func (Egress) Type() protoreflect.EnumType {
+	return &file_dnsgate_v1_gateway_proto_enumTypes[0]
+}
+
+func (x Egress) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Egress.Descriptor instead.
+func (Egress) EnumDescriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{0}
+}
+
+// State is whether the Provider serves the zone.
+type Zone_State int32
+
+const (
+	Zone_STATE_UNSPECIFIED Zone_State = 0
+	// The Provider serves the zone.
+	Zone_STATE_ACTIVE Zone_State = 1
+	// The zone waits for its delegation to name the Provider's
+	// nameservers.
+	Zone_STATE_PENDING Zone_State = 2
+	// The zone's delegation left the Provider.
+	Zone_STATE_MOVED Zone_State = 3
+)
+
+// Enum value maps for Zone_State.
+var (
+	Zone_State_name = map[int32]string{
+		0: "STATE_UNSPECIFIED",
+		1: "STATE_ACTIVE",
+		2: "STATE_PENDING",
+		3: "STATE_MOVED",
+	}
+	Zone_State_value = map[string]int32{
+		"STATE_UNSPECIFIED": 0,
+		"STATE_ACTIVE":      1,
+		"STATE_PENDING":     2,
+		"STATE_MOVED":       3,
+	}
+)
+
+func (x Zone_State) Enum() *Zone_State {
+	p := new(Zone_State)
+	*p = x
+	return p
+}
+
+func (x Zone_State) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Zone_State) Descriptor() protoreflect.EnumDescriptor {
+	return file_dnsgate_v1_gateway_proto_enumTypes[1].Descriptor()
+}
+
+func (Zone_State) Type() protoreflect.EnumType {
+	return &file_dnsgate_v1_gateway_proto_enumTypes[1]
+}
+
+func (x Zone_State) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Zone_State.Descriptor instead.
+func (Zone_State) EnumDescriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{15, 0}
+}
+
 // Category is what kind of failure the error is.
 type Error_Category int32
 
@@ -91,11 +203,11 @@ func (x Error_Category) String() string {
 }
 
 func (Error_Category) Descriptor() protoreflect.EnumDescriptor {
-	return file_dnsgate_v1_gateway_proto_enumTypes[0].Descriptor()
+	return file_dnsgate_v1_gateway_proto_enumTypes[2].Descriptor()
 }
 
 func (Error_Category) Type() protoreflect.EnumType {
-	return &file_dnsgate_v1_gateway_proto_enumTypes[0]
+	return &file_dnsgate_v1_gateway_proto_enumTypes[2]
 }
 
 func (x Error_Category) Number() protoreflect.EnumNumber {
@@ -104,7 +216,7 @@ func (x Error_Category) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Error_Category.Descriptor instead.
 func (Error_Category) EnumDescriptor() ([]byte, []int) {
-	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{12, 0}
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{22, 0}
 }
 
 // CallRequest is one message the client sends on a Call stream.
@@ -251,6 +363,10 @@ type Request struct {
 	//	*Request_Onboard
 	//	*Request_InspectToken
 	//	*Request_ResealToken
+	//	*Request_ListZones
+	//	*Request_GetZone
+	//	*Request_ListRecords
+	//	*Request_GetRecord
 	Operation     isRequest_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -320,6 +436,42 @@ func (x *Request) GetResealToken() *ResealTokenRequest {
 	return nil
 }
 
+func (x *Request) GetListZones() *ListZonesRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_ListZones); ok {
+			return x.ListZones
+		}
+	}
+	return nil
+}
+
+func (x *Request) GetGetZone() *GetZoneRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_GetZone); ok {
+			return x.GetZone
+		}
+	}
+	return nil
+}
+
+func (x *Request) GetListRecords() *ListRecordsRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_ListRecords); ok {
+			return x.ListRecords
+		}
+	}
+	return nil
+}
+
+func (x *Request) GetGetRecord() *GetRecordRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_GetRecord); ok {
+			return x.GetRecord
+		}
+	}
+	return nil
+}
+
 type isRequest_Operation interface {
 	isRequest_Operation()
 }
@@ -336,11 +488,35 @@ type Request_ResealToken struct {
 	ResealToken *ResealTokenRequest `protobuf:"bytes,3,opt,name=reseal_token,json=resealToken,proto3,oneof"`
 }
 
+type Request_ListZones struct {
+	ListZones *ListZonesRequest `protobuf:"bytes,4,opt,name=list_zones,json=listZones,proto3,oneof"`
+}
+
+type Request_GetZone struct {
+	GetZone *GetZoneRequest `protobuf:"bytes,5,opt,name=get_zone,json=getZone,proto3,oneof"`
+}
+
+type Request_ListRecords struct {
+	ListRecords *ListRecordsRequest `protobuf:"bytes,6,opt,name=list_records,json=listRecords,proto3,oneof"`
+}
+
+type Request_GetRecord struct {
+	GetRecord *GetRecordRequest `protobuf:"bytes,7,opt,name=get_record,json=getRecord,proto3,oneof"`
+}
+
 func (*Request_Onboard) isRequest_Operation() {}
 
 func (*Request_InspectToken) isRequest_Operation() {}
 
 func (*Request_ResealToken) isRequest_Operation() {}
+
+func (*Request_ListZones) isRequest_Operation() {}
+
+func (*Request_GetZone) isRequest_Operation() {}
+
+func (*Request_ListRecords) isRequest_Operation() {}
+
+func (*Request_GetRecord) isRequest_Operation() {}
 
 // Response is the result of a Request, of the same operation.
 type Response struct {
@@ -350,6 +526,10 @@ type Response struct {
 	//	*Response_Onboard
 	//	*Response_InspectToken
 	//	*Response_ResealToken
+	//	*Response_ListZones
+	//	*Response_GetZone
+	//	*Response_ListRecords
+	//	*Response_GetRecord
 	Result        isResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -419,6 +599,42 @@ func (x *Response) GetResealToken() *ResealTokenResponse {
 	return nil
 }
 
+func (x *Response) GetListZones() *ListZonesResponse {
+	if x != nil {
+		if x, ok := x.Result.(*Response_ListZones); ok {
+			return x.ListZones
+		}
+	}
+	return nil
+}
+
+func (x *Response) GetGetZone() *GetZoneResponse {
+	if x != nil {
+		if x, ok := x.Result.(*Response_GetZone); ok {
+			return x.GetZone
+		}
+	}
+	return nil
+}
+
+func (x *Response) GetListRecords() *ListRecordsResponse {
+	if x != nil {
+		if x, ok := x.Result.(*Response_ListRecords); ok {
+			return x.ListRecords
+		}
+	}
+	return nil
+}
+
+func (x *Response) GetGetRecord() *GetRecordResponse {
+	if x != nil {
+		if x, ok := x.Result.(*Response_GetRecord); ok {
+			return x.GetRecord
+		}
+	}
+	return nil
+}
+
 type isResponse_Result interface {
 	isResponse_Result()
 }
@@ -435,11 +651,35 @@ type Response_ResealToken struct {
 	ResealToken *ResealTokenResponse `protobuf:"bytes,3,opt,name=reseal_token,json=resealToken,proto3,oneof"`
 }
 
+type Response_ListZones struct {
+	ListZones *ListZonesResponse `protobuf:"bytes,4,opt,name=list_zones,json=listZones,proto3,oneof"`
+}
+
+type Response_GetZone struct {
+	GetZone *GetZoneResponse `protobuf:"bytes,5,opt,name=get_zone,json=getZone,proto3,oneof"`
+}
+
+type Response_ListRecords struct {
+	ListRecords *ListRecordsResponse `protobuf:"bytes,6,opt,name=list_records,json=listRecords,proto3,oneof"`
+}
+
+type Response_GetRecord struct {
+	GetRecord *GetRecordResponse `protobuf:"bytes,7,opt,name=get_record,json=getRecord,proto3,oneof"`
+}
+
 func (*Response_Onboard) isResponse_Result() {}
 
 func (*Response_InspectToken) isResponse_Result() {}
 
 func (*Response_ResealToken) isResponse_Result() {}
+
+func (*Response_ListZones) isResponse_Result() {}
+
+func (*Response_GetZone) isResponse_Result() {}
+
+func (*Response_ListRecords) isResponse_Result() {}
+
+func (*Response_GetRecord) isResponse_Result() {}
 
 // OnboardRequest turns a Provider Credential into a Root Token.
 type OnboardRequest struct {
@@ -870,6 +1110,591 @@ func (x *ResealTokenResponse) GetToken() string {
 	return ""
 }
 
+// ListZonesRequest asks for the zones the token's Provider Credential
+// reaches. It needs list on zones.
+type ListZonesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// token is the Service Token that authorizes the request.
+	Token         string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Egress        Egress `protobuf:"varint,2,opt,name=egress,proto3,enum=dnsgate.v1.Egress" json:"egress,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListZonesRequest) Reset() {
+	*x = ListZonesRequest{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListZonesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListZonesRequest) ProtoMessage() {}
+
+func (x *ListZonesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListZonesRequest.ProtoReflect.Descriptor instead.
+func (*ListZonesRequest) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListZonesRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ListZonesRequest) GetEgress() Egress {
+	if x != nil {
+		return x.Egress
+	}
+	return Egress_EGRESS_UNSPECIFIED
+}
+
+// ListZonesResponse lists the zones the token covers; the others are left
+// out.
+type ListZonesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Zones         []*Zone                `protobuf:"bytes,1,rep,name=zones,proto3" json:"zones,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListZonesResponse) Reset() {
+	*x = ListZonesResponse{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListZonesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListZonesResponse) ProtoMessage() {}
+
+func (x *ListZonesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListZonesResponse.ProtoReflect.Descriptor instead.
+func (*ListZonesResponse) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListZonesResponse) GetZones() []*Zone {
+	if x != nil {
+		return x.Zones
+	}
+	return nil
+}
+
+// GetZoneRequest asks for one zone. It needs get on zones.
+type GetZoneRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// token is the Service Token that authorizes the request.
+	Token  string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Egress Egress `protobuf:"varint,2,opt,name=egress,proto3,enum=dnsgate.v1.Egress" json:"egress,omitempty"`
+	// zone is the zone's name, such as "example.com".
+	Zone          string `protobuf:"bytes,3,opt,name=zone,proto3" json:"zone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetZoneRequest) Reset() {
+	*x = GetZoneRequest{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetZoneRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetZoneRequest) ProtoMessage() {}
+
+func (x *GetZoneRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetZoneRequest.ProtoReflect.Descriptor instead.
+func (*GetZoneRequest) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetZoneRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *GetZoneRequest) GetEgress() Egress {
+	if x != nil {
+		return x.Egress
+	}
+	return Egress_EGRESS_UNSPECIFIED
+}
+
+func (x *GetZoneRequest) GetZone() string {
+	if x != nil {
+		return x.Zone
+	}
+	return ""
+}
+
+// GetZoneResponse carries the zone asked for.
+type GetZoneResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Zone          *Zone                  `protobuf:"bytes,1,opt,name=zone,proto3" json:"zone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetZoneResponse) Reset() {
+	*x = GetZoneResponse{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetZoneResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetZoneResponse) ProtoMessage() {}
+
+func (x *GetZoneResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetZoneResponse.ProtoReflect.Descriptor instead.
+func (*GetZoneResponse) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetZoneResponse) GetZone() *Zone {
+	if x != nil {
+		return x.Zone
+	}
+	return nil
+}
+
+// Zone is a DNS zone hosted at the Provider.
+type Zone struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name is the zone's name, such as "example.com".
+	Name  string     `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	State Zone_State `protobuf:"varint,2,opt,name=state,proto3,enum=dnsgate.v1.Zone_State" json:"state,omitempty"`
+	// nameservers are the nameservers the Provider assigned to the zone,
+	// when it assigns them per zone.
+	Nameservers   []string `protobuf:"bytes,3,rep,name=nameservers,proto3" json:"nameservers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Zone) Reset() {
+	*x = Zone{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Zone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Zone) ProtoMessage() {}
+
+func (x *Zone) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Zone.ProtoReflect.Descriptor instead.
+func (*Zone) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Zone) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Zone) GetState() Zone_State {
+	if x != nil {
+		return x.State
+	}
+	return Zone_STATE_UNSPECIFIED
+}
+
+func (x *Zone) GetNameservers() []string {
+	if x != nil {
+		return x.Nameservers
+	}
+	return nil
+}
+
+// ListRecordsRequest asks for a zone's records. It needs list on records
+// in the zone.
+type ListRecordsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// token is the Service Token that authorizes the request.
+	Token  string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Egress Egress `protobuf:"varint,2,opt,name=egress,proto3,enum=dnsgate.v1.Egress" json:"egress,omitempty"`
+	// zone is the zone's name, such as "example.com".
+	Zone          string `protobuf:"bytes,3,opt,name=zone,proto3" json:"zone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRecordsRequest) Reset() {
+	*x = ListRecordsRequest{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRecordsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRecordsRequest) ProtoMessage() {}
+
+func (x *ListRecordsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRecordsRequest.ProtoReflect.Descriptor instead.
+func (*ListRecordsRequest) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListRecordsRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ListRecordsRequest) GetEgress() Egress {
+	if x != nil {
+		return x.Egress
+	}
+	return Egress_EGRESS_UNSPECIFIED
+}
+
+func (x *ListRecordsRequest) GetZone() string {
+	if x != nil {
+		return x.Zone
+	}
+	return ""
+}
+
+// ListRecordsResponse lists the zone's RRsets the token covers; the others
+// are left out.
+type ListRecordsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RecordSets    []*RecordSet           `protobuf:"bytes,1,rep,name=record_sets,json=recordSets,proto3" json:"record_sets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRecordsResponse) Reset() {
+	*x = ListRecordsResponse{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRecordsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRecordsResponse) ProtoMessage() {}
+
+func (x *ListRecordsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRecordsResponse.ProtoReflect.Descriptor instead.
+func (*ListRecordsResponse) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListRecordsResponse) GetRecordSets() []*RecordSet {
+	if x != nil {
+		return x.RecordSets
+	}
+	return nil
+}
+
+// GetRecordRequest asks for one RRset: every record of a name and type.
+// It needs get on records for the zone, name and type.
+type GetRecordRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// token is the Service Token that authorizes the request.
+	Token  string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Egress Egress `protobuf:"varint,2,opt,name=egress,proto3,enum=dnsgate.v1.Egress" json:"egress,omitempty"`
+	// zone is the zone's name, such as "example.com".
+	Zone string `protobuf:"bytes,3,opt,name=zone,proto3" json:"zone,omitempty"`
+	// name is the record name relative to the zone, "@" for the zone's own
+	// name.
+	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	// type is the record type, such as "A" or "TXT".
+	Type          string `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRecordRequest) Reset() {
+	*x = GetRecordRequest{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRecordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRecordRequest) ProtoMessage() {}
+
+func (x *GetRecordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRecordRequest.ProtoReflect.Descriptor instead.
+func (*GetRecordRequest) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetRecordRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *GetRecordRequest) GetEgress() Egress {
+	if x != nil {
+		return x.Egress
+	}
+	return Egress_EGRESS_UNSPECIFIED
+}
+
+func (x *GetRecordRequest) GetZone() string {
+	if x != nil {
+		return x.Zone
+	}
+	return ""
+}
+
+func (x *GetRecordRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetRecordRequest) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+// GetRecordResponse carries the RRset asked for.
+type GetRecordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RecordSet     *RecordSet             `protobuf:"bytes,1,opt,name=record_set,json=recordSet,proto3" json:"record_set,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRecordResponse) Reset() {
+	*x = GetRecordResponse{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRecordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRecordResponse) ProtoMessage() {}
+
+func (x *GetRecordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRecordResponse.ProtoReflect.Descriptor instead.
+func (*GetRecordResponse) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetRecordResponse) GetRecordSet() *RecordSet {
+	if x != nil {
+		return x.RecordSet
+	}
+	return nil
+}
+
+// RecordSet is an RRset: the records of one name and type.
+type RecordSet struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name is the record name relative to the zone, "@" for the zone's own
+	// name.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// type is the record type in upper case, such as "TXT".
+	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// ttl is the RRset's TTL in seconds: the lowest of its records'.
+	Ttl uint32 `protobuf:"varint,3,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	// values are the records' values in zone-file presentation form.
+	Values        []string `protobuf:"bytes,4,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordSet) Reset() {
+	*x = RecordSet{}
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordSet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordSet) ProtoMessage() {}
+
+func (x *RecordSet) ProtoReflect() protoreflect.Message {
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordSet.ProtoReflect.Descriptor instead.
+func (*RecordSet) Descriptor() ([]byte, []int) {
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RecordSet) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RecordSet) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *RecordSet) GetTtl() uint32 {
+	if x != nil {
+		return x.Ttl
+	}
+	return 0
+}
+
+func (x *RecordSet) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 // Permission grants verbs on resources, limited by the zone, name, type
 // and egress filters. An empty filter is left out and means "any"; an
 // empty resources means ["records"].
@@ -887,7 +1712,7 @@ type Permission struct {
 
 func (x *Permission) Reset() {
 	*x = Permission{}
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[11]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -899,7 +1724,7 @@ func (x *Permission) String() string {
 func (*Permission) ProtoMessage() {}
 
 func (x *Permission) ProtoReflect() protoreflect.Message {
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[11]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -912,7 +1737,7 @@ func (x *Permission) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Permission.ProtoReflect.Descriptor instead.
 func (*Permission) Descriptor() ([]byte, []int) {
-	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{11}
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Permission) GetVerbs() []string {
@@ -972,7 +1797,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[12]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -984,7 +1809,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_dnsgate_v1_gateway_proto_msgTypes[12]
+	mi := &file_dnsgate_v1_gateway_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -997,7 +1822,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{12}
+	return file_dnsgate_v1_gateway_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Error) GetCategory() Error_Category {
@@ -1032,16 +1857,28 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\amessageJ\x04\b\x02\x10\x10\"S\n" +
 	"\fCallResponse\x122\n" +
 	"\bresponse\x18\x01 \x01(\v2\x14.dnsgate.v1.ResponseH\x00R\bresponseB\t\n" +
-	"\amessageJ\x04\b\x02\x10\x10\"\xdb\x01\n" +
+	"\amessageJ\x04\b\x02\x10\x10\"\xd7\x03\n" +
 	"\aRequest\x126\n" +
 	"\aonboard\x18\x01 \x01(\v2\x1a.dnsgate.v1.OnboardRequestH\x00R\aonboard\x12F\n" +
 	"\rinspect_token\x18\x02 \x01(\v2\x1f.dnsgate.v1.InspectTokenRequestH\x00R\finspectToken\x12C\n" +
-	"\freseal_token\x18\x03 \x01(\v2\x1e.dnsgate.v1.ResealTokenRequestH\x00R\vresealTokenB\v\n" +
-	"\toperation\"\xdc\x01\n" +
+	"\freseal_token\x18\x03 \x01(\v2\x1e.dnsgate.v1.ResealTokenRequestH\x00R\vresealToken\x12=\n" +
+	"\n" +
+	"list_zones\x18\x04 \x01(\v2\x1c.dnsgate.v1.ListZonesRequestH\x00R\tlistZones\x127\n" +
+	"\bget_zone\x18\x05 \x01(\v2\x1a.dnsgate.v1.GetZoneRequestH\x00R\agetZone\x12C\n" +
+	"\flist_records\x18\x06 \x01(\v2\x1e.dnsgate.v1.ListRecordsRequestH\x00R\vlistRecords\x12=\n" +
+	"\n" +
+	"get_record\x18\a \x01(\v2\x1c.dnsgate.v1.GetRecordRequestH\x00R\tgetRecordB\v\n" +
+	"\toperation\"\xdc\x03\n" +
 	"\bResponse\x127\n" +
 	"\aonboard\x18\x01 \x01(\v2\x1b.dnsgate.v1.OnboardResponseH\x00R\aonboard\x12G\n" +
 	"\rinspect_token\x18\x02 \x01(\v2 .dnsgate.v1.InspectTokenResponseH\x00R\finspectToken\x12D\n" +
-	"\freseal_token\x18\x03 \x01(\v2\x1f.dnsgate.v1.ResealTokenResponseH\x00R\vresealTokenB\b\n" +
+	"\freseal_token\x18\x03 \x01(\v2\x1f.dnsgate.v1.ResealTokenResponseH\x00R\vresealToken\x12>\n" +
+	"\n" +
+	"list_zones\x18\x04 \x01(\v2\x1d.dnsgate.v1.ListZonesResponseH\x00R\tlistZones\x128\n" +
+	"\bget_zone\x18\x05 \x01(\v2\x1b.dnsgate.v1.GetZoneResponseH\x00R\agetZone\x12D\n" +
+	"\flist_records\x18\x06 \x01(\v2\x1f.dnsgate.v1.ListRecordsResponseH\x00R\vlistRecords\x12>\n" +
+	"\n" +
+	"get_record\x18\a \x01(\v2\x1d.dnsgate.v1.GetRecordResponseH\x00R\tgetRecordB\b\n" +
 	"\x06result\"\xd5\x01\n" +
 	"\x0eOnboardRequest\x12)\n" +
 	"\x10bootstrap_secret\x18\x01 \x01(\tR\x0fbootstrapSecret\x12\x1a\n" +
@@ -1073,7 +1910,48 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\x12ResealTokenRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"+\n" +
 	"\x13ResealTokenResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\x9a\x01\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"T\n" +
+	"\x10ListZonesRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12*\n" +
+	"\x06egress\x18\x02 \x01(\x0e2\x12.dnsgate.v1.EgressR\x06egress\";\n" +
+	"\x11ListZonesResponse\x12&\n" +
+	"\x05zones\x18\x01 \x03(\v2\x10.dnsgate.v1.ZoneR\x05zones\"f\n" +
+	"\x0eGetZoneRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12*\n" +
+	"\x06egress\x18\x02 \x01(\x0e2\x12.dnsgate.v1.EgressR\x06egress\x12\x12\n" +
+	"\x04zone\x18\x03 \x01(\tR\x04zone\"7\n" +
+	"\x0fGetZoneResponse\x12$\n" +
+	"\x04zone\x18\x01 \x01(\v2\x10.dnsgate.v1.ZoneR\x04zone\"\xc0\x01\n" +
+	"\x04Zone\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x16.dnsgate.v1.Zone.StateR\x05state\x12 \n" +
+	"\vnameservers\x18\x03 \x03(\tR\vnameservers\"T\n" +
+	"\x05State\x12\x15\n" +
+	"\x11STATE_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fSTATE_ACTIVE\x10\x01\x12\x11\n" +
+	"\rSTATE_PENDING\x10\x02\x12\x0f\n" +
+	"\vSTATE_MOVED\x10\x03\"j\n" +
+	"\x12ListRecordsRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12*\n" +
+	"\x06egress\x18\x02 \x01(\x0e2\x12.dnsgate.v1.EgressR\x06egress\x12\x12\n" +
+	"\x04zone\x18\x03 \x01(\tR\x04zone\"M\n" +
+	"\x13ListRecordsResponse\x126\n" +
+	"\vrecord_sets\x18\x01 \x03(\v2\x15.dnsgate.v1.RecordSetR\n" +
+	"recordSets\"\x90\x01\n" +
+	"\x10GetRecordRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12*\n" +
+	"\x06egress\x18\x02 \x01(\x0e2\x12.dnsgate.v1.EgressR\x06egress\x12\x12\n" +
+	"\x04zone\x18\x03 \x01(\tR\x04zone\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x05 \x01(\tR\x04type\"I\n" +
+	"\x11GetRecordResponse\x124\n" +
+	"\n" +
+	"record_set\x18\x01 \x01(\v2\x15.dnsgate.v1.RecordSetR\trecordSet\"]\n" +
+	"\tRecordSet\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x10\n" +
+	"\x03ttl\x18\x03 \x01(\rR\x03ttl\x12\x16\n" +
+	"\x06values\x18\x04 \x03(\tR\x06values\"\x9a\x01\n" +
 	"\n" +
 	"Permission\x12\x14\n" +
 	"\x05verbs\x18\x01 \x03(\tR\x05verbs\x12\x1c\n" +
@@ -1098,7 +1976,11 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\x17CATEGORY_INVALID_RECORD\x10\b\x12!\n" +
 	"\x1dCATEGORY_EGRESS_NOT_SUPPORTED\x10\t\x12\x15\n" +
 	"\x11CATEGORY_INTERNAL\x10\n" +
-	"2O\n" +
+	"*F\n" +
+	"\x06Egress\x12\x16\n" +
+	"\x12EGRESS_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eEGRESS_GATEWAY\x10\x01\x12\x10\n" +
+	"\fEGRESS_AGENT\x10\x022O\n" +
 	"\x0eGatewayService\x12=\n" +
 	"\x04Call\x12\x17.dnsgate.v1.CallRequest\x1a\x18.dnsgate.v1.CallResponse(\x010\x01B8Z6github.com/dnsgateway/dnsgate/api/dnsgate/v1;dnsgatev1b\x06proto3"
 
@@ -1114,49 +1996,78 @@ func file_dnsgate_v1_gateway_proto_rawDescGZIP() []byte {
 	return file_dnsgate_v1_gateway_proto_rawDescData
 }
 
-var file_dnsgate_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dnsgate_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_dnsgate_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_dnsgate_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_dnsgate_v1_gateway_proto_goTypes = []any{
-	(Error_Category)(0),           // 0: dnsgate.v1.Error.Category
-	(*CallRequest)(nil),           // 1: dnsgate.v1.CallRequest
-	(*CallResponse)(nil),          // 2: dnsgate.v1.CallResponse
-	(*Request)(nil),               // 3: dnsgate.v1.Request
-	(*Response)(nil),              // 4: dnsgate.v1.Response
-	(*OnboardRequest)(nil),        // 5: dnsgate.v1.OnboardRequest
-	(*Credential)(nil),            // 6: dnsgate.v1.Credential
-	(*OnboardResponse)(nil),       // 7: dnsgate.v1.OnboardResponse
-	(*InspectTokenRequest)(nil),   // 8: dnsgate.v1.InspectTokenRequest
-	(*InspectTokenResponse)(nil),  // 9: dnsgate.v1.InspectTokenResponse
-	(*ResealTokenRequest)(nil),    // 10: dnsgate.v1.ResealTokenRequest
-	(*ResealTokenResponse)(nil),   // 11: dnsgate.v1.ResealTokenResponse
-	(*Permission)(nil),            // 12: dnsgate.v1.Permission
-	(*Error)(nil),                 // 13: dnsgate.v1.Error
-	(*durationpb.Duration)(nil),   // 14: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(Egress)(0),                   // 0: dnsgate.v1.Egress
+	(Zone_State)(0),               // 1: dnsgate.v1.Zone.State
+	(Error_Category)(0),           // 2: dnsgate.v1.Error.Category
+	(*CallRequest)(nil),           // 3: dnsgate.v1.CallRequest
+	(*CallResponse)(nil),          // 4: dnsgate.v1.CallResponse
+	(*Request)(nil),               // 5: dnsgate.v1.Request
+	(*Response)(nil),              // 6: dnsgate.v1.Response
+	(*OnboardRequest)(nil),        // 7: dnsgate.v1.OnboardRequest
+	(*Credential)(nil),            // 8: dnsgate.v1.Credential
+	(*OnboardResponse)(nil),       // 9: dnsgate.v1.OnboardResponse
+	(*InspectTokenRequest)(nil),   // 10: dnsgate.v1.InspectTokenRequest
+	(*InspectTokenResponse)(nil),  // 11: dnsgate.v1.InspectTokenResponse
+	(*ResealTokenRequest)(nil),    // 12: dnsgate.v1.ResealTokenRequest
+	(*ResealTokenResponse)(nil),   // 13: dnsgate.v1.ResealTokenResponse
+	(*ListZonesRequest)(nil),      // 14: dnsgate.v1.ListZonesRequest
+	(*ListZonesResponse)(nil),     // 15: dnsgate.v1.ListZonesResponse
+	(*GetZoneRequest)(nil),        // 16: dnsgate.v1.GetZoneRequest
+	(*GetZoneResponse)(nil),       // 17: dnsgate.v1.GetZoneResponse
+	(*Zone)(nil),                  // 18: dnsgate.v1.Zone
+	(*ListRecordsRequest)(nil),    // 19: dnsgate.v1.ListRecordsRequest
+	(*ListRecordsResponse)(nil),   // 20: dnsgate.v1.ListRecordsResponse
+	(*GetRecordRequest)(nil),      // 21: dnsgate.v1.GetRecordRequest
+	(*GetRecordResponse)(nil),     // 22: dnsgate.v1.GetRecordResponse
+	(*RecordSet)(nil),             // 23: dnsgate.v1.RecordSet
+	(*Permission)(nil),            // 24: dnsgate.v1.Permission
+	(*Error)(nil),                 // 25: dnsgate.v1.Error
+	(*durationpb.Duration)(nil),   // 26: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
 }
 var file_dnsgate_v1_gateway_proto_depIdxs = []int32{
-	3,  // 0: dnsgate.v1.CallRequest.request:type_name -> dnsgate.v1.Request
-	4,  // 1: dnsgate.v1.CallResponse.response:type_name -> dnsgate.v1.Response
-	5,  // 2: dnsgate.v1.Request.onboard:type_name -> dnsgate.v1.OnboardRequest
-	8,  // 3: dnsgate.v1.Request.inspect_token:type_name -> dnsgate.v1.InspectTokenRequest
-	10, // 4: dnsgate.v1.Request.reseal_token:type_name -> dnsgate.v1.ResealTokenRequest
-	7,  // 5: dnsgate.v1.Response.onboard:type_name -> dnsgate.v1.OnboardResponse
-	9,  // 6: dnsgate.v1.Response.inspect_token:type_name -> dnsgate.v1.InspectTokenResponse
-	11, // 7: dnsgate.v1.Response.reseal_token:type_name -> dnsgate.v1.ResealTokenResponse
-	6,  // 8: dnsgate.v1.OnboardRequest.credential:type_name -> dnsgate.v1.Credential
-	14, // 9: dnsgate.v1.OnboardRequest.expires:type_name -> google.protobuf.Duration
-	15, // 10: dnsgate.v1.InspectTokenResponse.iat:type_name -> google.protobuf.Timestamp
-	15, // 11: dnsgate.v1.InspectTokenResponse.nbf:type_name -> google.protobuf.Timestamp
-	15, // 12: dnsgate.v1.InspectTokenResponse.exp:type_name -> google.protobuf.Timestamp
-	12, // 13: dnsgate.v1.InspectTokenResponse.permissions:type_name -> dnsgate.v1.Permission
-	0,  // 14: dnsgate.v1.Error.category:type_name -> dnsgate.v1.Error.Category
-	1,  // 15: dnsgate.v1.GatewayService.Call:input_type -> dnsgate.v1.CallRequest
-	2,  // 16: dnsgate.v1.GatewayService.Call:output_type -> dnsgate.v1.CallResponse
-	16, // [16:17] is the sub-list for method output_type
-	15, // [15:16] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	5,  // 0: dnsgate.v1.CallRequest.request:type_name -> dnsgate.v1.Request
+	6,  // 1: dnsgate.v1.CallResponse.response:type_name -> dnsgate.v1.Response
+	7,  // 2: dnsgate.v1.Request.onboard:type_name -> dnsgate.v1.OnboardRequest
+	10, // 3: dnsgate.v1.Request.inspect_token:type_name -> dnsgate.v1.InspectTokenRequest
+	12, // 4: dnsgate.v1.Request.reseal_token:type_name -> dnsgate.v1.ResealTokenRequest
+	14, // 5: dnsgate.v1.Request.list_zones:type_name -> dnsgate.v1.ListZonesRequest
+	16, // 6: dnsgate.v1.Request.get_zone:type_name -> dnsgate.v1.GetZoneRequest
+	19, // 7: dnsgate.v1.Request.list_records:type_name -> dnsgate.v1.ListRecordsRequest
+	21, // 8: dnsgate.v1.Request.get_record:type_name -> dnsgate.v1.GetRecordRequest
+	9,  // 9: dnsgate.v1.Response.onboard:type_name -> dnsgate.v1.OnboardResponse
+	11, // 10: dnsgate.v1.Response.inspect_token:type_name -> dnsgate.v1.InspectTokenResponse
+	13, // 11: dnsgate.v1.Response.reseal_token:type_name -> dnsgate.v1.ResealTokenResponse
+	15, // 12: dnsgate.v1.Response.list_zones:type_name -> dnsgate.v1.ListZonesResponse
+	17, // 13: dnsgate.v1.Response.get_zone:type_name -> dnsgate.v1.GetZoneResponse
+	20, // 14: dnsgate.v1.Response.list_records:type_name -> dnsgate.v1.ListRecordsResponse
+	22, // 15: dnsgate.v1.Response.get_record:type_name -> dnsgate.v1.GetRecordResponse
+	8,  // 16: dnsgate.v1.OnboardRequest.credential:type_name -> dnsgate.v1.Credential
+	26, // 17: dnsgate.v1.OnboardRequest.expires:type_name -> google.protobuf.Duration
+	27, // 18: dnsgate.v1.InspectTokenResponse.iat:type_name -> google.protobuf.Timestamp
+	27, // 19: dnsgate.v1.InspectTokenResponse.nbf:type_name -> google.protobuf.Timestamp
+	27, // 20: dnsgate.v1.InspectTokenResponse.exp:type_name -> google.protobuf.Timestamp
+	24, // 21: dnsgate.v1.InspectTokenResponse.permissions:type_name -> dnsgate.v1.Permission
+	0,  // 22: dnsgate.v1.ListZonesRequest.egress:type_name -> dnsgate.v1.Egress
+	18, // 23: dnsgate.v1.ListZonesResponse.zones:type_name -> dnsgate.v1.Zone
+	0,  // 24: dnsgate.v1.GetZoneRequest.egress:type_name -> dnsgate.v1.Egress
+	18, // 25: dnsgate.v1.GetZoneResponse.zone:type_name -> dnsgate.v1.Zone
+	1,  // 26: dnsgate.v1.Zone.state:type_name -> dnsgate.v1.Zone.State
+	0,  // 27: dnsgate.v1.ListRecordsRequest.egress:type_name -> dnsgate.v1.Egress
+	23, // 28: dnsgate.v1.ListRecordsResponse.record_sets:type_name -> dnsgate.v1.RecordSet
+	0,  // 29: dnsgate.v1.GetRecordRequest.egress:type_name -> dnsgate.v1.Egress
+	23, // 30: dnsgate.v1.GetRecordResponse.record_set:type_name -> dnsgate.v1.RecordSet
+	2,  // 31: dnsgate.v1.Error.category:type_name -> dnsgate.v1.Error.Category
+	3,  // 32: dnsgate.v1.GatewayService.Call:input_type -> dnsgate.v1.CallRequest
+	4,  // 33: dnsgate.v1.GatewayService.Call:output_type -> dnsgate.v1.CallResponse
+	33, // [33:34] is the sub-list for method output_type
+	32, // [32:33] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_dnsgate_v1_gateway_proto_init() }
@@ -1174,11 +2085,19 @@ func file_dnsgate_v1_gateway_proto_init() {
 		(*Request_Onboard)(nil),
 		(*Request_InspectToken)(nil),
 		(*Request_ResealToken)(nil),
+		(*Request_ListZones)(nil),
+		(*Request_GetZone)(nil),
+		(*Request_ListRecords)(nil),
+		(*Request_GetRecord)(nil),
 	}
 	file_dnsgate_v1_gateway_proto_msgTypes[3].OneofWrappers = []any{
 		(*Response_Onboard)(nil),
 		(*Response_InspectToken)(nil),
 		(*Response_ResealToken)(nil),
+		(*Response_ListZones)(nil),
+		(*Response_GetZone)(nil),
+		(*Response_ListRecords)(nil),
+		(*Response_GetRecord)(nil),
 	}
 	file_dnsgate_v1_gateway_proto_msgTypes[4].OneofWrappers = []any{}
 	file_dnsgate_v1_gateway_proto_msgTypes[8].OneofWrappers = []any{}
@@ -1187,8 +2106,8 @@ func file_dnsgate_v1_gateway_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dnsgate_v1_gateway_proto_rawDesc), len(file_dnsgate_v1_gateway_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   13,
+			NumEnums:      3,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

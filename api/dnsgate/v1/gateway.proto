@@ -50,6 +50,10 @@ message Request {
     OnboardRequest onboard = 1;
     InspectTokenRequest inspect_token = 2;
     ResealTokenRequest reseal_token = 3;
+    ListZonesRequest list_zones = 4;
+    GetZoneRequest get_zone = 5;
+    ListRecordsRequest list_records = 6;
+    GetRecordRequest get_record = 7;
   }
 }
 
@@ -59,6 +63,10 @@ message Response {
     OnboardResponse onboard = 1;
     InspectTokenResponse inspect_token = 2;
     ResealTokenResponse reseal_token = 3;
+    ListZonesResponse list_zones = 4;
+    GetZoneResponse get_zone = 5;
+    ListRecordsResponse list_records = 6;
+    GetRecordResponse get_record = 7;
   }
 }
 
@@ -132,6 +140,117 @@ message ResealTokenResponse {
   // token holds the same claims and signature as the request's token,
   // sealed under the current encryption key.
   string token = 1;
+}
+
+// Egress is where the connection to the Provider leaves from.
+enum Egress {
+  // The request does not ask for an Egress: the Gateway uses Gateway
+  // Egress if the token allows it, else Agent Egress.
+  EGRESS_UNSPECIFIED = 0;
+  // Gateway Egress: the Provider sees the Gateway's source IP.
+  EGRESS_GATEWAY = 1;
+  // Agent Egress: the Provider sees the client's source IP. Not supported
+  // yet.
+  EGRESS_AGENT = 2;
+}
+
+// ListZonesRequest asks for the zones the token's Provider Credential
+// reaches. It needs list on zones.
+message ListZonesRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+}
+
+// ListZonesResponse lists the zones the token covers; the others are left
+// out.
+message ListZonesResponse {
+  repeated Zone zones = 1;
+}
+
+// GetZoneRequest asks for one zone. It needs get on zones.
+message GetZoneRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+}
+
+// GetZoneResponse carries the zone asked for.
+message GetZoneResponse {
+  Zone zone = 1;
+}
+
+// Zone is a DNS zone hosted at the Provider.
+message Zone {
+  // State is whether the Provider serves the zone.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    // The Provider serves the zone.
+    STATE_ACTIVE = 1;
+    // The zone waits for its delegation to name the Provider's
+    // nameservers.
+    STATE_PENDING = 2;
+    // The zone's delegation left the Provider.
+    STATE_MOVED = 3;
+  }
+
+  // name is the zone's name, such as "example.com".
+  string name = 1;
+  State state = 2;
+  // nameservers are the nameservers the Provider assigned to the zone,
+  // when it assigns them per zone.
+  repeated string nameservers = 3;
+}
+
+// ListRecordsRequest asks for a zone's records. It needs list on records
+// in the zone.
+message ListRecordsRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+}
+
+// ListRecordsResponse lists the zone's RRsets the token covers; the others
+// are left out.
+message ListRecordsResponse {
+  repeated RecordSet record_sets = 1;
+}
+
+// GetRecordRequest asks for one RRset: every record of a name and type.
+// It needs get on records for the zone, name and type.
+message GetRecordRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+  // name is the record name relative to the zone, "@" for the zone's own
+  // name.
+  string name = 4;
+  // type is the record type, such as "A" or "TXT".
+  string type = 5;
+}
+
+// GetRecordResponse carries the RRset asked for.
+message GetRecordResponse {
+  RecordSet record_set = 1;
+}
+
+// RecordSet is an RRset: the records of one name and type.
+message RecordSet {
+  // name is the record name relative to the zone, "@" for the zone's own
+  // name.
+  string name = 1;
+  // type is the record type in upper case, such as "TXT".
+  string type = 2;
+  // ttl is the RRset's TTL in seconds: the lowest of its records'.
+  uint32 ttl = 3;
+  // values are the records' values in zone-file presentation form.
+  repeated string values = 4;
 }
 
 // Permission grants verbs on resources, limited by the zone, name, type
