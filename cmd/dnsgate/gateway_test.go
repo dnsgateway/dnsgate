@@ -286,21 +286,24 @@ func runClient(t *testing.T, env *gatewayEnv, gw *runningGateway, args ...string
 }
 
 type inspected struct {
-	Sub         string     `json:"sub"`
-	Jti         string     `json:"jti"`
-	Ancestors   []string   `json:"ancestors"`
-	IssuedAt    time.Time  `json:"iat"`
-	NotBefore   time.Time  `json:"nbf"`
-	Expiry      *time.Time `json:"exp"`
-	Provider    string     `json:"provider"`
-	Permissions []struct {
-		Verbs     []string `json:"verbs"`
-		Resources []string `json:"resources"`
-		Zones     []string `json:"zones"`
-		Names     []string `json:"names"`
-		Types     []string `json:"types"`
-		Egress    []string `json:"egress"`
-	} `json:"permissions"`
+	Sub         string                `json:"sub"`
+	Jti         string                `json:"jti"`
+	Ancestors   []string              `json:"ancestors"`
+	IssuedAt    time.Time             `json:"iat"`
+	NotBefore   time.Time             `json:"nbf"`
+	Expiry      *time.Time            `json:"exp"`
+	Provider    string                `json:"provider"`
+	Permissions []inspectedPermission `json:"permissions"`
+}
+
+// inspectedPermission is one Permission of an inspected token.
+type inspectedPermission struct {
+	Verbs     []string `json:"verbs"`
+	Resources []string `json:"resources"`
+	Zones     []string `json:"zones"`
+	Names     []string `json:"names"`
+	Types     []string `json:"types"`
+	Egress    []string `json:"egress"`
 }
 
 func TestOnboardThenInspectEndToEnd(t *testing.T) {
