@@ -125,35 +125,10 @@ func (rl *relay) dial(ctx context.Context, _, addr string) (net.Conn, error) {
 	rl.conns[c.id] = c
 	rl.mu.Unlock()
 
-	open := &dnsgatev1.RelayOpen{Id: c.id, Host: host, Port: uint32(port)}
-	if err := rl.send(&dnsgatev1.CallResponse{Message: &dnsgatev1.CallResponse_Open{Open: open}}); err != nil {
+	if err := rl.open(ctx, c, &dnsgatev1.RelayOpen{Id: c.id, Host: host, Port: uint32(port)}); err != nil {
 		rl.drop(c)
 
-		return nil, errAgentConnect
-	}
-
-	timer := time.NewTimer(relayOpenTimeout)
-	defer timer.Stop()
-
-	select {
-	case msg := <-c.opened:
-		if msg != "" {
-			rl.drop(c)
-
-			return nil, errAgentConnect
-		}
-	case <-ctx.Done():
-		rl.drop(c)
-
-		return nil, ctx.Err()
-	case <-rl.recvDone:
-		rl.drop(c)
-
-		return nil, errAgentConnect
-	case <-timer.C:
-		rl.drop(c)
-
-		return nil, errAgentConnect
+		return nil, err
 	}
 
 	rl.mu.Lock()
@@ -170,6 +145,31 @@ func (rl *relay) dial(ctx context.Context, _, addr string) (net.Conn, error) {
 	go rl.pump(c)
 
 	return local, nil
+}
+
+// open sends o for c and waits for the Egress Agent to connect. It
+// returns ctx's error if ctx ends first, and errAgentConnect if the
+// Egress Agent does not connect.
+func (rl *relay) open(ctx context.Context, c *relayConn, o *dnsgatev1.RelayOpen) error {
+	if rl.send(&dnsgatev1.CallResponse{Message: &dnsgatev1.CallResponse_Open{Open: o}}) != nil {
+		return errAgentConnect
+	}
+
+	timer := time.NewTimer(relayOpenTimeout)
+	defer timer.Stop()
+
+	select {
+	case msg := <-c.opened:
+		if msg == "" {
+			return nil
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-rl.recvDone:
+	case <-timer.C:
+	}
+
+	return errAgentConnect
 }
 
 // receive reads the client's relay frames until the stream ends, then
