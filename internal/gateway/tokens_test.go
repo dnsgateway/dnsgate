@@ -243,7 +243,13 @@ func TestCreateTokenRejectsALaterExpiry(t *testing.T) {
 		}
 	})
 
-	for name, d := range map[string]time.Duration{"zero": 0, "negative": -time.Hour, "under a second": time.Millisecond} {
+	t.Run("under a second", func(t *testing.T) {
+		if _, err := create(forever, durationpb.New(time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	for name, d := range map[string]time.Duration{"zero": 0, "negative": -time.Hour} {
 		t.Run(name, func(t *testing.T) {
 			_, err := create(forever, durationpb.New(d))
 			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)

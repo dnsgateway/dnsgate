@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"time"
-
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
@@ -77,15 +75,15 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 }
 
 // checkCreateTokenRequest checks that req names a Service Account and
-// well-formed Permissions, each with verbs, and a usable expiry.
+// well-formed Permissions, each with verbs, and a positive expiry.
 func checkCreateTokenRequest(req *dnsgatev1.CreateTokenRequest) error {
 	switch {
 	case req.GetSub() == "":
 		return invalidRequest("missing sub")
 	case len(req.GetPermissions()) == 0:
 		return invalidRequest("missing permissions")
-	case req.Expires != nil && req.GetExpires().AsDuration() < time.Second:
-		return invalidRequest("expires must be at least one second")
+	case req.Expires != nil && req.GetExpires().AsDuration() <= 0:
+		return invalidRequest("expires must be positive")
 	}
 
 	if err := permission.Check(permissionsFromAPI(req.GetPermissions())); err != nil {
