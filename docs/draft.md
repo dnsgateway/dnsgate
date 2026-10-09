@@ -167,7 +167,7 @@ The Gateway database stores **only revoked token IDs**. A token is rejected if i
 
 Any token holding `delete` on `tokens` may revoke any token ID. With no token registry, the Gateway can't check which chain an ID belongs to (ADR 0001).
 
-Entries for tokens with an expiry can be removed once that expiry passes. Entries for tokens without an expiry stay forever.
+Entries for tokens with an expiry can be removed once that expiry passes. Entries for tokens without an expiry stay forever. The Gateway learns a token's expiry only from the token itself: `dnsgate token revoke` takes either a token ID or the full Service Token. Given the token, the Gateway opens it and keeps the entry until its `exp`. Given only an ID, it cannot know the expiry, so the entry stays forever (ADR 0007).
 
 ## Rotation
 
@@ -426,7 +426,7 @@ Never logged: the Provider Credential, the Service Token itself, Identity Tokens
 ```text
 dnsgate onboard --provider cloudflare [--expires DURATION]   # needs the bootstrap secret → Root Token
 dnsgate token create --sub NAME --permissions FILE [--expires DURATION] [--bind-k8s|--bind-github|--bind-gitlab ...]   # binding: v2, see oidc.md
-dnsgate token revoke TOKEN_ID
+dnsgate token revoke TOKEN_ID|TOKEN|-                         # a token, or - for stdin, lets the entry be purged at its exp
 dnsgate token reseal TOKEN
 dnsgate token inspect                                        # the Gateway decrypts and shows permissions to the holder
 dnsgate zone list|get ...
