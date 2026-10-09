@@ -15,6 +15,8 @@ import (
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
@@ -117,7 +119,7 @@ func New(cfg Config) *Gateway {
 }
 
 // Call implements GatewayService.Call.
-func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dnsgatev1.CallResponse]) error {
+func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dnsgatev1.CallResponse]) (err error) {
 	msg, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
 		return invalidRequest("the stream ended before a request")
@@ -134,6 +136,8 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 
 	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now(), relay: newRelay(stream)}
 	defer r.relay.close()
+
+	defer func() { g.logRequest(r, operation(req), err) }()
 
 	var resp *dnsgatev1.Response
 
@@ -184,6 +188,40 @@ type request struct {
 	// relay carries the request's Agent Egress connections, inside its
 	// stream, and sends its Response.
 	relay *relay
+}
+
+// logRequest logs, at debug, the request r that ended with err. Like an
+// audit event, the line holds only fields the Gateway produced, never what
+// the client sent.
+func (g *Gateway) logRequest(r *request, op string, err error) {
+	addr := ""
+	if p, ok := peer.FromContext(r.ctx); ok && p.Addr != nil {
+		addr = p.Addr.String()
+	}
+
+	method, _ := grpc.Method(r.ctx)
+
+	g.log.LogAttrs(r.ctx, slog.LevelDebug, "request",
+		slog.String("method", method),
+		slog.String("operation", op),
+		slog.String("request_id", r.id),
+		slog.String("peer", addr),
+		slog.Int64("duration_ms", g.now().Sub(r.start).Milliseconds()),
+		slog.String("code", status.Code(err).String()),
+	)
+}
+
+// operation returns the name of the operation req asks for, such as
+// "list_zones", or "" if it asks for none.
+func operation(req *dnsgatev1.Request) string {
+	m := req.ProtoReflect()
+
+	f := m.WhichOneof(m.Descriptor().Oneofs().ByName("operation"))
+	if f == nil {
+		return ""
+	}
+
+	return string(f.Name())
 }
 
 // newID returns prefix followed by a new ULID.
