@@ -172,6 +172,25 @@ func TestDeniedAndFailedRequestsAreLoggedWithTheirCode(t *testing.T) {
 	}
 }
 
+func TestAtInfoNoRequestLinesAreWritten(t *testing.T) {
+	h := newHarness(t)
+	h.addZones()
+
+	root := h.onboard(t, onboardRequest())
+
+	if err := h.call(t, root, &dnsgatev1.ListZonesRequest{}); err != nil {
+		t.Fatalf("ListZones: %v", err)
+	}
+
+	if err := h.call(t, root+"x", &dnsgatev1.ListZonesRequest{}); err == nil {
+		t.Fatal("ListZones with a tampered token succeeded")
+	}
+
+	if lines := h.requestLines(t); len(lines) != 0 {
+		t.Errorf("request lines at info = %v, want none", lines)
+	}
+}
+
 // TestRequestLinesCarryNoSecrets sends requests carrying the Bootstrap
 // Secret, the Provider Credential and Service Tokens, successful and
 // refused, and checks that no request line carries any of them.
