@@ -34,7 +34,7 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 
 	now := g.now()
 
-	child := token.Claims{
+	derived := token.Claims{
 		Subject:     req.GetSub(),
 		ID:          g.newID(tokenIDPrefix),
 		IssuedAt:    token.NewNumericDate(now),
@@ -47,14 +47,14 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 
 	if req.Expires != nil {
 		exp := token.NewNumericDate(now.Add(req.GetExpires().AsDuration()))
-		child.Expiry = &exp
+		derived.Expiry = &exp
 	}
 
-	if dim, ok := narrows(parent, child); !ok {
+	if dim, ok := narrows(parent, derived); !ok {
 		return nil, g.deny(r, event, narrowingViolation(dim))
 	}
 
-	sealed, err := g.codec.Seal(r.ctx, child)
+	sealed, err := g.codec.Seal(r.ctx, derived)
 	if err != nil {
 		g.log.Error("sealing derived token", "request_id", r.id, "error", err)
 
@@ -63,14 +63,14 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 
 	// A Derived Token whose token.create event is lost would be
 	// untraceable.
-	event.ServiceAccount, event.TokenID, event.Result = child.Subject, child.ID, audit.ResultOK
+	event.ServiceAccount, event.TokenID, event.Result = derived.Subject, derived.ID, audit.ResultOK
 
 	if err := g.writeAudit(r, event); err != nil {
 		return nil, internal()
 	}
 
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_CreateToken{
-		CreateToken: &dnsgatev1.CreateTokenResponse{Token: sealed, Jti: child.ID},
+		CreateToken: &dnsgatev1.CreateTokenResponse{Token: sealed, Jti: derived.ID},
 	}}, nil
 }
 
@@ -96,16 +96,16 @@ func checkCreateTokenRequest(req *dnsgatev1.CreateTokenRequest) error {
 // dimensionExp names the expiry in a narrowing violation.
 const dimensionExp = "exp"
 
-// narrows reports whether child stays within parent (Narrowing), and if
+// narrows reports whether derived stays within parent (Narrowing), and if
 // not, the dimension where it exceeds parent: its expiry, which must be
 // no later than the parent's, or its Permissions, which the parent's
 // must cover.
-func narrows(parent, child token.Claims) (string, bool) {
-	if parent.Expiry != nil && (child.Expiry == nil || *child.Expiry > *parent.Expiry) {
+func narrows(parent, derived token.Claims) (string, bool) {
+	if parent.Expiry != nil && (derived.Expiry == nil || *derived.Expiry > *parent.Expiry) {
 		return dimensionExp, false
 	}
 
-	if dim, ok := permission.Covers(parent.Permissions, child.Permissions); !ok {
+	if dim, ok := permission.Covers(parent.Permissions, derived.Permissions); !ok {
 		return string(dim), false
 	}
 

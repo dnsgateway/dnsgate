@@ -24,23 +24,23 @@ const (
 	DimensionNames     Dimension = "names"
 )
 
-// Covers reports whether the parent Permissions allow everything the child
-// Permissions do, and if not, the first Dimension where a child rule
-// exceeds them.
+// Covers reports whether the parent Permissions allow everything the
+// derived Permissions do, and if not, the first Dimension where a derived
+// rule exceeds them.
 //
-// A filter left out means its default, in the child as in the parent:
-// resources ["records"], any zone, name, type and egress. A child's
-// "any" is covered only by a parent's "any", whether the parent left the
+// A filter left out means its default, in the derived rules as in the
+// parent's: resources ["records"], any zone, name, type and egress. A
+// derived "any" is covered only by a parent's "any", whether the parent left the
 // filter out or spelled it ("*", or names "@" and "**").
 //
-// Each combination of a child rule's verb, resource, egress, zone entry
+// Each combination of a derived rule's verb, resource, egress, zone entry
 // and type entry must be allowed by one parent rule, since a parent rule
 // allows only the combinations of its own entries. Its name patterns may
 // be covered by the name patterns of all those rules together.
-func Covers(parent, child []token.Permission) (Dimension, bool) {
-	for _, c := range child {
-		if d, ok := coversRule(parent, c); !ok {
-			return d, false
+func Covers(parent, derived []token.Permission) (Dimension, bool) {
+	for _, d := range derived {
+		if dim, ok := coversRule(parent, d); !ok {
+			return dim, false
 		}
 	}
 
@@ -50,14 +50,14 @@ func Covers(parent, child []token.Permission) (Dimension, bool) {
 // allNames is the names filter that is left out.
 var allNames = []string{dnsname.Apex, AnyLabels}
 
-func coversRule(parent []token.Permission, c token.Permission) (Dimension, bool) {
-	resources := orDefault(c.Resources, string(ResourceRecords))
-	egress := orDefault(c.Egress, string(EgressGateway), string(EgressAgent))
-	zones := orDefault(c.Zones, wildcard)
-	types := orDefault(c.Types, wildcard)
-	names := orDefault(c.Names, allNames...)
+func coversRule(parent []token.Permission, d token.Permission) (Dimension, bool) {
+	resources := orDefault(d.Resources, string(ResourceRecords))
+	egress := orDefault(d.Egress, string(EgressGateway), string(EgressAgent))
+	zones := orDefault(d.Zones, wildcard)
+	types := orDefault(d.Types, wildcard)
+	names := orDefault(d.Names, allNames...)
 
-	for _, verb := range c.Verbs {
+	for _, verb := range d.Verbs {
 		for _, res := range resources {
 			for _, e := range egress {
 				for _, zone := range zones {
@@ -75,7 +75,7 @@ func coversRule(parent []token.Permission, c token.Permission) (Dimension, bool)
 }
 
 // coversEntries reports whether the parent rules allow names under one
-// verb, resource, egress, zone entry and type entry of a child rule, and
+// verb, resource, egress, zone entry and type entry of a derived rule, and
 // if not, which dimension none of them allows.
 func coversEntries(parent []token.Permission, verb, res, egress, zone, typ string, names []string) (Dimension, bool) {
 	steps := []struct {
@@ -124,24 +124,25 @@ func orDefault(filter []string, def ...string) []string {
 	return filter
 }
 
-// coversName reports whether every record name the name pattern child
+// coversName reports whether every record name the name pattern derived
 // matches is matched by one of patterns, ignoring case. The patterns may
-// cover child only together: "*" and "*.**" cover "**".
+// cover derived only together: "*" and "*.**" cover "**".
 //
 // It decides this exactly. A pattern is a regular language over labels,
 // and a label no pattern names literally is matched by the same wildcards
 // as any other such label, so following the labels the patterns name, plus
-// one they do not, is enough. Every name child may take is followed
-// through all patterns at once, until child ends where none of them does.
-func coversName(patterns []string, child string) bool {
-	c := nameLabels(child)
+// one they do not, is enough. Every name derived may take is followed
+// through all patterns at once, until derived ends where none of them
+// does.
+func coversName(patterns []string, derived string) bool {
+	labels := nameLabels(derived)
 
 	ps := make([][]string, 0, len(patterns))
 	for _, p := range patterns {
 		ps = append(ps, nameLabels(p))
 	}
 
-	alphabet := labelAlphabet(append([][]string{c}, ps...))
+	alphabet := labelAlphabet(append([][]string{labels}, ps...))
 
 	start := make(patternSet, 0, len(ps))
 	for i := range ps {
@@ -160,15 +161,15 @@ func coversName(patterns []string, child string) bool {
 		cur := queue[0]
 		queue = queue[1:]
 
-		if cur.pos == len(c) && !cur.set.accepts(ps) {
+		if cur.pos == len(labels) && !cur.set.accepts(ps) {
 			return false
 		}
 
 		for _, label := range alphabet {
 			next := cur.set.step(ps, label)
 
-			for _, pos := range stepLabel(c, cur.pos, label) {
-				// From any position child can still match a name, so a
+			for _, pos := range stepLabel(labels, cur.pos, label) {
+				// From any position derived can still match a name, so a
 				// name no pattern matches.
 				if len(next) == 0 {
 					return false

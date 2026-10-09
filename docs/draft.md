@@ -152,12 +152,12 @@ Presenting any token that holds `create` on `tokens` lets you issue a **Derived 
 
 **Narrowing**: a Derived Token never exceeds its Parent Token.
 
-- Every Permission dimension (verbs, resources, zones, names, types, egress) must be covered by the parent's Permissions. A filter left out of the child means "any", so it is accepted only if the parent's matching filter is "any" too. A child that leaves out `resources` means `["records"]`.
-- A child can hold `create` on `tokens` only if its parent does.
-- The child's `exp` can be no later than the parent's. A child of a parent with no expiry may also have none; a child of a parent with an expiry must set one.
-- Each combination of a child rule's verb, resource, egress, zone and type must be allowed by one parent rule. Its name patterns may be covered by the name patterns of all those parent rules together: `*` and `*.**` together cover `**`. Pattern containment is decided exactly.
-- A refused child fails as a narrowing violation naming the dimension it exceeds, such as `zones` or `exp`.
-- From v2, a child keeps its parent's Identity Binding and may only add claims to it ([oidc.md](oidc.md)).
+- Every Permission dimension (verbs, resources, zones, names, types, egress) must be covered by the Parent Token's Permissions. A filter left out of the Derived Token means "any", so it is accepted only if the parent's matching filter is "any" too. A Derived Token rule that leaves out `resources` means `["records"]`.
+- A Derived Token can hold `create` on `tokens` only if its parent does.
+- The Derived Token's `exp` can be no later than the parent's. Under a parent with no expiry it may also have none; under a parent with an expiry it must set one.
+- Each combination of a Derived Token rule's verb, resource, egress, zone and type must be allowed by one parent rule. Its name patterns may be covered by the name patterns of all those parent rules together: `*` and `*.**` together cover `**`. Pattern containment is decided exactly.
+- A refused Derived Token fails as a narrowing violation naming the dimension it exceeds, such as `zones` or `exp`.
+- From v2, a Derived Token keeps its parent's Identity Binding and may only add claims to it ([oidc.md](oidc.md)).
 
 Chains can go as deep as the Gateway's `tokens.maxAncestors` setting allows, eight Derived Tokens below the Root Token by default: a token with that many ancestors cannot issue tokens. Each token carries the IDs of all its ancestors in `ancestors`, root first. Issuing writes a `token.create` audit event naming the parent's `jti`, the new `jti` and the new token's Service Account.
 
