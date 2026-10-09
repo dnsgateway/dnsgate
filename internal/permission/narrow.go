@@ -7,7 +7,122 @@ import (
 	"strings"
 
 	"github.com/dnsgateway/dnsgate/internal/dnsname"
+	"github.com/dnsgateway/dnsgate/internal/token"
 )
+
+// Dimension is a part of a Permission, as Narrowing names what exceeds a
+// Parent Token's Permissions.
+type Dimension string
+
+// Permission dimensions, in the order Covers checks them.
+const (
+	DimensionVerbs     Dimension = "verbs"
+	DimensionResources Dimension = "resources"
+	DimensionEgress    Dimension = "egress"
+	DimensionZones     Dimension = "zones"
+	DimensionTypes     Dimension = "types"
+	DimensionNames     Dimension = "names"
+)
+
+// Covers reports whether the parent Permissions allow everything the child
+// Permissions do, and if not, the first Dimension where a child rule
+// exceeds them.
+//
+// A filter left out means its default, in the child as in the parent:
+// resources ["records"], any zone, name, type and egress. A child's
+// "any" is covered only by a parent's "any", whether the parent left the
+// filter out or spelled it ("*", or names "@" and "**").
+//
+// Each combination of a child rule's verb, resource, egress, zone entry
+// and type entry must be allowed by one parent rule, since a parent rule
+// allows only the combinations of its own entries. Its name patterns may
+// be covered by the name patterns of all those rules together.
+func Covers(parent, child []token.Permission) (Dimension, bool) {
+	for _, c := range child {
+		if d, ok := coversRule(parent, c); !ok {
+			return d, false
+		}
+	}
+
+	return "", true
+}
+
+// allNames is the names filter that is left out.
+var allNames = []string{dnsname.Apex, AnyLabels}
+
+func coversRule(parent []token.Permission, c token.Permission) (Dimension, bool) {
+	resources := orDefault(c.Resources, string(ResourceRecords))
+	egress := orDefault(c.Egress, string(EgressGateway), string(EgressAgent))
+	zones := orDefault(c.Zones, wildcard)
+	types := orDefault(c.Types, wildcard)
+	names := orDefault(c.Names, allNames...)
+
+	for _, verb := range c.Verbs {
+		for _, res := range resources {
+			for _, e := range egress {
+				for _, zone := range zones {
+					for _, typ := range types {
+						if d, ok := coversEntries(parent, verb, res, e, zone, typ, names); !ok {
+							return d, false
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return "", true
+}
+
+// coversEntries reports whether the parent rules allow names under one
+// verb, resource, egress, zone entry and type entry of a child rule, and
+// if not, which dimension none of them allows.
+func coversEntries(parent []token.Permission, verb, res, egress, zone, typ string, names []string) (Dimension, bool) {
+	steps := []struct {
+		dim   Dimension
+		allow func(token.Permission) bool
+	}{
+		{DimensionVerbs, func(p token.Permission) bool { return slices.Contains(p.Verbs, verb) }},
+		{DimensionResources, func(p token.Permission) bool {
+			return slices.Contains(orDefault(p.Resources, string(ResourceRecords)), res)
+		}},
+		{DimensionEgress, func(p token.Permission) bool {
+			return matchAny(p.Egress, egress, func(e, v string) bool { return e == v })
+		}},
+		{DimensionZones, func(p token.Permission) bool { return matchAny(p.Zones, zone, matchZone) }},
+		{DimensionTypes, func(p token.Permission) bool { return matchAny(p.Types, typ, matchType) }},
+	}
+
+	rules := parent
+	for _, s := range steps {
+		rules = slices.DeleteFunc(slices.Clone(rules), func(p token.Permission) bool { return !s.allow(p) })
+		if len(rules) == 0 {
+			return s.dim, false
+		}
+	}
+
+	var patterns []string
+	for _, p := range rules {
+		patterns = append(patterns, orDefault(p.Names, allNames...)...)
+	}
+
+	for _, n := range names {
+		if !CoversName(patterns, n) {
+			return DimensionNames, false
+		}
+	}
+
+	return "", true
+}
+
+// orDefault returns filter, or def if filter was left out.
+func orDefault(filter []string, def ...string) []string {
+	if len(filter) == 0 {
+		return def
+	}
+
+	return filter
+}
 
 // CoversName reports whether every record name the name pattern child
 // matches is matched by one of patterns, ignoring case. The patterns may
