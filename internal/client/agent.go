@@ -87,11 +87,12 @@ func forbidden(addr netip.Addr) bool {
 	return false
 }
 
-// connect connects to port of host, as the Gateway asked in a RelayOpen,
-// if the destination rules allow it: port must be 443, and host must
+// connect connects to the destination the Gateway names in o, if the
+// destination rules allow it: the port must be 443, and the host must
 // resolve to no forbidden address. It connects to the first address that
 // answers, by the address it checked rather than by name.
-func (a EgressAgent) connect(ctx context.Context, host string, port uint32) (net.Conn, error) {
+func (a EgressAgent) connect(ctx context.Context, o *dnsgatev1.RelayOpen) (net.Conn, error) {
+	host, port := o.GetHost(), o.GetPort()
 	if port != providerPort {
 		return nil, fmt.Errorf("port %d refused: the egress agent connects to port %d alone", port, providerPort)
 	}
@@ -190,7 +191,7 @@ func (rl *relay) open(o *dnsgatev1.RelayOpen) {
 	rl.wg.Go(func() {
 		id := o.GetId()
 
-		conn, err := rl.agent.connect(rl.ctx, o.GetHost(), o.GetPort())
+		conn, err := rl.agent.connect(rl.ctx, o)
 		if err != nil {
 			_ = rl.send(&dnsgatev1.CallRequest{Message: &dnsgatev1.CallRequest_Opened{
 				Opened: &dnsgatev1.RelayOpened{Id: id, Error: err.Error()},
