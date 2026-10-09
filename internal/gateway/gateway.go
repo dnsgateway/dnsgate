@@ -143,12 +143,13 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now()}
 	defer func() { g.logRequest(r, err) }()
 
-	// A panic fails its request alone, with an internal error.
+	// A panic fails its request alone, with an internal error, and is
+	// audited as such.
 	defer func() {
 		if p := recover(); p != nil {
 			g.logPanic(r, p)
 
-			err = internal()
+			err = g.auditPanic(r)
 		}
 	}()
 
@@ -227,6 +228,11 @@ type request struct {
 	// relay carries the request's Agent Egress connections, inside its
 	// stream, and sends its Response.
 	relay *relay
+	// event, if set, is the audit event of the request as far as it is
+	// filled in, so that a panic can still audit what it knew.
+	event *audit.Event
+	// audited is set once the request's audit event is written.
+	audited bool
 }
 
 // logRequest logs, at debug, the request r, which ended with err. Like
@@ -270,6 +276,54 @@ func (g *Gateway) logPanic(r *request, p any) {
 	)
 }
 
+// operationEvents names the audit event of each operation.
+var operationEvents = map[string]audit.Name{
+	"onboard":       audit.EventOnboard,
+	"inspect_token": audit.EventTokenInspect,
+	"create_token":  audit.EventTokenCreate,
+	"reseal_token":  audit.EventTokenReseal,
+	"revoke_token":  audit.EventTokenRevoke,
+	"list_zones":    audit.EventZonesList,
+	"get_zone":      audit.EventZonesGet,
+	"list_records":  audit.EventRecordsList,
+	"get_record":    audit.EventRecordsGet,
+	"create_record": audit.EventRecordsCreate,
+	"update_record": audit.EventRecordsUpdate,
+	"patch_record":  audit.EventRecordsPatch,
+	"delete_record": audit.EventRecordsDelete,
+}
+
+// auditPanic audits the panicked request r as failed, internal, unless
+// its event is written already or its operation is unknown, and returns
+// the internal error the client gets. The event is the one the request
+// was filling in, if any: a mutation that panics after the Provider
+// changed records is audited with what it knew. A write that panics too
+// is logged as a lost event.
+func (g *Gateway) auditPanic(r *request) (err error) {
+	err = internal()
+
+	if r.audited {
+		return err
+	}
+
+	e := audit.Event{Event: operationEvents[r.operation]}
+	if r.event != nil {
+		e = *r.event
+	}
+
+	if e.Event == "" {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			g.log.Error("audit event lost", "request_id", r.id, "event", e.Event, "panic", fmt.Sprintf("%T", p))
+		}
+	}()
+
+	return g.failed(r, e, err)
+}
+
 // operation returns the name of the operation req asks for, such as
 // "list_zones", or "" if it asks for none.
 func operation(req *dnsgatev1.Request) string {
@@ -298,6 +352,8 @@ func (g *Gateway) writeAudit(r *request, e audit.Event) error {
 	e.DurationMS = g.now().Sub(r.start).Milliseconds()
 
 	err := g.audit.Write(e)
+	r.audited = true
+
 	if err != nil {
 		g.log.Error("audit event lost", "request_id", r.id, "event", e.Event, "error", err)
 	}

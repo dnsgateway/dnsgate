@@ -58,6 +58,7 @@ func (g *Gateway) startDNSCall(r *request, event audit.Name, req tokenRequest, p
 			Event: event, Verb: string(pr.Verb), Zone: pr.Zone, RecordName: pr.Name, RecordType: pr.Type,
 		},
 	}
+	r.event = &c.event
 
 	claims, err := g.openToken(r, c.event, req.GetToken())
 	if err != nil {
