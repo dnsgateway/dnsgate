@@ -314,6 +314,84 @@ func TestCreateTokenStopsAtTheMaximumChainDepth(t *testing.T) {
 	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
 }
 
+func TestCreateTokenIsAuditedWithoutSecrets(t *testing.T) {
+	h := newHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	rootClaims, err := h.client.InspectToken(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.createToken(t, root, "external-dns-prod", appPermissions())
+
+	_, deniedErr := h.client.CreateToken(t.Context(), &dnsgatev1.CreateTokenRequest{
+		Token: resp.GetToken(), Sub: "app", Permissions: appPermissions(),
+	})
+	if deniedErr == nil {
+		t.Fatal("a token without create on tokens issued one")
+	}
+
+	var created, denied []map[string]any
+
+	for _, e := range h.auditEvents(t) {
+		switch {
+		case e["event"] != "token.create":
+		case e["result"] == "ok":
+			created = append(created, e)
+		default:
+			denied = append(denied, e)
+		}
+	}
+
+	if len(created) != 1 || len(denied) != 1 {
+		t.Fatalf("token.create events = %v, %v, want one ok and one denied", created, denied)
+	}
+
+	for field, want := range map[string]any{
+		"time":            "2026-10-08T12:00:00Z",
+		"jti":             resp.GetJti(),
+		"parent_jti":      rootClaims.GetJti(),
+		"service_account": "external-dns-prod",
+		"provider":        "cloudflare",
+		"verb":            "create",
+	} {
+		if created[0][field] != want {
+			t.Errorf("audit %s = %v, want %v", field, created[0][field], want)
+		}
+	}
+
+	if d := denied[0]; d["parent_jti"] != resp.GetJti() || d["category"] != "permission_denied" || d["jti"] != nil {
+		t.Errorf("denied event = %v, want the parent's jti, permission_denied and no new jti", d)
+	}
+
+	for _, s := range []string{cfToken, bootstrapSecret, root, resp.GetToken()} {
+		if strings.Contains(h.audit.String(), s) {
+			t.Errorf("audit log contains a secret:\n%s", h.audit.String())
+		}
+
+		if strings.Contains(deniedErr.Error(), s) {
+			t.Errorf("error %q contains a secret", deniedErr)
+		}
+	}
+}
+
+func TestCreateTokenReturnsNoTokenWhenItsAuditEventIsLost(t *testing.T) {
+	h := newHarnessAuditingTo(t, failingWriter{})
+
+	parent := h.mint(t, nil, token.Permission{Verbs: []string{"create", "get"}, Resources: []string{"tokens", "records"}})
+
+	resp, err := h.client.CreateToken(t.Context(), &dnsgatev1.CreateTokenRequest{
+		Token: parent, Sub: "app", Permissions: []*dnsgatev1.Permission{{Verbs: []string{"get"}}},
+	})
+	wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+	if resp.GetToken() != "" {
+		t.Error("a Derived Token was returned without its audit event")
+	}
+}
+
 func TestCreateTokenRejectsMalformedRequests(t *testing.T) {
 	h := newHarness(t)
 
