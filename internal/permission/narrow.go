@@ -52,7 +52,7 @@ var allNames = []string{dnsname.Apex, AnyLabels}
 
 func coversRule(parent []token.Permission, d token.Permission) (Dimension, bool) {
 	resources := orDefault(d.Resources, string(ResourceRecords))
-	egress := orDefault(d.Egress, string(EgressGateway), string(EgressAgent))
+	egress := orDefault(d.Egress, asStrings(egresses)...)
 	zones := orDefault(d.Zones, wildcard)
 	types := orDefault(d.Types, wildcard)
 	names := orDefault(d.Names, allNames...)

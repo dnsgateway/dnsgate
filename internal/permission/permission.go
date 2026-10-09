@@ -28,6 +28,9 @@ const (
 	VerbDelete Verb = "delete"
 )
 
+// verbs are the known Verbs.
+var verbs = []Verb{VerbGet, VerbList, VerbCreate, VerbUpdate, VerbPatch, VerbDelete}
+
 // Resource is what a request is about, as a rule's resources name it.
 type Resource string
 
@@ -38,6 +41,9 @@ const (
 	ResourceTokens  Resource = "tokens"
 )
 
+// resources are the known Resources.
+var resources = []Resource{ResourceZones, ResourceRecords, ResourceTokens}
+
 // Egress is where the connection to the Provider leaves from, as a rule's
 // egress filter names it. The empty Egress is none in particular.
 type Egress string
@@ -47,6 +53,10 @@ const (
 	EgressGateway Egress = "gateway"
 	EgressAgent   Egress = "agent"
 )
+
+// egresses are the known Egress values, in the order ChooseEgress prefers
+// them.
+var egresses = []Egress{EgressGateway, EgressAgent}
 
 // apiEgress maps each Egress to the API's.
 var apiEgress = map[Egress]dnsgatev1.Egress{
@@ -81,10 +91,6 @@ func EgressFromAPI(a dnsgatev1.Egress) (Egress, bool) {
 // other labels. Its message never quotes the rule: it may come from a
 // client.
 func Check(perms []token.Permission) error {
-	verbs := []Verb{VerbGet, VerbList, VerbCreate, VerbUpdate, VerbPatch, VerbDelete}
-	resources := []Resource{ResourceZones, ResourceRecords, ResourceTokens}
-	egress := []Egress{EgressGateway, EgressAgent}
-
 	for _, p := range perms {
 		switch {
 		case len(p.Verbs) == 0:
@@ -93,7 +99,7 @@ func Check(perms []token.Permission) error {
 			return errors.New("a permission names an unknown verb")
 		case !allKnown(p.Resources, resources):
 			return errors.New("a permission names an unknown resource")
-		case !allKnown(p.Egress, egress):
+		case !allKnown(p.Egress, egresses):
 			return errors.New("a permission names an unknown egress")
 		case slices.Contains(p.Zones, ""):
 			return errors.New("a permission names an empty zone")
@@ -105,6 +111,16 @@ func Check(perms []token.Permission) error {
 	}
 
 	return nil
+}
+
+// asStrings returns values as strings.
+func asStrings[T ~string](values []T) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, string(v))
+	}
+
+	return out
 }
 
 // allKnown reports whether every value is one of known.
@@ -157,7 +173,7 @@ func Allows(perms []token.Permission, r Request) bool {
 // Egress: a token limited to Agent Egress never falls back to Gateway
 // Egress.
 func ChooseEgress(perms []token.Permission, r Request) (Egress, bool) {
-	choices := []Egress{EgressGateway, EgressAgent}
+	choices := egresses
 	if r.Egress != "" {
 		choices = []Egress{r.Egress}
 	}
