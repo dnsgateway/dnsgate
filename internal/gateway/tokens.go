@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"time"
+
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
@@ -24,6 +26,10 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 		return nil, g.deny(r, event, permissionDenied("the token's permissions do not allow issuing tokens"))
 	}
 
+	if req.Expires != nil && req.GetExpires().AsDuration() < time.Second {
+		return nil, g.deny(r, event, invalidRequest("expires must be at least one second"))
+	}
+
 	now := g.now()
 
 	child := token.Claims{
@@ -35,6 +41,15 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 		Provider:    parent.Provider,
 		Credential:  parent.Credential,
 		Permissions: permissionsFromAPI(req.GetPermissions()),
+	}
+
+	if req.Expires != nil {
+		exp := token.NewNumericDate(now.Add(req.GetExpires().AsDuration()))
+		child.Expiry = &exp
+	}
+
+	if dim, ok := narrows(parent, child); !ok {
+		return nil, g.deny(r, event, narrowingViolation(dim))
 	}
 
 	sealed, err := g.codec.Seal(r.ctx, child)
@@ -55,6 +70,25 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_CreateToken{
 		CreateToken: &dnsgatev1.CreateTokenResponse{Token: sealed, Jti: child.ID},
 	}}, nil
+}
+
+// dimensionExp names the expiry in a narrowing violation.
+const dimensionExp = "exp"
+
+// narrows reports whether child stays within parent (Narrowing), and if
+// not, the dimension where it exceeds parent: its expiry, which must be
+// no later than the parent's, or its Permissions, which the parent's
+// must cover.
+func narrows(parent, child token.Claims) (string, bool) {
+	if parent.Expiry != nil && (child.Expiry == nil || *child.Expiry > *parent.Expiry) {
+		return dimensionExp, false
+	}
+
+	if dim, ok := permission.Covers(parent.Permissions, child.Permissions); !ok {
+		return string(dim), false
+	}
+
+	return "", true
 }
 
 func permissionsFromAPI(perms []*dnsgatev1.Permission) []token.Permission {

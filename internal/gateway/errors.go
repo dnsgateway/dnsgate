@@ -26,6 +26,14 @@ func permissionDenied(msg string) error {
 	return statusError(codes.PermissionDenied, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_PERMISSION_DENIED}, msg)
 }
 
+// narrowingViolation is the error of a Derived Token that would exceed its
+// Parent Token in dimension, such as "zones" or "exp".
+func narrowingViolation(dimension string) error {
+	return statusError(codes.PermissionDenied,
+		&dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_NARROWING_VIOLATION, Dimension: dimension},
+		"the token would exceed its parent token in "+dimension)
+}
+
 func agentEgressNotSupported() error {
 	return statusError(codes.Unimplemented, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED}, "agent egress is not supported yet")
 }

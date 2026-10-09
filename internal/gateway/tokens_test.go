@@ -4,8 +4,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/token"
@@ -109,6 +112,141 @@ func TestOnlyATokenWithCreateOnTokensIssuesTokens(t *testing.T) {
 		if e["event"] != "token.create" || e["result"] != "denied" {
 			t.Errorf("audit event = %v, want a denied token.create", e)
 		}
+	}
+}
+
+// wantNarrowingViolation checks that err is a narrowing violation naming
+// dimension.
+func wantNarrowingViolation(t *testing.T, err error, dimension string) {
+	t.Helper()
+
+	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_NARROWING_VIOLATION)
+
+	if got := dnsgatev1.ErrorDetail(status.Convert(err)).GetDimension(); got != dimension {
+		t.Errorf("dimension = %q, want %q", got, dimension)
+	}
+}
+
+func TestCreateTokenRejectsWiderPermissions(t *testing.T) {
+	h := newHarness(t)
+
+	parent := h.createToken(t, h.onboard(t, onboardRequest()), "intermediate", []*dnsgatev1.Permission{
+		{Verbs: []string{"create"}, Resources: []string{"tokens"}},
+		appPermissions()[0],
+	}).GetToken()
+
+	for dimension, perm := range map[string]*dnsgatev1.Permission{
+		"verbs":     {Verbs: []string{"get", "delete"}, Zones: []string{"example.com"}, Names: []string{"**.apps"}, Types: []string{"A"}, Egress: []string{"gateway"}},
+		"resources": {Verbs: []string{"get"}, Resources: []string{"zones"}, Egress: []string{"gateway"}},
+		"egress":    {Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"**.apps"}, Types: []string{"A"}},
+		"zones":     {Verbs: []string{"get"}, Zones: []string{"*"}, Names: []string{"**.apps"}, Types: []string{"A"}, Egress: []string{"gateway"}},
+		"types":     {Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"**.apps"}, Egress: []string{"gateway"}},
+		"names":     {Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"@"}, Types: []string{"A"}, Egress: []string{"gateway"}},
+	} {
+		t.Run(dimension, func(t *testing.T) {
+			resp, err := h.client.CreateToken(t.Context(), &dnsgatev1.CreateTokenRequest{
+				Token: parent, Sub: "app", Permissions: []*dnsgatev1.Permission{perm},
+			})
+			wantNarrowingViolation(t, err, dimension)
+
+			if resp.GetToken() != "" {
+				t.Error("a token was returned")
+			}
+		})
+	}
+
+	t.Run("create on tokens with a parent that has it", func(t *testing.T) {
+		h.createToken(t, parent, "app", []*dnsgatev1.Permission{{Verbs: []string{"create"}, Resources: []string{"tokens"}}})
+	})
+
+	t.Run("delete on tokens with a parent that has only create", func(t *testing.T) {
+		_, err := h.client.CreateToken(t.Context(), &dnsgatev1.CreateTokenRequest{
+			Token: parent, Sub: "app", Permissions: []*dnsgatev1.Permission{{Verbs: []string{"create", "delete"}, Resources: []string{"tokens"}}},
+		})
+		wantNarrowingViolation(t, err, "verbs")
+	})
+}
+
+func TestCreateTokenRejectsALaterExpiry(t *testing.T) {
+	h := newHarness(t)
+
+	req := onboardRequest()
+	req.Expires = durationpb.New(48 * time.Hour)
+	expiring := h.onboard(t, req)
+	forever := h.onboard(t, onboardRequest())
+
+	create := func(parent string, expires *durationpb.Duration) (*dnsgatev1.CreateTokenResponse, error) {
+		return h.client.CreateToken(t.Context(), &dnsgatev1.CreateTokenRequest{
+			Token: parent, Sub: "app", Permissions: appPermissions(), Expires: expires,
+		})
+	}
+
+	exp := func(t *testing.T, resp *dnsgatev1.CreateTokenResponse) *time.Time {
+		t.Helper()
+
+		got, err := h.client.InspectToken(t.Context(), resp.GetToken())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got.Exp == nil {
+			return nil
+		}
+
+		e := got.GetExp().AsTime()
+
+		return &e
+	}
+
+	t.Run("earlier", func(t *testing.T) {
+		resp, err := create(expiring, durationpb.New(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := exp(t, resp); got == nil || !got.Equal(h.now.Add(time.Hour)) {
+			t.Errorf("exp = %v, want in an hour", got)
+		}
+	})
+
+	t.Run("equal", func(t *testing.T) {
+		if _, err := create(expiring, durationpb.New(48*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("later", func(t *testing.T) {
+		_, err := create(expiring, durationpb.New(48*time.Hour+time.Second))
+		wantNarrowingViolation(t, err, "exp")
+	})
+
+	t.Run("none, with a parent that expires", func(t *testing.T) {
+		_, err := create(expiring, nil)
+		wantNarrowingViolation(t, err, "exp")
+	})
+
+	t.Run("none, with a parent that never expires", func(t *testing.T) {
+		resp, err := create(forever, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := exp(t, resp); got != nil {
+			t.Errorf("exp = %v, want none", got)
+		}
+	})
+
+	t.Run("any, with a parent that never expires", func(t *testing.T) {
+		if _, err := create(forever, durationpb.New(24*365*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	for name, d := range map[string]time.Duration{"zero": 0, "negative": -time.Hour, "under a second": time.Millisecond} {
+		t.Run(name, func(t *testing.T) {
+			_, err := create(forever, durationpb.New(d))
+			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
+		})
 	}
 }
 
