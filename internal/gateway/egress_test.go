@@ -468,3 +468,61 @@ func statusField(s int32) any {
 
 	return float64(s)
 }
+
+func TestGatewayEgressFailsOnABadProviderCertificate(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cert providerCert
+		ok   bool
+	}{
+		// The trusted certificate shows the failures below come from the
+		// certificate alone.
+		"trusted":      {trustedCert, true},
+		"untrusted CA": {untrustedCert, false},
+		"wrong host":   {wrongHostCert, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cf := newFakeCloudflare()
+
+			srv, trusted := cf.unstartedServer(t, tc.cert)
+			srv.StartTLS()
+			t.Cleanup(srv.Close)
+
+			h := newHarness(t)
+			h.providers = provider.Registry()
+			h.egress = cf.gatewayTransport(srv, trusted)
+			h.serve(t, h.keys)
+
+			root := h.onboard(t, onboardRequest())
+
+			_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: root, Zone: "example.com"})
+
+			cf.mu.Lock()
+			dialed, seen := len(cf.dialed), len(cf.seen)
+			cf.mu.Unlock()
+
+			if dialed == 0 {
+				t.Fatal("Gateway Egress dialed nothing")
+			}
+
+			if tc.ok {
+				if err != nil {
+					t.Fatalf("ListRecords: %v", err)
+				}
+
+				return
+			}
+
+			wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
+
+			// The handshake failed before any request, so the Provider
+			// Credential never left the Gateway.
+			if seen != 0 {
+				t.Errorf("Cloudflare got %d requests, want none", seen)
+			}
+
+			if e := h.auditEvents(t); e[len(e)-1]["result"] != "failed" || e[len(e)-1]["egress"] != "gateway" {
+				t.Errorf("audit event = %v, want a failed request through gateway egress", e[len(e)-1])
+			}
+		})
+	}
+}

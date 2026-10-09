@@ -208,22 +208,7 @@ func newAgentHarness(t *testing.T, cert providerCert) *agentHarness {
 	t.Helper()
 
 	cf := newFakeCloudflare()
-
-	trusted := newTestCA(t)
-
-	issuer, host := trusted, cloudflareHost
-
-	switch cert {
-	case trustedCert:
-	case untrustedCert:
-		issuer = newTestCA(t)
-	case wrongHostCert:
-		host = "api.example.net"
-	}
-
-	srv := httptest.NewUnstartedServer(cf.handler())
-	srv.TLS = &tls.Config{Certificates: []tls.Certificate{issuer.issue(t, host)}, MinVersion: tls.VersionTLS12}
-	srv.Config.ErrorLog = log.New(io.Discard, "", 0) // failed handshakes are expected
+	srv, trusted := cf.unstartedServer(t, cert)
 
 	ah := &agentHarness{cf: cf, srv: srv}
 	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
@@ -242,14 +227,38 @@ func newAgentHarness(t *testing.T, cert providerCert) *agentHarness {
 
 	h := newHarness(t)
 	h.providers = provider.Registry()
-	h.egress = cf.gatewayTransport(srv, trusted.pool)
-	h.agentRoots = trusted.pool
+	h.egress = cf.gatewayTransport(srv, trusted)
+	h.agentRoots = trusted
 	h.agent = &client.EgressAgent{Resolver: an, Dialer: an}
 	h.serve(t, h.keys)
 
 	ah.harness, ah.net = h, an
 
 	return ah
+}
+
+// unstartedServer returns the fake Cloudflare, not yet started, serving
+// TLS with cert, and the pool of the CA the Gateway trusts.
+func (cf *fakeCloudflare) unstartedServer(t *testing.T, cert providerCert) (*httptest.Server, *x509.CertPool) {
+	t.Helper()
+
+	trusted := newTestCA(t)
+
+	issuer, host := trusted, cloudflareHost
+
+	switch cert {
+	case trustedCert:
+	case untrustedCert:
+		issuer = newTestCA(t)
+	case wrongHostCert:
+		host = "api.example.net"
+	}
+
+	srv := httptest.NewUnstartedServer(cf.handler())
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{issuer.issue(t, host)}, MinVersion: tls.VersionTLS12}
+	srv.Config.ErrorLog = log.New(io.Discard, "", 0) // failed handshakes are expected
+
+	return srv, trusted.pool
 }
 
 // gatewayTransport is a Gateway Egress Transport that dials srv for
