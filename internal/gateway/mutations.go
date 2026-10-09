@@ -37,26 +37,13 @@ func (g *Gateway) startMutation(r *request, event audit.Name, verb permission.Ve
 // createRecord creates an RRset the zone does not hold yet. The token
 // needs create on records for its zone, name and type.
 func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (*dnsgatev1.Response, error) {
-	c, err := g.startMutation(r, audit.EventRecordsCreate, permission.VerbCreate, req)
-	if err != nil {
-		return nil, err
-	}
+	set, err := g.setRecord(r, audit.EventRecordsCreate, permission.VerbCreate, req, func(current []dnsprovider.Record) error {
+		if len(current) > 0 {
+			return alreadyExists("the record set already exists: update or patch it")
+		}
 
-	target, err := c.checkRecords(req.GetTtl(), req.GetValues())
-	if err != nil {
-		return nil, g.fail(c, err)
-	}
-
-	zone, current, err := g.readRRset(c)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(current) > 0 {
-		return nil, g.fail(c, alreadyExists("the record set already exists: update or patch it"))
-	}
-
-	set, err := g.apply(c, zone, current, target)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +57,38 @@ func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (
 // request's values. The token needs update on records for its zone, name
 // and type.
 func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (*dnsgatev1.Response, error) {
-	c, err := g.startMutation(r, audit.EventRecordsUpdate, permission.VerbUpdate, req)
+	set, err := g.setRecord(r, audit.EventRecordsUpdate, permission.VerbUpdate, req, func(current []dnsprovider.Record) error {
+		if len(current) == 0 {
+			return notFound("no such record set: create it")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnsgatev1.Response{Result: &dnsgatev1.Response_UpdateRecord{
+		UpdateRecord: &dnsgatev1.UpdateRecordResponse{RecordSet: set},
+	}}, nil
+}
+
+// setRecordRequest is a create or update: it gives every value, and the
+// TTL, of the RRset it names.
+type setRecordRequest interface {
+	recordRequest
+	GetTtl() uint32
+	GetValues() []string
+}
+
+// setRecord makes the RRset req names hold one record per value of req,
+// and no other, for verb, and returns it as the Provider holds it after.
+// guard refuses, with the error it returns, the RRset the zone holds
+// before.
+func (g *Gateway) setRecord(
+	r *request, event audit.Name, verb permission.Verb, req setRecordRequest, guard func(current []dnsprovider.Record) error,
+) (*dnsgatev1.RecordSet, error) {
+	c, err := g.startMutation(r, event, verb, req)
 	if err != nil {
 		return nil, err
 	}
@@ -85,18 +103,11 @@ func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (
 		return nil, err
 	}
 
-	if len(current) == 0 {
-		return nil, g.fail(c, notFound("no such record set: create it"))
+	if err := guard(current); err != nil {
+		return nil, g.fail(c, err)
 	}
 
-	set, err := g.apply(c, zone, current, target)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dnsgatev1.Response{Result: &dnsgatev1.Response_UpdateRecord{
-		UpdateRecord: &dnsgatev1.UpdateRecordResponse{RecordSet: set},
-	}}, nil
+	return g.apply(c, zone, current, target)
 }
 
 // patchRecord adds values to an RRset and removes others, leaving the
