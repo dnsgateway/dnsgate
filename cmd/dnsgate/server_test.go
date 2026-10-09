@@ -50,7 +50,7 @@ func TestServerHelpDocumentsTheLogLevel(t *testing.T) {
 		t.Errorf("server help does not say what --log-level drops:\n%s", out)
 	}
 
-	if !strings.Contains(out, "At debug, each request is logged when it ends, with its request ID, peer address, duration and gRPC code.") {
+	if !strings.Contains(out, "At debug, each request is logged when it ends, with its gRPC method, operation, request ID, peer address, duration and gRPC code.") {
 		t.Errorf("server help does not say that debug logs each request:\n%s", out)
 	}
 
