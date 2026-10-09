@@ -123,19 +123,10 @@ func newRecordCreateCmd(flags *Flags) *cobra.Command {
 }
 
 func runRecordCreate(ctx context.Context, out io.Writer, f *Flags, name, typ string, values []string) error {
-	egress, err := checkRecordWriteFlags(f)
-	if err != nil {
-		return err
-	}
-
-	resp, err := callGateway(ctx, f, "record create", (*client.Client).CreateRecord, &dnsgatev1.CreateRecordRequest{
-		Token: f.Token, Egress: egress, Zone: f.Zone, Name: name, Type: typ, Ttl: f.TTL, Values: values,
-	})
-	if err != nil {
-		return err
-	}
-
-	return printJSON(out, newRecordSetOutput(resp.GetRecordSet()))
+	return runRecordWrite(ctx, out, f, "record create", (*client.Client).CreateRecord,
+		func(egress dnsgatev1.Egress) *dnsgatev1.CreateRecordRequest {
+			return &dnsgatev1.CreateRecordRequest{Token: f.Token, Egress: egress, Zone: f.Zone, Name: name, Type: typ, Ttl: f.TTL, Values: values}
+		})
 }
 
 func newRecordUpdateCmd(flags *Flags) *cobra.Command {
@@ -157,14 +148,24 @@ func newRecordUpdateCmd(flags *Flags) *cobra.Command {
 }
 
 func runRecordUpdate(ctx context.Context, out io.Writer, f *Flags, name, typ string, values []string) error {
+	return runRecordWrite(ctx, out, f, "record update", (*client.Client).UpdateRecord,
+		func(egress dnsgatev1.Egress) *dnsgatev1.UpdateRecordRequest {
+			return &dnsgatev1.UpdateRecordRequest{Token: f.Token, Egress: egress, Zone: f.Zone, Name: name, Type: typ, Ttl: f.TTL, Values: values}
+		})
+}
+
+// runRecordWrite runs "record create" or "record update", cmd: it checks
+// their flags, sends the request newReq makes for the Egress asked for
+// with op, and prints the RRset the Gateway answers with.
+func runRecordWrite[A any, R interface{ GetRecordSet() *dnsgatev1.RecordSet }](
+	ctx context.Context, out io.Writer, f *Flags, cmd string, op func(*client.Client, context.Context, A) (R, error), newReq func(dnsgatev1.Egress) A,
+) error {
 	egress, err := checkRecordWriteFlags(f)
 	if err != nil {
 		return err
 	}
 
-	resp, err := callGateway(ctx, f, "record update", (*client.Client).UpdateRecord, &dnsgatev1.UpdateRecordRequest{
-		Token: f.Token, Egress: egress, Zone: f.Zone, Name: name, Type: typ, Ttl: f.TTL, Values: values,
-	})
+	resp, err := callGateway(ctx, f, cmd, op, newReq(egress))
 	if err != nil {
 		return err
 	}
