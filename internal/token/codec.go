@@ -87,10 +87,17 @@ type wireCredential struct {
 // Seal adds the iss and aud claims, signs claims with the current signing
 // key and encrypts the result to the current encryption key.
 func (c *Codec) Seal(ctx context.Context, claims Claims) (string, error) {
+	return c.SealAs(ctx, claims, Issuer, Audience)
+}
+
+// SealAs seals claims like Seal, with iss and aud as given. It is for
+// tests of the iss and aud checks: the Gateway never mints such tokens,
+// and Open refuses them.
+func (c *Codec) SealAs(ctx context.Context, claims Claims, iss, aud string) (string, error) {
 	return c.seal(ctx, wireClaims{
 		Claims:     claims,
-		Issuer:     Issuer,
-		Audience:   Audience,
+		Issuer:     iss,
+		Audience:   aud,
 		Credential: wireCredential{Type: claims.Credential.Type, Value: claims.Credential.Value.Reveal()},
 	})
 }

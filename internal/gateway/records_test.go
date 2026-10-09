@@ -51,6 +51,14 @@ func (h *harness) providerCalls() []providertest.Op {
 func (h *harness) mint(t *testing.T, edit func(*token.Claims), perms ...token.Permission) string {
 	t.Helper()
 
+	return h.mintAs(t, token.Issuer, token.Audience, edit, perms...)
+}
+
+// mintAs is mint with the iss and aud claims as given, for tokens the
+// Gateway never mints.
+func (h *harness) mintAs(t *testing.T, iss, aud string, edit func(*token.Claims), perms ...token.Permission) string {
+	t.Helper()
+
 	claims := token.Claims{
 		Subject:     "app",
 		ID:          "tok_01TESTAPP",
@@ -66,7 +74,7 @@ func (h *harness) mint(t *testing.T, edit func(*token.Claims), perms ...token.Pe
 		edit(&claims)
 	}
 
-	sealed, err := token.NewCodec(h.keys, token.WithClock(func() time.Time { return h.now })).Seal(t.Context(), claims)
+	sealed, err := token.NewCodec(h.keys, token.WithClock(func() time.Time { return h.now })).SealAs(t.Context(), claims, iss, aud)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,6 +357,8 @@ func TestInvalidTokensAreRejectedBeforeTheProvider(t *testing.T) {
 		c.Expiry = &exp
 	}, full)
 	notYetValid := h.mint(t, func(c *token.Claims) { c.NotBefore = token.NewNumericDate(h.now.Add(time.Hour)) }, full)
+	wrongIssuer := h.mintAs(t, "another-gateway", token.Audience, nil, full)
+	wrongAudience := h.mintAs(t, token.Issuer, "another-service", nil, full)
 
 	// A token of another Gateway: same kids, different keys.
 	other := newHarness(t)
@@ -362,12 +372,14 @@ func TestInvalidTokensAreRejectedBeforeTheProvider(t *testing.T) {
 	h.now = h.now.Add(time.Minute)
 
 	for name, tok := range map[string]string{
-		"empty":         "",
-		"garbage":       "not-a-token",
-		"tampered":      tampered,
-		"foreign":       foreign,
-		"expired":       expiring,
-		"not yet valid": notYetValid,
+		"empty":          "",
+		"garbage":        "not-a-token",
+		"tampered":       tampered,
+		"foreign":        foreign,
+		"expired":        expiring,
+		"not yet valid":  notYetValid,
+		"wrong issuer":   wrongIssuer,
+		"wrong audience": wrongAudience,
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, req := range []any{
