@@ -154,9 +154,9 @@ type runningGateway struct {
 
 var listenAddr = regexp.MustCompile(`"address":"([^"]+)"`)
 
-// startServer runs "dnsgate server --config" until the test ends and waits
-// for it to log its listen address.
-func startServer(t *testing.T, config string) *runningGateway {
+// startServer runs "dnsgate server --config" with args until the test ends
+// and waits for it to log its listen address.
+func startServer(t *testing.T, config string, args ...string) *runningGateway {
 	t.Helper()
 
 	gw := &runningGateway{audit: &syncBuffer{}, logs: &syncBuffer{}}
@@ -164,7 +164,7 @@ func startServer(t *testing.T, config string) *runningGateway {
 	cmd := newRootCmd()
 	cmd.SetOut(gw.audit)
 	cmd.SetErr(gw.logs)
-	cmd.SetArgs([]string{"server", "--config", config})
+	cmd.SetArgs(append([]string{"server", "--config", config}, args...))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

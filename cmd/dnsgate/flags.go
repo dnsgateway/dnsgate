@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ const (
 	flagKeyDir          = "key-dir"
 	flagKeyIDSuffix     = "key-id-suffix"
 	flagConfig          = "config"
+	flagLogLevel        = "log-level"
 	flagGateway         = "gateway"
 	flagCAFile          = "ca-file"
 	flagToken           = "token"
@@ -35,6 +37,7 @@ const (
 	envKeyDir          = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
 	envConfig          = "DNSGATE_CONFIG"
+	envLogLevel        = "DNSGATE_LOG_LEVEL"
 	envGateway         = "DNSGATE_GATEWAY"
 	envCAFile          = "DNSGATE_CA_FILE"
 	envToken           = "DNSGATE_TOKEN"
@@ -48,6 +51,7 @@ const (
 	defaultKeyDir      = "keys"
 	defaultKeyIDSuffix = ""
 	defaultConfig      = "dnsgate.yaml"
+	defaultLogLevel    = "info"
 	defaultGateway     = "localhost:8443"
 )
 
@@ -62,7 +66,8 @@ type Flags struct {
 	KeyDir      string
 	KeyIDSuffix string
 
-	Config string
+	Config   string
+	LogLevel string
 
 	Gateway string
 	CAFile  string
@@ -91,6 +96,7 @@ func DefaultFlags() *Flags {
 		KeyDir:          withDefaultEnv(envKeyDir, defaultKeyDir),
 		KeyIDSuffix:     withDefaultEnv(envKeyIDSuffix, defaultKeyIDSuffix),
 		Config:          withDefaultEnv(envConfig, defaultConfig),
+		LogLevel:        withDefaultEnv(envLogLevel, defaultLogLevel),
 		Gateway:         withDefaultEnv(envGateway, defaultGateway),
 		CAFile:          withDefaultEnv(envCAFile, ""),
 		Token:           withDefaultEnv(envToken, ""),
@@ -113,6 +119,30 @@ func (f *Flags) AddKeysGenerateFlags(flags *pflag.FlagSet) {
 func (f *Flags) AddServerFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Config, flagConfig, "", f.Config,
 		"Gateway configuration file (env "+envConfig+")")
+	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
+		"lowest level of the logs written: "+strings.Join(logLevelNames, ", ")+" (env "+envLogLevel+")")
+}
+
+// logLevelNames are the accepted --log-level values, most severe first.
+var logLevelNames = []string{"error", "warn", "info", "debug"}
+
+// logLevels maps each accepted --log-level value to its slog level.
+var logLevels = map[string]slog.Level{
+	"error": slog.LevelError,
+	"warn":  slog.LevelWarn,
+	"info":  slog.LevelInfo,
+	"debug": slog.LevelDebug,
+}
+
+// checkServerFlags checks the flags of "server" and returns the log level
+// asked for.
+func checkServerFlags(f *Flags) (slog.Level, error) {
+	level, ok := logLevels[f.LogLevel]
+	if !ok {
+		return 0, errors.New(`unknown log level "` + f.LogLevel + `": use ` + strings.Join(logLevelNames, ", "))
+	}
+
+	return level, nil
 }
 
 // AddClientFlags registers the flags of every command that calls the

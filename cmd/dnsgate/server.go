@@ -64,6 +64,11 @@ func newServerCmd(flags *Flags) *cobra.Command {
 // Any configuration problem, such as a missing or loosely permitted key
 // file, stops it before it listens.
 func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error {
+	level, err := checkServerFlags(f)
+	if err != nil {
+		return err
+	}
+
 	cfg, err := config.Load(f.Config)
 	if err != nil {
 		return err
@@ -84,7 +89,8 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		return fmt.Errorf("loading TLS certificate: %w", err)
 	}
 
-	log := slog.New(slog.NewJSONHandler(logOut, nil))
+	log := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: level}))
+	log.Debug("loaded config", "file", f.Config, "listen", cfg.Listen)
 
 	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{cert},
