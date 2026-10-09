@@ -38,10 +38,12 @@ type Result string
 
 // Results.
 const (
-	ResultOK     Result = "ok"
+	ResultOK Result = "ok"
+	// ResultDenied is a request outside the Permissions, or one refused
+	// before they were checked, such as for a token that does not open.
 	ResultDenied Result = "denied"
-	// ResultFailed is a request the Gateway allowed and the Provider
-	// failed.
+	// ResultFailed is a request the Permissions allowed that then failed:
+	// malformed records, or a Provider error.
 	ResultFailed Result = "failed"
 )
 

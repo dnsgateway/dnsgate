@@ -185,8 +185,8 @@ func TestMalformedRecordsAreRefusedBeforeTheProvider(t *testing.T) {
 			}
 
 			events := h.auditEvents(t)[1:]
-			if len(events) != 1 || events[0]["event"] != "records.create" || events[0]["result"] != "denied" || events[0]["category"] != tc.category.Name() {
-				t.Errorf("audit events = %v, want one denied records.create, category %s", events, tc.category.Name())
+			if len(events) != 1 || events[0]["event"] != "records.create" || events[0]["result"] != "failed" || events[0]["category"] != tc.category.Name() {
+				t.Errorf("audit events = %v, want one failed records.create, category %s", events, tc.category.Name())
 			}
 		})
 	}
@@ -426,8 +426,8 @@ func TestMalformedPatchesAreRefused(t *testing.T) {
 			wantChangesets(t, h)
 
 			events := h.auditEvents(t)[1:]
-			if len(events) != 1 || events[0]["event"] != "records.patch" || events[0]["result"] != "denied" || events[0]["category"] != tc.category.Name() {
-				t.Errorf("audit events = %v, want one denied records.patch, category %s", events, tc.category.Name())
+			if len(events) != 1 || events[0]["event"] != "records.patch" || events[0]["result"] != "failed" || events[0]["category"] != tc.category.Name() {
+				t.Errorf("audit events = %v, want one failed records.patch, category %s", events, tc.category.Name())
 			}
 		})
 	}
