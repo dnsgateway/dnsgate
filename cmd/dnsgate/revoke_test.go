@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const adminPermissionsYAML = `permissions:
+const issuingPermissionsYAML = `permissions:
   - verbs: [create, delete]
     resources: [tokens]
   - verbs: [get, list]
@@ -65,7 +65,7 @@ func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
 	env := newGatewayEnv(t)
 	gw := startServer(t, env.config)
 
-	root, tokens := onboardAndIssue(t, env, gw, adminPermissionsYAML, "by-id", "by-token", "by-stdin", "kept")
+	root, tokens := onboardAndIssue(t, env, gw, issuingPermissionsYAML, "by-id", "by-token", "by-stdin", "kept")
 	byID, byToken, byStdin, kept := tokens[0], tokens[1], tokens[2], tokens[3]
 	byIDJti := jti(t, env, gw, byID)
 

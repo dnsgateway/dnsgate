@@ -12,9 +12,9 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
-// adminPermissions may issue and revoke tokens, and read and change
+// issuingPermissions may issue and revoke tokens, and read and change
 // every record.
-func adminPermissions() []*dnsgatev1.Permission {
+func issuingPermissions() []*dnsgatev1.Permission {
 	return []*dnsgatev1.Permission{
 		{Verbs: []string{"create", "delete"}, Resources: []string{"tokens"}},
 		{Verbs: []string{"get", "list", "create", "update", "patch", "delete"}},
@@ -114,28 +114,31 @@ func TestRevokingAParentRevokesEveryDescendant(t *testing.T) {
 	h := newHarness(t)
 	h.addZones()
 
+	// parent is the Parent Token of a chain of Derived Tokens, each derived
+	// from the one before; other is derived from the same Root Token, and
+	// otherDerived from other.
 	root := h.onboard(t, onboardRequest())
-	admin := h.createToken(t, root, "admin", adminPermissions())
-	sibling := h.createToken(t, root, "sibling", adminPermissions())
-	team := h.createToken(t, admin.GetToken(), "team", adminPermissions())
-	app := h.createToken(t, team.GetToken(), "app", adminPermissions())
-	leaf := h.createToken(t, app.GetToken(), "leaf", recordPermissions())
-	cousin := h.createToken(t, sibling.GetToken(), "cousin", recordPermissions())
+	parent := h.createToken(t, root, "parent", issuingPermissions())
+	other := h.createToken(t, root, "other", issuingPermissions())
+	derived := h.createToken(t, parent.GetToken(), "derived", issuingPermissions())
+	derived2 := h.createToken(t, derived.GetToken(), "derived-2", issuingPermissions())
+	derived3 := h.createToken(t, derived2.GetToken(), "derived-3", recordPermissions())
+	otherDerived := h.createToken(t, other.GetToken(), "other-derived", recordPermissions())
 
-	h.revokeID(t, root, admin.GetJti())
+	h.revokeID(t, root, parent.GetJti())
 
 	for name, tok := range map[string]string{
-		"admin": admin.GetToken(), "team": team.GetToken(), "app": app.GetToken(), "leaf": leaf.GetToken(),
+		"parent": parent.GetToken(), "derived": derived.GetToken(), "derived-2": derived2.GetToken(), "derived-3": derived3.GetToken(),
 	} {
 		h.wantRevoked(t, name, tok)
 	}
 
-	for name, tok := range map[string]string{"root": root, "sibling": sibling.GetToken(), "cousin": cousin.GetToken()} {
+	for name, tok := range map[string]string{"root": root, "other": other.GetToken(), "other-derived": otherDerived.GetToken()} {
 		h.wantWorks(t, name, tok)
 	}
 }
 
-func TestRevokingARootTokenDisablesEverythingIssuedUnderItsOnboarding(t *testing.T) {
+func TestRevokingARootTokenRevokesEverythingIssuedUnderItsOnboarding(t *testing.T) {
 	h := newHarness(t)
 	h.addZones()
 
@@ -145,8 +148,8 @@ func TestRevokingARootTokenDisablesEverythingIssuedUnderItsOnboarding(t *testing
 		t.Fatal(err)
 	}
 
-	admin := h.createToken(t, root, "admin", adminPermissions())
-	app := h.createToken(t, admin.GetToken(), "app", recordPermissions())
+	issuer := h.createToken(t, root, "issuer", issuingPermissions())
+	app := h.createToken(t, issuer.GetToken(), "app", recordPermissions())
 	other := h.createToken(t, root, "other", recordPermissions())
 
 	// Another onboarding's Root Token may revoke it: any token with delete
@@ -157,7 +160,7 @@ func TestRevokingARootTokenDisablesEverythingIssuedUnderItsOnboarding(t *testing
 	h.revokeID(t, otherRoot, rootClaims.GetJti())
 
 	for name, tok := range map[string]string{
-		"root": root, "admin": admin.GetToken(), "app": app.GetToken(), "other": other.GetToken(),
+		"root": root, "issuer": issuer.GetToken(), "app": app.GetToken(), "other": other.GetToken(),
 	} {
 		h.wantRevoked(t, name, tok)
 	}
@@ -191,11 +194,11 @@ func TestRevokedTokensStayRevokedAfterARestart(t *testing.T) {
 	h.addZones()
 
 	root := h.onboard(t, onboardRequest())
-	admin := h.createToken(t, root, "admin", adminPermissions())
-	app := h.createToken(t, admin.GetToken(), "app", recordPermissions())
+	parent := h.createToken(t, root, "parent", issuingPermissions())
+	app := h.createToken(t, parent.GetToken(), "app", recordPermissions())
 	byToken := h.createToken(t, root, "by-token", recordPermissions())
 
-	h.revokeID(t, root, admin.GetJti())
+	h.revokeID(t, root, parent.GetJti())
 
 	if _, err := h.client.RevokeToken(t.Context(), revokeTokenRequest(root, byToken.GetToken())); err != nil {
 		t.Fatal(err)
@@ -203,7 +206,7 @@ func TestRevokedTokensStayRevokedAfterARestart(t *testing.T) {
 
 	h.restart(t)
 
-	h.wantRevoked(t, "admin", admin.GetToken())
+	h.wantRevoked(t, "parent", parent.GetToken())
 	h.wantRevoked(t, "app", app.GetToken())
 	h.wantRevoked(t, "by-token", byToken.GetToken())
 	h.wantWorks(t, "root", root)
