@@ -359,7 +359,9 @@ func (g *Gateway) apply(c *dnsCall, zone dnsprovider.Zone, current, target []dns
 func plan(current, target []dnsprovider.Record) (changes []dnsprovider.Change, kept []dnsprovider.Record) {
 	used := make([]bool, len(current))
 
-	var unheld []dnsprovider.Record
+	// unmatched are the target records no record of current holds the
+	// value of.
+	var unmatched []dnsprovider.Record
 
 	for _, t := range target {
 		i := -1
@@ -373,7 +375,7 @@ func plan(current, target []dnsprovider.Record) (changes []dnsprovider.Change, k
 		}
 
 		if i < 0 {
-			unheld = append(unheld, t)
+			unmatched = append(unmatched, t)
 
 			continue
 		}
@@ -396,19 +398,19 @@ func plan(current, target []dnsprovider.Record) (changes []dnsprovider.Change, k
 			continue
 		}
 
-		if len(unheld) == 0 {
+		if len(unmatched) == 0 {
 			changes = append(changes, dnsprovider.Change{Kind: dnsprovider.ChangeDelete, Before: rec})
 
 			continue
 		}
 
 		after := rec
-		after.Value, after.TTL = unheld[0].Value, unheld[0].TTL
-		unheld = unheld[1:]
+		after.Value, after.TTL = unmatched[0].Value, unmatched[0].TTL
+		unmatched = unmatched[1:]
 		changes = append(changes, dnsprovider.Change{Kind: dnsprovider.ChangeModify, Before: rec, After: after})
 	}
 
-	for _, t := range unheld {
+	for _, t := range unmatched {
 		changes = append(changes, dnsprovider.Change{Kind: dnsprovider.ChangeAdd, After: t})
 	}
 
