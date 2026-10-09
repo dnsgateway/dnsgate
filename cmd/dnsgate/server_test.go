@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -55,15 +56,20 @@ func TestServerHelpDocumentsTheLogLevel(t *testing.T) {
 }
 
 func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
-	env := newGatewayEnv(t)
+	// Something else holds the configured address, so a server that tried
+	// to listen before checking the level would fail on the address instead.
+	held, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = held.Close() })
+
+	env := newGatewayEnvAt(t, held.Addr().String())
 
 	out, err := runCLI(t, "server", "--config", env.config, "--log-level", "verbose")
 	if err == nil || !strings.Contains(err.Error(), `"verbose"`) || !strings.Contains(err.Error(), "error, warn, info, debug") {
-		t.Errorf("server error = %v, want one naming the level and the accepted levels\n%s", err, out)
-	}
-
-	if strings.Contains(out, `"msg":"serving"`) {
-		t.Errorf("server with an unknown log level listened:\n%s", out)
+		t.Errorf("server error = %v, want one naming the level and the accepted levels before it listens\n%s", err, out)
 	}
 }
 
