@@ -167,6 +167,16 @@ type agentConn struct {
 	gatewayDone, providerDone bool
 }
 
+// write writes p to the Provider, waiting at most writeTimeout for it to
+// take the bytes. A failed write closes the connection.
+func (c *agentConn) write(p []byte) {
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+
+	if _, err := c.conn.Write(p); err != nil {
+		_ = c.conn.Close()
+	}
+}
+
 func newRelay(ctx context.Context, cancel context.CancelFunc, stream callStream, agent EgressAgent) *relay {
 	return &relay{ctx: ctx, cancel: cancel, stream: stream, agent: agent, conns: map[uint32]*agentConn{}}
 }
@@ -246,19 +256,11 @@ func (rl *relay) pump(id uint32, c *agentConn) {
 	}
 }
 
-// data writes the Gateway's bytes to their connection. It holds the
-// stream until the Provider takes them, or for writeTimeout: a failed
-// write closes the connection.
+// data writes the Gateway's bytes to their connection, holding the
+// stream until the Provider takes them.
 func (rl *relay) data(d *dnsgatev1.RelayData) {
-	c := rl.conn(d.GetId())
-	if c == nil {
-		return
-	}
-
-	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-
-	if _, err := c.conn.Write(d.GetData()); err != nil {
-		_ = c.conn.Close()
+	if c := rl.conn(d.GetId()); c != nil {
+		c.write(d.GetData())
 	}
 }
 
