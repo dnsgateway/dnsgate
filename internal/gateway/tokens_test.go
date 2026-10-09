@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/internal/gateway"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -248,6 +250,68 @@ func TestCreateTokenRejectsALaterExpiry(t *testing.T) {
 			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
 		})
 	}
+}
+
+func TestAncestorsGrowWithEachLevel(t *testing.T) {
+	h := newHarness(t)
+
+	issuer := []*dnsgatev1.Permission{{Verbs: []string{"create"}, Resources: []string{"tokens"}}, appPermissions()[0]}
+
+	tok := h.onboard(t, onboardRequest())
+
+	var want []string
+
+	for level := range 4 {
+		claims, err := h.client.InspectToken(t.Context(), tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !slices.Equal(claims.GetAncestors(), want) {
+			t.Fatalf("level %d ancestors = %v, want %v", level, claims.GetAncestors(), want)
+		}
+
+		want = append(want, claims.GetJti())
+		tok = h.createToken(t, tok, "level", issuer).GetToken()
+	}
+}
+
+func TestCreateTokenStopsAtTheMaximumChainDepth(t *testing.T) {
+	h := newHarness(t)
+
+	issuer := token.Permission{Verbs: []string{"create"}, Resources: []string{"tokens"}}
+	withAncestors := func(n int) string {
+		return h.mint(t, func(c *token.Claims) {
+			c.Ancestors = nil
+			for i := range n {
+				c.Ancestors = append(c.Ancestors, "tok_ANCESTOR"+strconv.Itoa(i))
+			}
+		}, issuer)
+	}
+
+	req := func(parent string) *dnsgatev1.CreateTokenRequest {
+		return &dnsgatev1.CreateTokenRequest{Token: parent, Sub: "app", Permissions: []*dnsgatev1.Permission{{Verbs: []string{"create"}, Resources: []string{"tokens"}}}}
+	}
+
+	resp, err := h.client.CreateToken(t.Context(), req(withAncestors(gateway.MaxAncestors-1)))
+	if err != nil {
+		t.Fatalf("CreateToken at the last level: %v", err)
+	}
+
+	got, err := h.client.InspectToken(t.Context(), resp.GetToken())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got.GetAncestors()) != gateway.MaxAncestors {
+		t.Errorf("ancestors = %d, want %d", len(got.GetAncestors()), gateway.MaxAncestors)
+	}
+
+	_, err = h.client.CreateToken(t.Context(), req(resp.GetToken()))
+	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
+
+	_, err = h.client.CreateToken(t.Context(), req(withAncestors(gateway.MaxAncestors)))
+	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
 }
 
 func TestCreateTokenRejectsMalformedRequests(t *testing.T) {

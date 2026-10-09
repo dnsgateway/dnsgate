@@ -9,6 +9,12 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
+// MaxAncestors is the most ancestors a Derived Token may have: a chain
+// reaches at most this many Derived Tokens below its Root Token. It keeps
+// tokens, which carry every ancestor's ID, small, and the revocation
+// check of each request short.
+const MaxAncestors = 8
+
 // createToken issues a Derived Token of the Parent Token in req. The
 // Derived Token copies the parent's Provider and Provider Credential,
 // which never leave the Gateway.
@@ -24,6 +30,10 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 
 	if !permission.Allows(parent.Permissions, permission.Request{Verb: permission.VerbCreate, Resource: permission.ResourceTokens}) {
 		return nil, g.deny(r, event, permissionDenied("the token's permissions do not allow issuing tokens"))
+	}
+
+	if len(parent.Ancestors) >= MaxAncestors {
+		return nil, g.deny(r, event, permissionDenied("the token chain is at its maximum depth"))
 	}
 
 	if err := checkCreateTokenRequest(req); err != nil {
