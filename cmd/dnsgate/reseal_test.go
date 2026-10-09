@@ -50,6 +50,8 @@ keys:
     - keyFile: keys/enc-e2e.pem
       retireAt: `+retireAt.UTC().Format(time.RFC3339)+`
 bootstrapSecretFile: bootstrap-secret
+database:
+  sqliteFile: dnsgate.db
 `, 0o600)
 
 	return path

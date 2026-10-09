@@ -90,6 +90,8 @@ keys:
   signingKeyFile: keys/sig-e2e.pem
   encryptionKeyFile: keys/enc-e2e.pem
 bootstrapSecretFile: bootstrap-secret
+database:
+  sqliteFile: dnsgate.db
 `, 0o600)
 
 	return env
@@ -110,6 +112,8 @@ keys:
   encryptionKeyFile: keys/enc-e2e.pem
   decryptionKeys:
 `+entries+`bootstrapSecretFile: bootstrap-secret
+database:
+  sqliteFile: dnsgate.db
 `, 0o600)
 }
 
@@ -491,6 +495,28 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 				writeFile(t, env.config, string(config)+"tokens:\n  maxAncestors: -1\n", 0o600)
 			},
 			want: "tokens.maxAncestors",
+		},
+		"missing database file setting": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				config, err := os.ReadFile(env.config)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				writeFile(t, env.config, strings.Replace(string(config), "database:\n  sqliteFile: dnsgate.db\n", "", 1), 0o600)
+			},
+			want: "database.sqliteFile is required",
+		},
+		"database file in a missing directory": {
+			edit: func(t *testing.T, env *gatewayEnv) {
+				config, err := os.ReadFile(env.config)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				writeFile(t, env.config, strings.Replace(string(config), "sqliteFile: dnsgate.db", "sqliteFile: missing/dnsgate.db", 1), 0o600)
+			},
+			want: "revocation database",
 		},
 		"short bootstrap secret": {
 			edit: func(t *testing.T, env *gatewayEnv) {

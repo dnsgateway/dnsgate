@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -17,7 +18,12 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/config"
 	"github.com/dnsgateway/dnsgate/internal/gateway"
 	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsgate/internal/revocation"
 )
+
+// purgeInterval is how often the Gateway purges the revocations of
+// tokens that have expired.
+const purgeInterval = time.Hour
 
 // providers returns the Providers the Gateway calls. Tests replace it with
 // a fake Provider.
@@ -42,7 +48,12 @@ func newServerCmd(flags *Flags) *cobra.Command {
 			"    decryptionKeys:\n" +
 			"      - keyFile: keys/enc-2026-10.pem\n" +
 			"        retireAt: 2026-12-01T00:00:00Z\n" +
-			"  bootstrapSecretFile: bootstrap-secret\n\n" +
+			"  bootstrapSecretFile: bootstrap-secret\n" +
+			"  database:\n" +
+			"    sqliteFile: dnsgate.db\n\n" +
+			"The database holds only revoked token IDs. It is created if missing; keep it across restarts and " +
+			"upgrades, or revoked tokens work again. Revocations of tokens that have expired are purged at startup " +
+			"and every hour.\n\n" +
 			"To rotate the encryption key:\n\n" +
 			"  1. Run \"dnsgate keys generate\" with a new --" + flagKeyIDSuffix + ". Only its enc- key file is used; " +
 			"ignore or delete the sig- key files it also writes, and keep signingKeyFile as it is.\n" +
@@ -94,6 +105,19 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 	log := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: level}))
 	log.Debug("loaded config", "file", f.Config, "listen", cfg.Listen)
 
+	revocations, err := revocation.OpenSQLite(ctx, cfg.Database.SQLiteFile)
+	if err != nil {
+		return err
+	}
+
+	defer revocations.Close()
+
+	if err := revocations.PurgeExpired(ctx, time.Now()); err != nil {
+		return err
+	}
+
+	go purgeRevocations(ctx, revocations, log)
+
 	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
@@ -105,6 +129,7 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		Audit:           audit.New(auditOut),
 		Providers:       providers(),
 		MaxAncestors:    cfg.Tokens.MaxAncestors,
+		Revocations:     revocations,
 		Logger:          log,
 	}))
 
@@ -129,5 +154,24 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 		log.Info("stopped")
 
 		return nil
+	}
+}
+
+// purgeRevocations purges, every purgeInterval until ctx is done, the
+// revocations of tokens that have expired. A failed purge is logged and
+// retried at the next interval: the entries it leaves only take space.
+func purgeRevocations(ctx context.Context, store revocation.Store, log *slog.Logger) {
+	ticker := time.NewTicker(purgeInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if err := store.PurgeExpired(ctx, now); err != nil && ctx.Err() == nil {
+				log.Error("purging expired revocations", "error", err)
+			}
+		}
 	}
 }

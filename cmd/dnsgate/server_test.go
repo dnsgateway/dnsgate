@@ -2,8 +2,12 @@ package main
 
 import (
 	"net"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dnsgateway/dnsgate/internal/revocation"
 )
 
 func TestServerLogsDebugLinesAtDebug(t *testing.T) {
@@ -118,5 +122,48 @@ func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
 
 	if audit := gw.audit.String(); !strings.Contains(audit, `"event":"onboard"`) {
 		t.Errorf("server audit output at error has no onboard event:\n%s", audit)
+	}
+}
+
+func TestServerPurgesExpiredRevocationsAtStartup(t *testing.T) {
+	env := newGatewayEnv(t)
+
+	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for id, exp := range map[string]time.Time{
+		"tok_EXPIRED": time.Now().Add(-time.Hour),
+		"tok_LATER":   time.Now().Add(time.Hour),
+		"tok_FOREVER": {},
+	} {
+		if err := store.Revoke(t.Context(), id, exp); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	startServer(t, env.config)
+
+	store, err = revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = store.Close() })
+
+	for id, want := range map[string]bool{"tok_EXPIRED": false, "tok_LATER": true, "tok_FOREVER": true} {
+		got, err := store.AnyRevoked(t.Context(), []string{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got != want {
+			t.Errorf("%s revoked after the server started = %v, want %v", id, got, want)
+		}
 	}
 }

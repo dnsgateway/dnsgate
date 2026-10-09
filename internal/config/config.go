@@ -31,8 +31,19 @@ type File struct {
 	Keys   Keys   `json:"keys"`
 	// BootstrapSecretFile holds the secret that authorizes Onboarding. It
 	// must not be readable or writable by group or others.
-	BootstrapSecretFile string `json:"bootstrapSecretFile"`
-	Tokens              Tokens `json:"tokens"`
+	BootstrapSecretFile string   `json:"bootstrapSecretFile"`
+	Database            Database `json:"database"`
+	Tokens              Tokens   `json:"tokens"`
+}
+
+// Database is where the Gateway keeps revoked token IDs, the only state
+// it stores.
+type Database struct {
+	// SQLiteFile is the SQLite database file. It is created if missing,
+	// in a directory that must exist. A Gateway pointed at another file
+	// forgets every revocation, so the setting is required rather than
+	// defaulted.
+	SQLiteFile string `json:"sqliteFile"`
 }
 
 // Tokens limits the Service Tokens the Gateway issues.
@@ -99,6 +110,7 @@ func Load(path string) (*File, error) {
 		"keys.signingKeyFile":    &cfg.Keys.SigningKeyFile,
 		"keys.encryptionKeyFile": &cfg.Keys.EncryptionKeyFile,
 		"bootstrapSecretFile":    &cfg.BootstrapSecretFile,
+		"database.sqliteFile":    &cfg.Database.SQLiteFile,
 	}
 
 	for i := range cfg.Keys.DecryptionKeys {
