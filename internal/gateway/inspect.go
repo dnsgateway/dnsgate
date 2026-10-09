@@ -9,9 +9,9 @@ import (
 // inspectToken opens the token in req and returns its claims, without the
 // Provider Credential.
 func (g *Gateway) inspectToken(r *request, req *dnsgatev1.InspectTokenRequest) (*dnsgatev1.Response, error) {
-	claims, err := g.codec.Open(r.ctx, req.GetToken())
+	claims, err := g.openToken(r, audit.Event{Event: audit.EventTokenInspect}, req.GetToken())
 	if err != nil {
-		return nil, g.deny(r, audit.Event{Event: audit.EventTokenInspect}, unauthenticated("invalid service token"))
+		return nil, err
 	}
 
 	out := &dnsgatev1.InspectTokenResponse{
