@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -56,13 +55,14 @@ type harness struct {
 	// fake is the Provider the Gateway calls, as "cloudflare", unless
 	// providers is set.
 	fake *providertest.Provider
-	// providers, if set, are the Providers the Gateway calls, through
-	// the Egress Transport egress.
+	// providers, if set, are the Providers the Gateway calls.
 	providers dnsprovider.Registry
-	egress    http.RoundTripper
-	// agentRoots are the CAs the Gateway verifies Providers against
-	// through Agent Egress; nil means the system's.
-	agentRoots *x509.CertPool
+	// gatewayEgressDial, if set, is where Gateway Egress connects in
+	// place of the Provider's address.
+	gatewayEgressDial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// providerRoots are the CAs the Gateway verifies Providers against,
+	// through either Egress; nil means the system's.
+	providerRoots *x509.CertPool
 	// agent, if set, is how the harness client acts as Egress Agent.
 	agent *client.EgressAgent
 	// maxAncestors is the Gateway's maximum chain depth; 0 means its
@@ -173,16 +173,16 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 	}
 
 	gw := gateway.New(gateway.Config{
-		Keys:               src,
-		BootstrapSecret:    token.NewSecret(bootstrapSecret),
-		Audit:              audit.New(h.auditTo),
-		Providers:          providers,
-		EgressTransport:    h.egress,
-		AgentEgressRootCAs: h.agentRoots,
-		MaxAncestors:       h.maxAncestors,
-		RevokedIDs:         h.revokedIDs,
-		Logger:             slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: h.logLevel})),
-		Now:                func() time.Time { return h.now },
+		Keys:              src,
+		BootstrapSecret:   token.NewSecret(bootstrapSecret),
+		Audit:             audit.New(h.auditTo),
+		Providers:         providers,
+		GatewayEgressDial: h.gatewayEgressDial,
+		ProviderRootCAs:   h.providerRoots,
+		MaxAncestors:      h.maxAncestors,
+		RevokedIDs:        h.revokedIDs,
+		Logger:            slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: h.logLevel})),
+		Now:               func() time.Time { return h.now },
 	})
 
 	h.keys = src

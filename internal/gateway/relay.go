@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"net"
@@ -21,11 +20,6 @@ const (
 	// relayOpenTimeout bounds how long the Gateway waits for the Egress
 	// Agent to answer a RelayOpen.
 	relayOpenTimeout = 15 * time.Second
-	// agentTLSHandshakeTimeout and agentResponseHeaderTimeout bound each
-	// Provider request through Agent Egress, as the Provider's own
-	// transport bounds those through Gateway Egress.
-	agentTLSHandshakeTimeout   = 10 * time.Second
-	agentResponseHeaderTimeout = 30 * time.Second
 )
 
 // errAgentConnect is the error of a connection the Egress Agent did not
@@ -84,14 +78,14 @@ func newRelay(stream callStream) *relay {
 }
 
 // transport returns a Provider HTTP transport whose connections go through
-// the relay. It verifies the Provider's certificate against roots, nil for
-// the system's, and never uses a proxy.
+// the relay. It verifies the Provider's certificate as providerTLS does,
+// against roots, and never uses a proxy.
 func (rl *relay) transport(roots *x509.CertPool) *http.Transport {
 	return &http.Transport{
 		DialContext:           rl.dial,
-		TLSClientConfig:       &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
-		TLSHandshakeTimeout:   agentTLSHandshakeTimeout,
-		ResponseHeaderTimeout: agentResponseHeaderTimeout,
+		TLSClientConfig:       providerTLS(roots),
+		TLSHandshakeTimeout:   providerTLSHandshakeTimeout,
+		ResponseHeaderTimeout: providerResponseHeaderTimeout,
 	}
 }
 
