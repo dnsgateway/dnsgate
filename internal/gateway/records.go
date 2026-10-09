@@ -23,7 +23,7 @@ func (g *Gateway) listRecords(r *request, req *dnsgatev1.ListRecordsRequest) (*d
 		return nil, err
 	}
 
-	records, err := g.readRecords(c, dnsprovider.RecordFilter{})
+	_, records, err := g.readRecords(c, dnsprovider.RecordFilter{})
 	if err != nil {
 		return nil, err
 	}
@@ -50,16 +50,12 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 		return nil, err
 	}
 
-	zone, name, typ := c.perm.Zone, c.perm.Name, c.perm.Type
-
-	// Contains narrows the Provider's answer to names ending in this one;
-	// the exact name is matched below.
-	records, err := g.readRecords(c, dnsprovider.RecordFilter{Type: typ, Contains: dnsname.Absolute(zone, name) + "."})
+	_, records, err := g.readRRset(c)
 	if err != nil {
 		return nil, err
 	}
 
-	sets := recordSets(zone, records, func(n, t string) bool { return n == name && t == typ })
+	sets := recordSets(c.perm.Zone, records, func(string, string) bool { return true })
 	if len(sets) == 0 {
 		return nil, notFound("no such record set")
 	}
@@ -69,20 +65,20 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 	}}, nil
 }
 
-// readRecords reads the records of the call's zone that match f from its
+// readRecords reads the call's zone and its records that match f from its
 // Provider.
-func (g *Gateway) readRecords(c *dnsCall, f dnsprovider.RecordFilter) ([]dnsprovider.Record, error) {
+func (g *Gateway) readRecords(c *dnsCall, f dnsprovider.RecordFilter) (dnsprovider.Zone, []dnsprovider.Record, error) {
 	z, err := c.provider.Zone(c.ctx, c.perm.Zone)
 	if err != nil {
-		return nil, g.providerFailed(c, err)
+		return dnsprovider.Zone{}, nil, g.providerFailed(c, err)
 	}
 
 	set, err := c.provider.Records(c.ctx, z, f)
 	if err != nil {
-		return nil, g.providerFailed(c, err)
+		return dnsprovider.Zone{}, nil, g.providerFailed(c, err)
 	}
 
-	return set.Records, nil
+	return z, set.Records, nil
 }
 
 // recordSets groups the records of zone into RRsets, keeping those keep

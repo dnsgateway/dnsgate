@@ -162,6 +162,16 @@ func (g *Gateway) providerFailed(c *dnsCall, err error) error {
 	return g.fail(c, providerError(err))
 }
 
+// succeed audits an allowed call that changed records at the Provider,
+// with how long it took. The change is made even if its event is lost,
+// which is logged.
+func (g *Gateway) succeed(c *dnsCall) {
+	c.event.Result = audit.ResultOK
+	c.event.DurationMS = time.Since(c.start).Milliseconds()
+
+	_ = g.writeAudit(c.request, c.event)
+}
+
 // fail audits an allowed call that failed, with the category of err and
 // how long it took, and returns err. The call fails even if its event is
 // lost.

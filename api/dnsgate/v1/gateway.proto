@@ -55,6 +55,7 @@ message Request {
     ListRecordsRequest list_records = 6;
     GetRecordRequest get_record = 7;
     CreateTokenRequest create_token = 8;
+    CreateRecordRequest create_record = 9;
   }
 }
 
@@ -69,6 +70,7 @@ message Response {
     ListRecordsResponse list_records = 6;
     GetRecordResponse get_record = 7;
     CreateTokenResponse create_token = 8;
+    CreateRecordResponse create_record = 9;
   }
 }
 
@@ -269,6 +271,33 @@ message GetRecordResponse {
   RecordSet record_set = 1;
 }
 
+// CreateRecordRequest asks to create an RRset: records of one name and
+// type, one per value. It needs create on records for the zone, name and
+// type. The zone must not hold the RRset yet.
+message CreateRecordRequest {
+  // token is the Service Token that authorizes the request.
+  string token = 1;
+  Egress egress = 2;
+  // zone is the zone's name, such as "example.com".
+  string zone = 3;
+  // name is the record name relative to the zone, "@" for the zone's own
+  // name.
+  string name = 4;
+  // type is the record type, such as "A" or "TXT".
+  string type = 5;
+  // ttl is the TTL of every record, in seconds, in the range the Provider
+  // takes.
+  uint32 ttl = 6;
+  // values are the records' values in zone-file presentation form, at
+  // least one and each once.
+  repeated string values = 7;
+}
+
+// CreateRecordResponse carries the RRset as created.
+message CreateRecordResponse {
+  RecordSet record_set = 1;
+}
+
 // RecordSet is an RRset: the records of one name and type.
 message RecordSet {
   // name is the record name relative to the zone, "@" for the zone's own
@@ -317,6 +346,10 @@ message Error {
     CATEGORY_EGRESS_NOT_SUPPORTED = 9;
     // The Gateway failed; the details are in its logs.
     CATEGORY_INTERNAL = 10;
+    // The request collides with what the Provider holds, such as a record
+    // set that already exists, or records that changed at the Provider
+    // while the Gateway changed them.
+    CATEGORY_CONFLICT = 11;
   }
 
   Category category = 1;

@@ -19,14 +19,15 @@ type Name string
 
 // Event names.
 const (
-	EventOnboard      Name = "onboard"
-	EventTokenCreate  Name = "token.create"
-	EventTokenInspect Name = "token.inspect"
-	EventTokenReseal  Name = "token.reseal"
-	EventZonesList    Name = "zones.list"
-	EventZonesGet     Name = "zones.get"
-	EventRecordsList  Name = "records.list"
-	EventRecordsGet   Name = "records.get"
+	EventOnboard       Name = "onboard"
+	EventTokenCreate   Name = "token.create"
+	EventTokenInspect  Name = "token.inspect"
+	EventTokenReseal   Name = "token.reseal"
+	EventZonesList     Name = "zones.list"
+	EventZonesGet      Name = "zones.get"
+	EventRecordsList   Name = "records.list"
+	EventRecordsGet    Name = "records.get"
+	EventRecordsCreate Name = "records.create"
 )
 
 // Result is the outcome of the request an Event records.

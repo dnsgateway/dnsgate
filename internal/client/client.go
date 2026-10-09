@@ -81,6 +81,13 @@ func (c *Client) GetRecord(ctx context.Context, req *dnsgatev1.GetRecordRequest)
 		(*dnsgatev1.Response).GetGetRecord)
 }
 
+// CreateRecord creates an RRset.
+func (c *Client) CreateRecord(ctx context.Context, req *dnsgatev1.CreateRecordRequest) (*dnsgatev1.CreateRecordResponse, error) {
+	return roundTrip(ctx, c, "record create",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_CreateRecord{CreateRecord: req}},
+		(*dnsgatev1.Response).GetCreateRecord)
+}
+
 // roundTrip sends req, named op in errors, and returns the result that
 // result picks from the Response. A Response holding another operation's
 // result is an error.
