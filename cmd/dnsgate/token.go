@@ -17,10 +17,8 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
+	"github.com/dnsgateway/dnsgate/internal/token"
 )
-
-// tokenIDPrefix starts every token ID, and no Service Token.
-const tokenIDPrefix = "tok_"
 
 func newTokenCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
@@ -222,7 +220,9 @@ func runTokenRevoke(ctx context.Context, in io.Reader, out io.Writer, f *Flags, 
 	}
 
 	req := &dnsgatev1.RevokeTokenRequest{Token: f.Token}
-	if strings.HasPrefix(target, tokenIDPrefix) {
+	// A malformed ID is still sent as an ID, so the Gateway's refusal
+	// names it as one.
+	if strings.HasPrefix(target, token.IDPrefix) {
 		req.Target = &dnsgatev1.RevokeTokenRequest_TokenId{TokenId: target}
 	} else {
 		req.Target = &dnsgatev1.RevokeTokenRequest_TargetToken{TargetToken: target}

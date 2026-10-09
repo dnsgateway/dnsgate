@@ -1,14 +1,12 @@
 package gateway
 
 import (
-	"strings"
 	"time"
-
-	"github.com/oklog/ulid/v2"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
+	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
 // revokeToken revokes the token req names, and with it every token
@@ -64,7 +62,7 @@ func (g *Gateway) revokeToken(r *request, req *dnsgatev1.RevokeTokenRequest) (*d
 func (g *Gateway) revocationTarget(r *request, req *dnsgatev1.RevokeTokenRequest) (string, time.Time, error) {
 	switch target := req.GetTarget().(type) {
 	case *dnsgatev1.RevokeTokenRequest_TokenId:
-		if !validTokenID(target.TokenId) {
+		if !token.ValidID(target.TokenId) {
 			return "", time.Time{}, invalidRequest("token_id is not a token ID")
 		}
 
@@ -83,17 +81,4 @@ func (g *Gateway) revocationTarget(r *request, req *dnsgatev1.RevokeTokenRequest
 	default:
 		return "", time.Time{}, invalidRequest("missing token_id or target_token")
 	}
-}
-
-// validTokenID reports whether id has the form of the token IDs the
-// Gateway issues: "tok_" and a ULID.
-func validTokenID(id string) bool {
-	rest, ok := strings.CutPrefix(id, tokenIDPrefix)
-	if !ok {
-		return false
-	}
-
-	_, err := ulid.ParseStrict(rest)
-
-	return err == nil
 }

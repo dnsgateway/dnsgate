@@ -36,7 +36,7 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 
 	derived := token.Claims{
 		Subject:     req.GetSub(),
-		ID:          g.newID(tokenIDPrefix),
+		ID:          g.newID(token.IDPrefix),
 		IssuedAt:    token.NewNumericDate(now),
 		NotBefore:   token.NewNumericDate(now),
 		Ancestors:   append(append([]string{}, parent.Ancestors...), parent.ID),

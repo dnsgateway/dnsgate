@@ -40,7 +40,7 @@ func (g *Gateway) onboard(r *request, req *dnsgatev1.OnboardRequest) (*dnsgatev1
 
 	claims := token.Claims{
 		Subject:   rootServiceAccount,
-		ID:        g.newID(tokenIDPrefix),
+		ID:        g.newID(token.IDPrefix),
 		IssuedAt:  token.NewNumericDate(now),
 		NotBefore: token.NewNumericDate(now),
 		Provider:  req.GetProvider(),

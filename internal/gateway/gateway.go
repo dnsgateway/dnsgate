@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	tokenIDPrefix   = "tok_"
 	requestIDPrefix = "req_"
 
 	// defaultMaxAncestors is the maximum chain depth of a Config that
