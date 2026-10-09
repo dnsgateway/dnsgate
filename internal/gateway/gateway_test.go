@@ -46,8 +46,11 @@ type harness struct {
 	client *client.Client
 	api    dnsgatev1.GatewayServiceClient
 	audit  *syncBuffer
-	// logs holds the Gateway's operational logs.
+	// logs holds the Gateway's operational logs, as JSON lines.
 	logs *syncBuffer
+	// logLevel is the lowest level of the logs the Gateway writes; its
+	// zero value is info.
+	logLevel slog.Level
 	now  time.Time
 	// fake is the Provider the Gateway calls, as "cloudflare", unless
 	// providers is set.
@@ -168,7 +171,7 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 		EgressTransport:    h.egress,
 		AgentEgressRootCAs: h.agentRoots,
 		MaxAncestors:       h.maxAncestors,
-		Logger:             slog.New(slog.NewTextHandler(h.logs, nil)),
+		Logger:             slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: h.logLevel})),
 		Now:                func() time.Time { return h.now },
 	})
 

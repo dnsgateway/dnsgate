@@ -568,7 +568,7 @@ func TestAProviderThatCannotBeBuiltIsLoggedWithoutItsError(t *testing.T) {
 	wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
 
 	logs := h.logs.String()
-	if !strings.Contains(logs, "building provider") || !strings.Contains(logs, "reason=provider_rejected_credential") {
+	if !strings.Contains(logs, `"msg":"building provider"`) || !strings.Contains(logs, `"reason":"provider_rejected_credential"`) {
 		t.Errorf("logs =\n%s\nwant the failed build and its reason", logs)
 	}
 
