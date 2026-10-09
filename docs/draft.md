@@ -418,6 +418,7 @@ dnsgate token create --sub NAME --permissions FILE [--expires DURATION] [--bind-
 dnsgate token revoke TOKEN_ID
 dnsgate token reseal TOKEN
 dnsgate token inspect                                        # the Gateway decrypts and shows permissions to the holder
+dnsgate zone list|get ...
 dnsgate record list|get|create|update|patch|delete ...
 ```
 
