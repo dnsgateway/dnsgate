@@ -181,10 +181,21 @@ func TestOpenRejectsForeignAndTamperedTokens(t *testing.T) {
 		return seal(t, loadMixed(t, gateway, "2026-10", gateway, "2026-10"), c)
 	}
 
+	sealAs := func(iss, aud string) string {
+		sealed, err := newCodec(loadMixed(t, gateway, "2026-10", gateway, "2026-10")).SealAs(ctx, derivedClaims(), iss, aud)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return sealed
+	}
+
 	cases := map[string]struct {
 		token      string
 		unknownKey bool
 	}{
+		"wrong audience":               {token: sealAs(token.Issuer, "other")},
+		"wrong issuer":                 {token: sealAs("other", token.Audience)},
 		"tampered header":              {token: tamper(0)},
 		"tampered encrypted key":       {token: tamper(1)},
 		"tampered ciphertext":          {token: tamper(3)},
