@@ -36,3 +36,11 @@ func TestEveryProviderHasACredentialType(t *testing.T) {
 		t.Error("an unsupported Provider has a credential type")
 	}
 }
+
+func TestEveryProviderBuildsFromItsCredentialFields(t *testing.T) {
+	for _, name := range provider.Names() {
+		if _, err := provider.Registry().New(name, provider.CredentialFields(name, "credential")); err != nil {
+			t.Errorf("Provider %q does not build from its credential fields: %v", name, err)
+		}
+	}
+}

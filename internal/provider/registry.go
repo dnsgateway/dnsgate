@@ -30,6 +30,18 @@ func Names() []string {
 	return Registry().Types()
 }
 
+// CredentialFields returns the fields the Provider name is built from
+// with the Provider Credential value. The map holds the plaintext
+// credential: drop it with the Provider built from it.
+func CredentialFields(name, value string) map[string]string {
+	switch name {
+	case Cloudflare:
+		return map[string]string{cloudflare.FieldToken: value}
+	default:
+		return nil
+	}
+}
+
 // CredentialType returns the type of the Provider Credential onboarded for
 // the Provider name, and whether name is a supported Provider.
 func CredentialType(name string) (string, bool) {
