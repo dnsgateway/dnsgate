@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -49,16 +50,17 @@ type Config struct {
 	// Providers builds the Provider of a token from its Provider
 	// Credential; nil means provider.Registry().
 	Providers dnsprovider.Registry
-	// EgressTransport sends the Providers' requests through Gateway
-	// Egress. nil means each Provider's own transport, which verifies
-	// TLS strictly against the system roots and bounds each request;
-	// a transport given here brings its own TLS settings and timeouts.
-	// Tests point it at a fake Provider API.
-	EgressTransport http.RoundTripper
-	// AgentEgressRootCAs are the CA certificates the Gateway verifies
-	// a Provider's certificate against through Agent Egress; nil means
-	// the system's. The Provider's hostname is always verified.
-	AgentEgressRootCAs *x509.CertPool
+	// ProviderRootCAs are the CA certificates the Gateway verifies a
+	// Provider's certificate against, through either Egress; nil means
+	// the system's. The Provider's hostname is always verified, and
+	// nothing turns that verification off.
+	ProviderRootCAs *x509.CertPool
+	// GatewayEgressDial opens the connections of Gateway Egress to a
+	// Provider's address; nil means the network's. It picks only where a
+	// connection goes: the Gateway's own transport runs TLS over it,
+	// verified as ProviderRootCAs says. Tests point it at a fake Provider
+	// API.
+	GatewayEgressDial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// MaxAncestors is the most ancestors a Derived Token may have: a
 	// chain reaches at most this many Derived Tokens below its Root
 	// Token. It keeps tokens, which carry every ancestor's ID, small, and
@@ -78,16 +80,19 @@ type Config struct {
 type Gateway struct {
 	dnsgatev1.UnimplementedGatewayServiceServer
 
-	codec        *token.Codec
-	bootstrap    token.Secret
-	providers    dnsprovider.Registry
-	egress       http.RoundTripper
-	agentRoots   *x509.CertPool
-	maxAncestors int
-	revokedIDs   revocation.Store
-	audit        *audit.Log
-	log          *slog.Logger
-	now          func() time.Time
+	codec     *token.Codec
+	bootstrap token.Secret
+	providers dnsprovider.Registry
+	// gatewayEgress is the Provider transport of Gateway Egress.
+	gatewayEgress *http.Transport
+	// providerRoots are the CAs a Provider's certificate is verified
+	// against; nil means the system's.
+	providerRoots *x509.CertPool
+	maxAncestors  int
+	revokedIDs    revocation.Store
+	audit         *audit.Log
+	log           *slog.Logger
+	now           func() time.Time
 }
 
 var _ dnsgatev1.GatewayServiceServer = (*Gateway)(nil)
@@ -95,15 +100,15 @@ var _ dnsgatev1.GatewayServiceServer = (*Gateway)(nil)
 // New returns a Gateway built from cfg.
 func New(cfg Config) *Gateway {
 	g := &Gateway{
-		bootstrap:    cfg.BootstrapSecret,
-		providers:    cfg.Providers,
-		egress:       cfg.EgressTransport,
-		agentRoots:   cfg.AgentEgressRootCAs,
-		maxAncestors: cfg.MaxAncestors,
-		revokedIDs:   cfg.RevokedIDs,
-		audit:        cfg.Audit,
-		log:          cfg.Logger,
-		now:          cfg.Now,
+		bootstrap:     cfg.BootstrapSecret,
+		providers:     cfg.Providers,
+		gatewayEgress: gatewayEgressTransport(cfg.GatewayEgressDial, cfg.ProviderRootCAs),
+		providerRoots: cfg.ProviderRootCAs,
+		maxAncestors:  cfg.MaxAncestors,
+		revokedIDs:    cfg.RevokedIDs,
+		audit:         cfg.Audit,
+		log:           cfg.Logger,
+		now:           cfg.Now,
 	}
 
 	if g.revokedIDs == nil {

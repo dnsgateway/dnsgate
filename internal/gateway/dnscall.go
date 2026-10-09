@@ -145,24 +145,23 @@ func (g *Gateway) authorize(c *dnsCall, requested dnsgatev1.Egress, pr permissio
 }
 
 // connect builds the token's Provider from its Provider Credential, its
-// requests sent through the call's Egress: for Agent Egress, relayed by
-// the client inside the request's stream, with TLS to the Provider still
-// ending on the Gateway. The plaintext credential lives on only inside
+// requests sent through the call's Egress, always with the Gateway's own
+// transport, which verifies the Provider's certificate: for Gateway
+// Egress, from the Gateway; for Agent Egress, relayed by the client inside
+// the request's stream, with TLS to the Provider still ending on the
+// Gateway. The plaintext credential lives on only inside
 // the Provider, which is dropped with the call. A failed build is logged
 // by its reason alone: the Provider's error may quote the credential.
 func (g *Gateway) connect(c *dnsCall) error {
-	var opts []dnsprovider.Option
-
-	switch {
-	case c.perm.Egress == permission.EgressAgent:
-		opts = append(opts, dnsprovider.WithHTTPClient(&http.Client{Transport: c.relay.transport(g.agentRoots)}))
-	case g.egress != nil:
-		opts = append(opts, dnsprovider.WithHTTPClient(&http.Client{Transport: g.egress}))
+	var transport http.RoundTripper = g.gatewayEgress
+	if c.perm.Egress == permission.EgressAgent {
+		transport = c.relay.transport(g.providerRoots)
 	}
 
 	name := c.claims.Provider
 
-	p, err := g.providers.New(name, provider.CredentialFields(name, c.claims.Credential.Value.Reveal()), opts...)
+	p, err := g.providers.New(name, provider.CredentialFields(name, c.claims.Credential.Value.Reveal()),
+		dnsprovider.WithHTTPClient(&http.Client{Transport: transport}))
 	if err != nil {
 		reason := "provider_rejected_credential"
 		if _, ok := g.providers[name]; !ok {

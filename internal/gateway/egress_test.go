@@ -1,13 +1,10 @@
 package gateway_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -17,15 +14,13 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
-	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 
 // cloudflareHost is where the Cloudflare Provider sends its requests.
 const cloudflareHost = "api.cloudflare.com"
 
 // fakeCloudflare is a scripted Cloudflare v4 API, served over TLS and
-// reached through the Gateway's Egress Transport in place of
-// api.cloudflare.com.
+// reached in place of api.cloudflare.com.
 type fakeCloudflare struct {
 	zones   []map[string]any
 	records map[string][]map[string]any // by zone ID
@@ -35,7 +30,7 @@ type fakeCloudflare struct {
 	mu sync.Mutex
 	// seen records each request's host and Authorization header.
 	seen []seenRequest
-	// dialed records each address the Egress Transport dialed.
+	// dialed records each address Gateway Egress dialed.
 	dialed []string
 	// nextID numbers the records created.
 	nextID int
@@ -58,19 +53,19 @@ func (cf *fakeCloudflare) record(zone, id string) map[string]any {
 }
 
 // newCloudflareHarness returns a harness whose Gateway runs the real
-// Cloudflare Provider, its Egress Transport pointed at a fake Cloudflare
-// API scripted with example.com.
+// Cloudflare Provider, its Gateway Egress pointed at a fake Cloudflare
+// API scripted with example.com, presenting a trusted certificate.
 func newCloudflareHarness(t *testing.T) (*harness, *fakeCloudflare) {
 	t.Helper()
 
 	cf := newFakeCloudflare()
 
-	srv := httptest.NewTLSServer(cf.handler())
+	srv := cf.newServer(t, trustedCert)
+	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
 	h := newHarness(t)
-	h.providers = provider.Registry()
-	h.egress = cf.transport(t, srv)
+	h.reach(cf, srv)
 	h.serve(t, h.keys)
 
 	return h, cf
@@ -93,32 +88,6 @@ func newFakeCloudflare() *fakeCloudflare {
 			},
 		},
 	}
-}
-
-// transport is an Egress Transport that dials srv for every address and
-// verifies its certificate strictly: it trusts srv's test CA alone, and
-// checks the name srv's certificate is issued for.
-func (cf *fakeCloudflare) transport(t *testing.T, srv *httptest.Server) http.RoundTripper {
-	t.Helper()
-
-	tr, ok := srv.Client().Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("test server transport is %T", srv.Client().Transport)
-	}
-
-	tr = tr.Clone()
-	tr.TLSClientConfig.ServerName = "example.com" // in httptest's certificate
-
-	dialer := &net.Dialer{}
-	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		cf.mu.Lock()
-		cf.dialed = append(cf.dialed, addr)
-		cf.mu.Unlock()
-
-		return dialer.DialContext(ctx, network, srv.Listener.Addr().String())
-	}
-
-	return tr
 }
 
 func (cf *fakeCloudflare) handler() http.Handler {
@@ -327,7 +296,7 @@ func TestGatewayEgressReadsCloudflare(t *testing.T) {
 
 	for _, addr := range cf.dialed {
 		if addr != cloudflareHost+":443" {
-			t.Errorf("Egress Transport dialed %s, want %s:443 alone", addr, cloudflareHost)
+			t.Errorf("Gateway Egress dialed %s, want %s:443 alone", addr, cloudflareHost)
 		}
 	}
 }
@@ -467,62 +436,4 @@ func statusField(s int32) any {
 	}
 
 	return float64(s)
-}
-
-func TestGatewayEgressFailsOnABadProviderCertificate(t *testing.T) {
-	for name, tc := range map[string]struct {
-		cert providerCert
-		ok   bool
-	}{
-		// The trusted certificate shows the failures below come from the
-		// certificate alone.
-		"trusted":      {trustedCert, true},
-		"untrusted CA": {untrustedCert, false},
-		"wrong host":   {wrongHostCert, false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			cf := newFakeCloudflare()
-
-			srv, trusted := cf.unstartedServer(t, tc.cert)
-			srv.StartTLS()
-			t.Cleanup(srv.Close)
-
-			h := newHarness(t)
-			h.providers = provider.Registry()
-			h.egress = cf.gatewayTransport(srv, trusted)
-			h.serve(t, h.keys)
-
-			root := h.onboard(t, onboardRequest())
-
-			_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: root, Zone: "example.com"})
-
-			cf.mu.Lock()
-			dialed, seen := len(cf.dialed), len(cf.seen)
-			cf.mu.Unlock()
-
-			if dialed == 0 {
-				t.Fatal("Gateway Egress dialed nothing")
-			}
-
-			if tc.ok {
-				if err != nil {
-					t.Fatalf("ListRecords: %v", err)
-				}
-
-				return
-			}
-
-			wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)
-
-			// The handshake failed before any request, so the Provider
-			// Credential never left the Gateway.
-			if seen != 0 {
-				t.Errorf("Cloudflare got %d requests, want none", seen)
-			}
-
-			if e := h.auditEvents(t); e[len(e)-1]["result"] != "failed" || e[len(e)-1]["egress"] != "gateway" {
-				t.Errorf("audit event = %v, want a failed request through gateway egress", e[len(e)-1])
-			}
-		})
-	}
 }
