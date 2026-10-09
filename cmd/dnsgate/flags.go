@@ -262,7 +262,7 @@ func (f *Flags) AddTokenCreateFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Sub, flagSub, "", f.Sub,
 		"Service Account the Derived Token is issued for, such as external-dns-prod")
 	flags.StringVarP(&f.PermissionsFile, flagPermissions, "", f.PermissionsFile,
-		"YAML file of the Derived Token's Permissions, see the command help")
+		"YAML or JSON file of the Derived Token's Permissions, see the command help")
 	flags.DurationVarP(&f.Expires, flagExpires, "", f.Expires,
 		"lifetime of the Derived Token, such as 720h; required if the Parent Token expires (default: never expires)")
 	f.AddTokenFlags(flags)

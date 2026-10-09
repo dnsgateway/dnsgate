@@ -95,6 +95,88 @@ func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 	}
 }
 
+func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
+	useFakeProvider(t)
+
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	out, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare")
+	if err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+
+	t.Setenv("DNSGATE_TOKEN", strings.TrimSpace(out))
+
+	dir := t.TempDir()
+
+	files := map[string]string{
+		"app.yaml": `permissions:
+  - verbs: [get, list, create]
+    zones: [example.com]
+    names: ["*.apps", "_acme-challenge.**"]
+    types: [A, TXT]
+    egress: [gateway]
+  - verbs: [list]
+    resources: [zones]
+`,
+		"app.json": `{
+  "permissions": [
+    {
+      "verbs": ["get", "list", "create"],
+      "zones": ["example.com"],
+      "names": ["*.apps", "_acme-challenge.**"],
+      "types": ["A", "TXT"],
+      "egress": ["gateway"]
+    },
+    {"verbs": ["list"], "resources": ["zones"]}
+  ]
+}
+`,
+	}
+
+	permissions := map[string]string{}
+
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		writeFile(t, path, content, 0o600)
+
+		out, err := runClient(t, env, gw, "token", "create", "--sub", "app", "--permissions", path)
+		if err != nil {
+			t.Fatalf("token create with %s: %v", name, err)
+		}
+
+		out, err = runClient(t, env, gw, "token", "inspect", "--token", strings.TrimSpace(out))
+		if err != nil {
+			t.Fatalf("token inspect of the token from %s: %v", name, err)
+		}
+
+		var got inspected
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("inspect output is not JSON: %v\n%s", err, out)
+		}
+
+		perms, err := json.Marshal(got.Permissions)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		permissions[name] = string(perms)
+	}
+
+	want := `[{"verbs":["get","list","create"],"resources":null,"zones":["example.com"],"names":["*.apps","_acme-challenge.**"],"types":["A","TXT"],"egress":["gateway"]},` +
+		`{"verbs":["list"],"resources":["zones"],"zones":null,"names":null,"types":null,"egress":null}]`
+
+	for name, got := range permissions {
+		if got != want {
+			t.Errorf("Derived Token Permissions from %s =\n%s\nwant\n%s", name, got, want)
+		}
+	}
+}
+
 func TestTheConfigLimitsTheChainDepth(t *testing.T) {
 	useFakeProvider(t)
 

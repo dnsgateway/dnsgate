@@ -43,7 +43,7 @@ func newTokenCreateCmd(flags *Flags) *cobra.Command {
 		Long: "Present a Parent Token, --" + flagToken + " or " + envToken + ", and print the Derived Token the Gateway " +
 			"issues for the Service Account --" + flagSub + ". The Parent Token needs create on tokens. The Derived " +
 			"Token gets the Parent Token's Provider Credential, which never leaves the Gateway.\n\n" +
-			"--" + flagPermissions + " names a YAML file of Permissions, each with verbs:\n\n" +
+			"--" + flagPermissions + " names a YAML or JSON file of Permissions, each with verbs:\n\n" +
 			"  permissions:\n" +
 			"    - verbs: [get, list, create, update, patch, delete]\n" +
 			"      resources: [records]\n" +
@@ -89,7 +89,7 @@ func runTokenCreate(ctx context.Context, out io.Writer, f *Flags) error {
 	return err
 }
 
-// permissionsFile is the YAML file "token create" reads Permissions from.
+// permissionsFile is the YAML or JSON file "token create" reads Permissions from.
 type permissionsFile struct {
 	Permissions []struct {
 		Verbs     []string `json:"verbs"`
@@ -102,7 +102,7 @@ type permissionsFile struct {
 }
 
 // readPermissionsFile reads the Permissions of a Derived Token from the
-// YAML file path. Unknown fields are errors, and so is a Permission
+// YAML or JSON file path. Unknown fields are errors, and so is a Permission
 // without verbs.
 func readPermissionsFile(path string) ([]*dnsgatev1.Permission, error) {
 	data, err := os.ReadFile(path)
