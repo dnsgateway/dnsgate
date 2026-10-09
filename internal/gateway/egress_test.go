@@ -63,7 +63,23 @@ func (cf *fakeCloudflare) record(zone, id string) map[string]any {
 func newCloudflareHarness(t *testing.T) (*harness, *fakeCloudflare) {
 	t.Helper()
 
-	cf := &fakeCloudflare{
+	cf := newFakeCloudflare()
+
+	srv := httptest.NewTLSServer(cf.handler())
+	t.Cleanup(srv.Close)
+
+	h := newHarness(t)
+	h.providers = provider.Registry()
+	h.egress = cf.transport(t, srv)
+	h.serve(t, h.keys)
+
+	return h, cf
+}
+
+// newFakeCloudflare returns a fake Cloudflare API scripted with
+// example.com and example.org.
+func newFakeCloudflare() *fakeCloudflare {
+	return &fakeCloudflare{
 		zones: []map[string]any{
 			cfZone("z-com", "example.com", "active"),
 			cfZone("z-org", "example.org", "pending"),
@@ -77,16 +93,6 @@ func newCloudflareHarness(t *testing.T) (*harness, *fakeCloudflare) {
 			},
 		},
 	}
-
-	srv := httptest.NewTLSServer(cf.handler())
-	t.Cleanup(srv.Close)
-
-	h := newHarness(t)
-	h.providers = provider.Registry()
-	h.egress = cf.transport(t, srv)
-	h.serve(t, h.keys)
-
-	return h, cf
 }
 
 // transport is an Egress Transport that dials srv for every address and

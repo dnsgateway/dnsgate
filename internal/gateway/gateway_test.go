@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -55,6 +56,11 @@ type harness struct {
 	// the Egress Transport egress.
 	providers dnsprovider.Registry
 	egress    http.RoundTripper
+	// agentRoots are the CAs the Gateway verifies Providers against
+	// through Agent Egress; nil means the system's.
+	agentRoots *x509.CertPool
+	// agent, if set, is how the harness client acts as Egress Agent.
+	agent *client.EgressAgent
 	// maxAncestors is the Gateway's maximum chain depth; 0 means its
 	// default.
 	maxAncestors int
@@ -155,14 +161,15 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 	}
 
 	gw := gateway.New(gateway.Config{
-		Keys:            src,
-		BootstrapSecret: token.NewSecret(bootstrapSecret),
-		Audit:           audit.New(h.auditTo),
-		Providers:       providers,
-		EgressTransport: h.egress,
-		MaxAncestors:    h.maxAncestors,
-		Logger:          slog.New(slog.NewTextHandler(h.logs, nil)),
-		Now:             func() time.Time { return h.now },
+		Keys:               src,
+		BootstrapSecret:    token.NewSecret(bootstrapSecret),
+		Audit:              audit.New(h.auditTo),
+		Providers:          providers,
+		EgressTransport:    h.egress,
+		AgentEgressRootCAs: h.agentRoots,
+		MaxAncestors:       h.maxAncestors,
+		Logger:             slog.New(slog.NewTextHandler(h.logs, nil)),
+		Now:                func() time.Time { return h.now },
 	})
 
 	h.keys = src
@@ -185,7 +192,12 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 
 	t.Cleanup(func() { _ = conn.Close() })
 
-	h.client = client.New(conn)
+	var opts []client.Option
+	if h.agent != nil {
+		opts = append(opts, client.WithEgressAgent(*h.agent))
+	}
+
+	h.client = client.New(conn, opts...)
 	h.api = dnsgatev1.NewGatewayServiceClient(conn)
 }
 

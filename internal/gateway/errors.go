@@ -35,10 +35,6 @@ func narrowingViolation(dimension permission.Dimension) error {
 		"the token would exceed its parent token in "+string(dimension))
 }
 
-func agentEgressNotSupported() error {
-	return statusError(codes.Unimplemented, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED}, "agent egress is not supported yet")
-}
-
 func notFound(msg string) error {
 	return statusError(codes.NotFound, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_NOT_FOUND}, msg)
 }
@@ -90,6 +86,8 @@ func providerError(err error) error {
 	case detail.ProviderStatus == http.StatusBadRequest,
 		detail.ProviderStatus == http.StatusUnprocessableEntity:
 		code, detail.Category, msg = codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD, "the provider rejected the record"
+	case errors.Is(err, errAgentConnect):
+		code, detail.Category, msg = codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL, errAgentConnect.Error()
 	default:
 		code, detail.Category, msg = codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL, "the provider request failed"
 	}

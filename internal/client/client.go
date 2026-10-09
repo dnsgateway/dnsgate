@@ -15,12 +15,20 @@ import (
 
 // Client sends requests to a Gateway.
 type Client struct {
-	api dnsgatev1.GatewayServiceClient
+	api   dnsgatev1.GatewayServiceClient
+	agent EgressAgent
 }
 
-// New returns a Client that calls the Gateway over conn.
-func New(conn grpc.ClientConnInterface) *Client {
-	return &Client{api: dnsgatev1.NewGatewayServiceClient(conn)}
+// New returns a Client that calls the Gateway over conn. It acts as
+// Egress Agent for every request the Gateway sends through Agent Egress.
+func New(conn grpc.ClientConnInterface, opts ...Option) *Client {
+	c := &Client{api: dnsgatev1.NewGatewayServiceClient(conn)}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
 }
 
 // Onboard turns a Provider Credential into a Root Token.
@@ -126,8 +134,10 @@ func roundTrip[R any](ctx context.Context, c *Client, op string, req *dnsgatev1.
 	return out, nil
 }
 
-// call opens a stream, sends req and waits for its Response. A Gateway
-// error comes back as an *Error holding the status that ended the stream.
+// call opens a stream, sends req and waits for its Response, relaying the
+// Gateway's Agent Egress connections meanwhile. The stream, and every
+// connection relayed in it, ends when call returns. A Gateway error comes
+// back as an *Error holding the status that ended the stream.
 func (c *Client) call(ctx context.Context, req *dnsgatev1.Request) (*dnsgatev1.Response, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -137,24 +147,31 @@ func (c *Client) call(ctx context.Context, req *dnsgatev1.Request) (*dnsgatev1.R
 		return nil, newError(err)
 	}
 
-	if err := stream.Send(&dnsgatev1.CallRequest{Message: &dnsgatev1.CallRequest_Request{Request: req}}); err != nil && !errors.Is(err, io.EOF) {
-		return nil, newError(err)
-	}
+	rl := newRelay(ctx, cancel, stream, c.agent)
+	defer rl.close()
 
 	// A failed Send returns io.EOF; the reason is the status Recv returns.
-	if err := stream.CloseSend(); err != nil {
+	if err := rl.send(&dnsgatev1.CallRequest{Message: &dnsgatev1.CallRequest_Request{Request: req}}); err != nil && !errors.Is(err, io.EOF) {
 		return nil, newError(err)
 	}
 
-	msg, err := stream.Recv()
-	if err != nil {
-		return nil, newError(err)
-	}
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			return nil, newError(err)
+		}
 
-	resp := msg.GetResponse()
-	if resp == nil {
-		return nil, fmt.Errorf("gateway sent %T, want a response", msg.GetMessage())
+		switch m := msg.GetMessage().(type) {
+		case *dnsgatev1.CallResponse_Response:
+			return m.Response, nil
+		case *dnsgatev1.CallResponse_Open:
+			rl.open(m.Open)
+		case *dnsgatev1.CallResponse_Data:
+			rl.data(m.Data)
+		case *dnsgatev1.CallResponse_Close:
+			rl.closeWrite(m.Close.GetId())
+		default:
+			return nil, fmt.Errorf("gateway sent %T, want a response", msg.GetMessage())
+		}
 	}
-
-	return resp, nil
 }

@@ -498,14 +498,15 @@ func TestMutationsOutsideThePermissionsAreDeniedBeforeTheProvider(t *testing.T) 
 		"type outside the filter": {
 			acme, "_acme-challenge.www", "A", 0, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
 		},
-		"agent egress asked": {
-			acme, "_acme-challenge.www", "TXT", dnsgatev1.Egress_EGRESS_AGENT,
-			codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
+		"agent egress asked, gateway egress only": {
+			token.Permission{Verbs: all, Egress: []string{"gateway"}},
+			"_acme-challenge.www", "TXT", dnsgatev1.Egress_EGRESS_AGENT,
+			codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
 		},
-		"agent egress only": {
+		"gateway egress asked, agent egress only": {
 			token.Permission{Verbs: all, Egress: []string{"agent"}},
-			"_acme-challenge.www", "TXT", 0,
-			codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
+			"_acme-challenge.www", "TXT", dnsgatev1.Egress_EGRESS_GATEWAY,
+			codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

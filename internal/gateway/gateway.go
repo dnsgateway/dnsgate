@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log/slog"
@@ -49,6 +50,10 @@ type Config struct {
 	// a transport given here brings its own TLS settings and timeouts.
 	// Tests point it at a fake Provider API.
 	EgressTransport http.RoundTripper
+	// AgentEgressRootCAs are the CA certificates the Gateway verifies
+	// a Provider's certificate against through Agent Egress; nil means
+	// the system's. The Provider's hostname is always verified.
+	AgentEgressRootCAs *x509.CertPool
 	// MaxAncestors is the most ancestors a Derived Token may have: a
 	// chain reaches at most this many Derived Tokens below its Root
 	// Token. It keeps tokens, which carry every ancestor's ID, small, and
@@ -68,6 +73,7 @@ type Gateway struct {
 	bootstrap    token.Secret
 	providers    dnsprovider.Registry
 	egress       http.RoundTripper
+	agentRoots   *x509.CertPool
 	maxAncestors int
 	audit        *audit.Log
 	log          *slog.Logger
@@ -82,6 +88,7 @@ func New(cfg Config) *Gateway {
 		bootstrap:    cfg.BootstrapSecret,
 		providers:    cfg.Providers,
 		egress:       cfg.EgressTransport,
+		agentRoots:   cfg.AgentEgressRootCAs,
 		maxAncestors: cfg.MaxAncestors,
 		audit:        cfg.Audit,
 		log:          cfg.Logger,
@@ -125,7 +132,8 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		return invalidRequest("the first message of a stream must be a request")
 	}
 
-	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now()}
+	r := &request{ctx: stream.Context(), id: g.newID(requestIDPrefix), start: g.now(), relay: newRelay(stream)}
+	defer r.relay.close()
 
 	var resp *dnsgatev1.Response
 
@@ -162,7 +170,7 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		return err
 	}
 
-	return stream.Send(&dnsgatev1.CallResponse{Message: &dnsgatev1.CallResponse_Response{Response: resp}})
+	return r.relay.respond(resp)
 }
 
 // request is the context of one Gateway request.
@@ -173,6 +181,9 @@ type request struct {
 	// clock, which audit durations are measured on too: a test clock
 	// stands in for both.
 	start time.Time
+	// relay carries the request's Agent Egress connections, inside its
+	// stream, and sends its Response.
+	relay *relay
 }
 
 // newID returns prefix followed by a new ULID.

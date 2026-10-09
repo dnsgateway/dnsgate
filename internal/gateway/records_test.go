@@ -458,69 +458,6 @@ func TestInvalidTokensAreRejectedBeforeTheProvider(t *testing.T) {
 	}
 }
 
-func TestEgressSelection(t *testing.T) {
-	read := []string{"get", "list"}
-
-	for name, tc := range map[string]struct {
-		egress    []string
-		requested dnsgatev1.Egress
-		code      codes.Code
-		category  dnsgatev1.Error_Category
-	}{
-		"none asked, both allowed":  {nil, dnsgatev1.Egress_EGRESS_UNSPECIFIED, codes.OK, 0},
-		"gateway asked and allowed": {[]string{"gateway"}, dnsgatev1.Egress_EGRESS_GATEWAY, codes.OK, 0},
-		"agent asked, both allowed": {
-			nil, dnsgatev1.Egress_EGRESS_AGENT, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
-		},
-		"agent asked and allowed": {
-			[]string{"agent"}, dnsgatev1.Egress_EGRESS_AGENT, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
-		},
-		"agent asked, gateway only": {
-			[]string{"gateway"}, dnsgatev1.Egress_EGRESS_AGENT, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
-		},
-		"none asked, agent only": {
-			[]string{"agent"}, dnsgatev1.Egress_EGRESS_UNSPECIFIED, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
-		},
-		"gateway asked, agent only": {
-			[]string{"agent"}, dnsgatev1.Egress_EGRESS_GATEWAY, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED,
-		},
-		"unknown egress": {
-			nil, dnsgatev1.Egress(42), codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			h := newHarness(t)
-			h.addZones()
-
-			tok := h.mint(t, nil, token.Permission{Verbs: read, Egress: tc.egress})
-
-			_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: tok, Zone: "example.com", Egress: tc.requested})
-
-			if tc.code == codes.OK {
-				if err != nil {
-					t.Fatalf("ListRecords: %v", err)
-				}
-
-				if e := h.auditEvents(t); len(e) != 0 {
-					t.Errorf("audit events = %v, want none for an allowed read", e)
-				}
-
-				return
-			}
-
-			wantError(t, err, tc.code, tc.category)
-
-			if calls := h.fake.Calls(); len(calls) != 0 {
-				t.Errorf("provider calls = %+v, want none", calls)
-			}
-
-			if tc.category == dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED && !strings.Contains(err.Error(), "not supported yet") {
-				t.Errorf("error = %v, want it to say agent egress is not supported yet", err)
-			}
-		})
-	}
-}
-
 // rawProviderMessage is in every scripted Provider error answer; it must
 // never reach the client or the audit log.
 const rawProviderMessage = "cloudflare says: request for zone 023e105f4ecef8ad9ca31a8372d0c353 failed"
@@ -647,7 +584,7 @@ func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 	h.addZones()
 
 	tok := h.mint(t, nil, token.Permission{
-		Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"*.apps"}, Types: []string{"A"},
+		Verbs: []string{"get"}, Zones: []string{"example.com"}, Names: []string{"*.apps"}, Types: []string{"A"}, Egress: []string{"gateway"},
 	})
 
 	var errs []error
@@ -679,8 +616,8 @@ func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 			"zone": "example.com", "record_name": "_acme-challenge", "record_type": "TXT", "verb": "get",
 		},
 		{
-			"event": "records.get", "result": "denied", "category": "egress_not_supported",
-			"service_account": "app", "requested_egress": "agent", "record_name": "www.apps",
+			"event": "records.get", "result": "denied", "category": "permission_denied",
+			"service_account": "app", "requested_egress": "agent", "egress": nil, "record_name": "www.apps",
 		},
 		{"event": "zones.list", "result": "denied", "category": "permission_denied", "verb": "list"},
 		{"event": "records.list", "result": "denied", "category": "unauthenticated", "service_account": nil, "zone": "example.com", "verb": "list"},
@@ -733,14 +670,14 @@ func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 	}
 }
 
-func TestEgressNotSupportedIsAudited(t *testing.T) {
+func TestDisallowedEgressIsAudited(t *testing.T) {
 	h := newHarness(t)
 	h.addZones()
 
 	tok := h.mint(t, nil, token.Permission{Verbs: []string{"list"}, Egress: []string{"agent"}})
 
-	_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: tok, Zone: "example.com"})
-	wantError(t, err, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED)
+	_, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: tok, Zone: "example.com", Egress: dnsgatev1.Egress_EGRESS_GATEWAY})
+	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
 
 	events := h.auditEvents(t)
 	if len(events) != 1 {
@@ -748,8 +685,8 @@ func TestEgressNotSupportedIsAudited(t *testing.T) {
 	}
 
 	e := events[0]
-	if e["event"] != "records.list" || e["result"] != "denied" || e["category"] != "egress_not_supported" ||
-		e["requested_egress"] != nil || e["egress"] != nil {
-		t.Errorf("audit event = %v, want a denied records.list, egress not supported, no egress", e)
+	if e["event"] != "records.list" || e["result"] != "denied" || e["category"] != "permission_denied" ||
+		e["requested_egress"] != "gateway" || e["egress"] != nil {
+		t.Errorf("audit event = %v, want a denied records.list, gateway egress asked for, none used", e)
 	}
 }

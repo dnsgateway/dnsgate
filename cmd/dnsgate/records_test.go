@@ -151,10 +151,6 @@ func TestReadRecordsFailures(t *testing.T) {
 		args []string
 		want string
 	}{
-		"agent egress": {
-			[]string{"record", "list", "--zone", "example.com", "--egress", "agent", "--token", root},
-			"egress not supported: agent egress is not supported yet",
-		},
 		"unknown egress": {
 			[]string{"record", "list", "--zone", "example.com", "--egress", "relay", "--token", root},
 			`unknown egress "relay"`,
@@ -183,7 +179,7 @@ func TestReadRecordsFailures(t *testing.T) {
 	}
 
 	audit := gw.audit.String()
-	if !strings.Contains(audit, `"category":"egress_not_supported"`) || !strings.Contains(audit, `"category":"unauthenticated"`) {
+	if !strings.Contains(audit, `"category":"unauthenticated"`) {
 		t.Errorf("audit output lacks the denials:\n%s", audit)
 	}
 

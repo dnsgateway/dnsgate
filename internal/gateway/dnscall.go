@@ -94,12 +94,10 @@ func (g *Gateway) openToken(r *request, event audit.Event, tok string) (token.Cl
 	return claims, nil
 }
 
-// authorize checks that the Egress is supported and that the token's
-// Permissions allow pr through the requested Egress, or through the
-// Egress chosen for it, which becomes the call's. Agent Egress is not
-// supported yet: a request for it is refused whatever the token allows,
-// and so is a token that allows only Agent Egress, which never falls back
-// to Gateway Egress.
+// authorize checks that the token's Permissions allow pr through the
+// requested Egress, or through the Egress chosen for it, which becomes
+// the call's: Gateway Egress where they allow it, else Agent Egress. A
+// token that allows only Agent Egress never falls back to Gateway Egress.
 func (g *Gateway) authorize(c *dnsCall, requested dnsgatev1.Egress, pr permission.Request) error {
 	name, ok := permission.EgressFromAPI(requested)
 	if !ok {
@@ -107,19 +105,11 @@ func (g *Gateway) authorize(c *dnsCall, requested dnsgatev1.Egress, pr permissio
 	}
 
 	c.event.RequestedEgress = string(name)
-	if name == permission.EgressAgent {
-		return g.deny(c.request, c.event, agentEgressNotSupported())
-	}
-
 	pr.Egress = name
 
 	egress, ok := permission.ChooseEgress(c.claims.Permissions, pr)
 	if !ok {
 		return g.deny(c.request, c.event, permissionDenied("the token's permissions do not allow the request"))
-	}
-
-	if egress != permission.EgressGateway {
-		return g.deny(c.request, c.event, agentEgressNotSupported())
 	}
 
 	pr.Egress = egress
@@ -129,13 +119,19 @@ func (g *Gateway) authorize(c *dnsCall, requested dnsgatev1.Egress, pr permissio
 	return nil
 }
 
-// connect builds the token's Provider from its Provider Credential. The
-// plaintext credential lives on only inside the Provider, which is
-// dropped with the call. A failed build is logged by its reason alone:
-// the Provider's error may quote the credential.
+// connect builds the token's Provider from its Provider Credential, its
+// requests sent through the call's Egress: for Agent Egress, relayed by
+// the client inside the request's stream, with TLS to the Provider still
+// ending on the Gateway. The plaintext credential lives on only inside
+// the Provider, which is dropped with the call. A failed build is logged
+// by its reason alone: the Provider's error may quote the credential.
 func (g *Gateway) connect(c *dnsCall) error {
 	var opts []dnsprovider.Option
-	if g.egress != nil {
+
+	switch {
+	case c.perm.Egress == permission.EgressAgent:
+		opts = append(opts, dnsprovider.WithHTTPClient(&http.Client{Transport: c.relay.transport(g.agentRoots)}))
+	case g.egress != nil:
 		opts = append(opts, dnsprovider.WithHTTPClient(&http.Client{Transport: g.egress}))
 	}
 
