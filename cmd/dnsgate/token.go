@@ -182,7 +182,7 @@ func newTokenRevokeCmd(flags *Flags) *cobra.Command {
 		Use:   "revoke TOKEN_ID|TOKEN|-",
 		Short: "Revoke a Service Token and every token derived from it",
 		Long: "Revoke a Service Token for good: from the next request on, the Gateway refuses it and every token " +
-			"derived from it. Revoking a Root Token disables everything issued under its Onboarding. Print the " +
+			"derived from it. Revoking a Root Token revokes everything issued under its Onboarding. Print the " +
 			"revoked token's ID.\n\n" +
 			"Present a token holding delete on tokens, --" + flagToken + " or " + envToken + ". It may revoke any " +
 			"token ID: the Gateway keeps no registry of which chain a token belongs to.\n\n" +
