@@ -156,7 +156,10 @@ const (
 	Error_CATEGORY_NOT_FOUND          Error_Category = 6
 	Error_CATEGORY_RATE_LIMITED       Error_Category = 7
 	Error_CATEGORY_INVALID_RECORD     Error_Category = 8
-	// The requested or allowed Egress is not supported yet.
+	// No longer returned: the Gateway supports every Egress. Kept so
+	// that its number is never reused.
+	//
+	// Deprecated: Marked as deprecated in dnsgate/v1/gateway.proto.
 	Error_CATEGORY_EGRESS_NOT_SUPPORTED Error_Category = 9
 	// The Gateway failed; the details are in its logs.
 	Error_CATEGORY_INTERNAL Error_Category = 10
@@ -3258,11 +3261,11 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\x05zones\x18\x03 \x03(\tR\x05zones\x12\x14\n" +
 	"\x05names\x18\x04 \x03(\tR\x05names\x12\x14\n" +
 	"\x05types\x18\x05 \x03(\tR\x05types\x12\x16\n" +
-	"\x06egress\x18\x06 \x03(\tR\x06egress\"\xed\x03\n" +
+	"\x06egress\x18\x06 \x03(\tR\x06egress\"\xf1\x03\n" +
 	"\x05Error\x126\n" +
 	"\bcategory\x18\x01 \x01(\x0e2\x1a.dnsgate.v1.Error.CategoryR\bcategory\x12\x1c\n" +
 	"\tdimension\x18\x02 \x01(\tR\tdimension\x12'\n" +
-	"\x0fprovider_status\x18\x03 \x01(\x05R\x0eproviderStatus\"\xe4\x02\n" +
+	"\x0fprovider_status\x18\x03 \x01(\x05R\x0eproviderStatus\"\xe8\x02\n" +
 	"\bCategory\x12\x18\n" +
 	"\x14CATEGORY_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18CATEGORY_INVALID_REQUEST\x10\x01\x12\x1c\n" +
@@ -3272,8 +3275,8 @@ const file_dnsgate_v1_gateway_proto_rawDesc = "" +
 	"\x1bCATEGORY_DENIED_BY_PROVIDER\x10\x05\x12\x16\n" +
 	"\x12CATEGORY_NOT_FOUND\x10\x06\x12\x19\n" +
 	"\x15CATEGORY_RATE_LIMITED\x10\a\x12\x1b\n" +
-	"\x17CATEGORY_INVALID_RECORD\x10\b\x12!\n" +
-	"\x1dCATEGORY_EGRESS_NOT_SUPPORTED\x10\t\x12\x15\n" +
+	"\x17CATEGORY_INVALID_RECORD\x10\b\x12%\n" +
+	"\x1dCATEGORY_EGRESS_NOT_SUPPORTED\x10\t\x1a\x02\b\x01\x12\x15\n" +
 	"\x11CATEGORY_INTERNAL\x10\n" +
 	"\x12\x15\n" +
 	"\x11CATEGORY_CONFLICT\x10\v*F\n" +

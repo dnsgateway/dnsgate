@@ -487,8 +487,9 @@ message Error {
     CATEGORY_NOT_FOUND = 6;
     CATEGORY_RATE_LIMITED = 7;
     CATEGORY_INVALID_RECORD = 8;
-    // The requested or allowed Egress is not supported yet.
-    CATEGORY_EGRESS_NOT_SUPPORTED = 9;
+    // No longer returned: the Gateway supports every Egress. Kept so
+    // that its number is never reused.
+    CATEGORY_EGRESS_NOT_SUPPORTED = 9 [deprecated = true];
     // The Gateway failed; the details are in its logs.
     CATEGORY_INTERNAL = 10;
     // The request collides with what the Provider holds, such as an RRset
