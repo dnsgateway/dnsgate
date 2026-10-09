@@ -1,35 +1,9 @@
 package main
 
 import (
-	"net"
-	"os"
 	"strings"
 	"testing"
 )
-
-// listenOnFreePort rewrites env's config file to listen on a free port
-// instead of an ephemeral one and returns that address, for a server whose
-// logs do not tell it.
-func listenOnFreePort(t *testing.T, env *gatewayEnv) string {
-	t.Helper()
-
-	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	addr := lis.Addr().String()
-	_ = lis.Close()
-
-	config, err := os.ReadFile(env.config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	writeFile(t, env.config, strings.Replace(string(config), "listen: 127.0.0.1:0", "listen: "+addr, 1), 0o600)
-
-	return addr
-}
 
 func TestServerLogsDebugLinesAtDebug(t *testing.T) {
 	env := newGatewayEnv(t)
@@ -94,8 +68,8 @@ func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
 }
 
 func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
-	env := newGatewayEnv(t)
-	gw := startServerAt(t, env.config, listenOnFreePort(t, env), "--log-level", "error")
+	env := newGatewayEnvAt(t, freePort(t))
+	gw := startServerAt(t, env, "--log-level", "error")
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)

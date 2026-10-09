@@ -49,18 +49,29 @@ func (b *syncBuffer) String() string {
 }
 
 // gatewayEnv is a configured Gateway: its key files, TLS certificate,
-// bootstrap secret and config file in a temporary directory.
+// bootstrap secret and config file in a temporary directory, and the
+// address its config listens on.
 type gatewayEnv struct {
 	dir    string
 	config string
 	caFile string
+	listen string
 }
 
+// newGatewayEnv configures a Gateway that listens on an ephemeral port,
+// which it logs once it serves.
 func newGatewayEnv(t *testing.T) *gatewayEnv {
 	t.Helper()
 
+	return newGatewayEnvAt(t, "127.0.0.1:0")
+}
+
+// newGatewayEnvAt configures a Gateway that listens on listen.
+func newGatewayEnvAt(t *testing.T, listen string) *gatewayEnv {
+	t.Helper()
+
 	dir := t.TempDir()
-	env := &gatewayEnv{dir: dir, config: filepath.Join(dir, "dnsgate.yaml"), caFile: filepath.Join(dir, "tls.crt")}
+	env := &gatewayEnv{dir: dir, config: filepath.Join(dir, "dnsgate.yaml"), caFile: filepath.Join(dir, "tls.crt"), listen: listen}
 
 	if out, err := runCLI(t, "keys", "generate", "--key-dir", filepath.Join(dir, "keys"), "--key-id-suffix", "e2e"); err != nil {
 		t.Fatalf("keys generate: %v\n%s", err, out)
@@ -71,7 +82,7 @@ func newGatewayEnv(t *testing.T) *gatewayEnv {
 
 	// Relative paths are resolved against the config file's directory.
 	writeFile(t, env.config, `
-listen: 127.0.0.1:0
+listen: `+env.listen+`
 tls:
   certFile: tls.crt
   keyFile: tls.key
@@ -90,7 +101,7 @@ func writeDecryptionKeysConfig(t *testing.T, env *gatewayEnv, entries string) {
 	t.Helper()
 
 	writeFile(t, env.config, `
-listen: 127.0.0.1:0
+listen: `+env.listen+`
 tls:
   certFile: tls.crt
   keyFile: tls.key
@@ -171,13 +182,31 @@ func startServer(t *testing.T, config string, args ...string) *runningGateway {
 	})
 }
 
-// startServerAt runs "dnsgate server --config" with args until the test
-// ends and waits for it to accept connections at addr, the address its
-// config listens on. It does not rely on the server's logs.
-func startServerAt(t *testing.T, config, addr string, args ...string) *runningGateway {
+// freePort returns a local address no one listens on, for a Gateway
+// whose logs do not tell its address.
+func freePort(t *testing.T) string {
 	t.Helper()
 
-	return launchServer(t, config, args, func(gw *runningGateway) bool {
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr := lis.Addr().String()
+	_ = lis.Close()
+
+	return addr
+}
+
+// startServerAt runs "dnsgate server --config" for env with args until the
+// test ends and waits for it to accept connections at env's listen address.
+// It does not rely on the server's logs.
+func startServerAt(t *testing.T, env *gatewayEnv, args ...string) *runningGateway {
+	t.Helper()
+
+	addr := env.listen
+
+	return launchServer(t, env.config, args, func(gw *runningGateway) bool {
 		conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", addr)
 		if err != nil {
 			return false
