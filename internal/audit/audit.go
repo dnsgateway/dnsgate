@@ -22,6 +22,10 @@ const (
 	EventOnboard      Name = "onboard"
 	EventTokenInspect Name = "token.inspect"
 	EventTokenReseal  Name = "token.reseal"
+	EventZonesList    Name = "zones.list"
+	EventZonesGet     Name = "zones.get"
+	EventRecordsList  Name = "records.list"
+	EventRecordsGet   Name = "records.get"
 )
 
 // Result is the outcome of the request an Event records.
@@ -31,6 +35,9 @@ type Result string
 const (
 	ResultOK     Result = "ok"
 	ResultDenied Result = "denied"
+	// ResultFailed is a request the Gateway allowed and the Provider
+	// failed.
+	ResultFailed Result = "failed"
 )
 
 // Category is the Gateway error category of a failed request, such as
@@ -53,9 +60,31 @@ type Event struct {
 	// a token from and to, such as for Resealing. A kid is not a secret.
 	OldKeyID string `json:"old_kid,omitempty"`
 	NewKeyID string `json:"new_kid,omitempty"`
-	Result   Result `json:"result"`
+
+	// Zone, RecordName and RecordType are what a zone or record request
+	// is about, once the Gateway has checked their form. RecordName is
+	// relative to Zone.
+	Zone       string `json:"zone,omitempty"`
+	RecordName string `json:"record_name,omitempty"`
+	RecordType string `json:"record_type,omitempty"`
+	// Verb is the Permission verb a request needs, such as "list".
+	Verb string `json:"verb,omitempty"`
+	// RequestedEgress is the Egress the request asked for; empty when it
+	// left the choice to the Gateway. Egress is the one it went through.
+	RequestedEgress string `json:"requested_egress,omitempty"`
+	Egress          string `json:"egress,omitempty"`
+
+	Result Result `json:"result"`
 	// Category is the Gateway error category of a failed request.
 	Category Category `json:"category,omitempty"`
+	// ProviderStatus is the HTTP status of the Provider's error answer.
+	ProviderStatus int `json:"provider_status,omitempty"`
+	// ProviderMessages are the Provider's own error messages, from the
+	// body of its error answer; never its headers.
+	ProviderMessages []string `json:"provider_messages,omitempty"`
+	// DurationMS is how long a request that reached the Provider took, in
+	// milliseconds.
+	DurationMS int64 `json:"duration_ms,omitempty"`
 }
 
 // Log writes Events to an io.Writer, one JSON object per line.

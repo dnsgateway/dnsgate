@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dnsgateway/dnsprovider"
+	"github.com/dnsgateway/dnsprovider/providertest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -42,6 +44,10 @@ type harness struct {
 	api    dnsgatev1.GatewayServiceClient
 	audit  *syncBuffer
 	now    time.Time
+	// fake is the Provider the Gateway calls, as "cloudflare".
+	fake *providertest.Provider
+	// keys are the keys of the Gateway last served.
+	keys keys.Source
 
 	auditTo io.Writer
 	keyDir  string
@@ -86,6 +92,7 @@ func newHarnessAuditingTo(t *testing.T, w io.Writer) *harness {
 		now:     time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
 		auditTo: w,
 		keyDir:  filepath.Join(t.TempDir(), "keys"),
+		fake:    providertest.New(),
 	}
 
 	if _, err := keys.Generate(h.keyDir, "test"); err != nil {
@@ -133,8 +140,11 @@ func (h *harness) serve(t *testing.T, src keys.Source) {
 		Keys:            src,
 		BootstrapSecret: token.NewSecret(bootstrapSecret),
 		Audit:           audit.New(h.auditTo),
+		Providers:       dnsprovider.Registry{"cloudflare": h.fake.Factory()},
 		Now:             func() time.Time { return h.now },
 	})
+
+	h.keys = src
 
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()

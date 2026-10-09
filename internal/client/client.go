@@ -45,6 +45,34 @@ func (c *Client) ResealToken(ctx context.Context, tok string) (*dnsgatev1.Reseal
 		(*dnsgatev1.Response).GetResealToken)
 }
 
+// ListZones lists the zones the token in req covers.
+func (c *Client) ListZones(ctx context.Context, req *dnsgatev1.ListZonesRequest) (*dnsgatev1.ListZonesResponse, error) {
+	return roundTrip(ctx, c, "zone list",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_ListZones{ListZones: req}},
+		(*dnsgatev1.Response).GetListZones)
+}
+
+// GetZone reads one zone.
+func (c *Client) GetZone(ctx context.Context, req *dnsgatev1.GetZoneRequest) (*dnsgatev1.GetZoneResponse, error) {
+	return roundTrip(ctx, c, "zone get",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_GetZone{GetZone: req}},
+		(*dnsgatev1.Response).GetGetZone)
+}
+
+// ListRecords lists the RRsets of a zone the token in req covers.
+func (c *Client) ListRecords(ctx context.Context, req *dnsgatev1.ListRecordsRequest) (*dnsgatev1.ListRecordsResponse, error) {
+	return roundTrip(ctx, c, "record list",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_ListRecords{ListRecords: req}},
+		(*dnsgatev1.Response).GetListRecords)
+}
+
+// GetRecord reads one RRset.
+func (c *Client) GetRecord(ctx context.Context, req *dnsgatev1.GetRecordRequest) (*dnsgatev1.GetRecordResponse, error) {
+	return roundTrip(ctx, c, "record get",
+		&dnsgatev1.Request{Operation: &dnsgatev1.Request_GetRecord{GetRecord: req}},
+		(*dnsgatev1.Response).GetGetRecord)
+}
+
 // roundTrip sends req, named op in errors, and returns the result that
 // result picks from the Response. A Response holding another operation's
 // result is an error.

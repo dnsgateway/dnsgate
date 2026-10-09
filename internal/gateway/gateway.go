@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/dnsgateway/dnsprovider"
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -17,6 +18,7 @@ import (
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/keys"
+	"github.com/dnsgateway/dnsgate/internal/provider"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -33,6 +35,10 @@ type Config struct {
 	BootstrapSecret token.Secret
 	// Audit receives the audit events.
 	Audit *audit.Log
+	// Providers builds the Provider of a token from its Provider
+	// Credential; nil means provider.Registry(). Each Provider sends its
+	// requests through Gateway Egress, with strict TLS verification.
+	Providers dnsprovider.Registry
 	// Logger receives operational logs; nil discards them.
 	Logger *slog.Logger
 	// Now is the Gateway's clock; nil means time.Now.
@@ -45,6 +51,7 @@ type Gateway struct {
 
 	codec     *token.Codec
 	bootstrap token.Secret
+	providers dnsprovider.Registry
 	audit     *audit.Log
 	log       *slog.Logger
 	now       func() time.Time
@@ -56,6 +63,7 @@ var _ dnsgatev1.GatewayServiceServer = (*Gateway)(nil)
 func New(cfg Config) *Gateway {
 	g := &Gateway{
 		bootstrap: cfg.BootstrapSecret,
+		providers: cfg.Providers,
 		audit:     cfg.Audit,
 		log:       cfg.Logger,
 		now:       cfg.Now,
@@ -67,6 +75,10 @@ func New(cfg Config) *Gateway {
 
 	if g.now == nil {
 		g.now = time.Now
+	}
+
+	if g.providers == nil {
+		g.providers = provider.Registry()
 	}
 
 	g.codec = token.NewCodec(cfg.Keys, token.WithClock(g.now))
@@ -101,6 +113,14 @@ func (g *Gateway) Call(stream grpc.BidiStreamingServer[dnsgatev1.CallRequest, dn
 		resp, err = g.inspectToken(r, op.InspectToken)
 	case *dnsgatev1.Request_ResealToken:
 		resp, err = g.resealToken(r, op.ResealToken)
+	case *dnsgatev1.Request_ListZones:
+		resp, err = g.listZones(r, op.ListZones)
+	case *dnsgatev1.Request_GetZone:
+		resp, err = g.getZone(r, op.GetZone)
+	case *dnsgatev1.Request_ListRecords:
+		resp, err = g.listRecords(r, op.ListRecords)
+	case *dnsgatev1.Request_GetRecord:
+		resp, err = g.getRecord(r, op.GetRecord)
 	default:
 		err = invalidRequest("unknown operation")
 	}
