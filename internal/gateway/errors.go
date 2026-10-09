@@ -26,8 +26,8 @@ func permissionDenied(msg string) error {
 	return gatewayError(codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED, msg)
 }
 
-func egressNotSupported(msg string) error {
-	return gatewayError(codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED, msg)
+func agentEgressNotSupported() error {
+	return gatewayError(codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED, "agent egress is not supported yet")
 }
 
 func notFound(msg string) error {

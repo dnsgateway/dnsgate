@@ -55,10 +55,12 @@ func (g *Gateway) openToken(c *dnsCall, tok string) (token.Claims, error) {
 	return claims, nil
 }
 
-// authorize checks that the token's Permissions allow pr through the
-// requested Egress, or through the Egress chosen for it, and that the
-// Egress is supported. A token that allows only Agent Egress is refused:
-// it never falls back to Gateway Egress. authorize returns the Egress.
+// authorize checks that the Egress is supported and that the token's
+// Permissions allow pr through the requested Egress, or through the
+// Egress chosen for it. Agent Egress is not supported yet: a request for
+// it is refused whatever the token allows, and so is a token that allows
+// only Agent Egress, which never falls back to Gateway Egress. authorize
+// returns the Egress.
 func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1.Egress, pr permission.Request) (string, error) {
 	name, ok := egressNames[requested]
 	if !ok {
@@ -66,6 +68,10 @@ func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1
 	}
 
 	c.event.RequestedEgress = name
+	if name == permission.EgressAgent {
+		return "", g.refuse(c, audit.ResultDenied, agentEgressNotSupported())
+	}
+
 	pr.Egress = name
 
 	egress, ok := permission.ChooseEgress(claims.Permissions, pr)
@@ -74,7 +80,7 @@ func (g *Gateway) authorize(c *dnsCall, claims token.Claims, requested dnsgatev1
 	}
 
 	if egress != permission.EgressGateway {
-		return "", g.refuse(c, audit.ResultDenied, egressNotSupported("agent egress is not supported yet"))
+		return "", g.refuse(c, audit.ResultDenied, agentEgressNotSupported())
 	}
 
 	c.event.Egress = egress

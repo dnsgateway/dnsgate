@@ -285,9 +285,10 @@ func TestRequestsOutsideThePermissionsAreDeniedBeforeTheProvider(t *testing.T) {
 		"wrong zone": {limited, &dnsgatev1.GetRecordRequest{Zone: "example.org", Name: "www.apps", Type: "A"}},
 		"wrong name": {limited, &dnsgatev1.GetRecordRequest{Zone: "example.com", Name: "apps", Type: "A"}},
 		"wrong type": {limited, &dnsgatev1.GetRecordRequest{Zone: "example.com", Name: "www.apps", Type: "TXT"}},
-		"wrong egress": {limited, &dnsgatev1.GetRecordRequest{
-			Zone: "example.com", Name: "www.apps", Type: "A", Egress: dnsgatev1.Egress_EGRESS_AGENT,
-		}},
+		"wrong egress": {
+			token.Permission{Verbs: []string{"get"}, Egress: []string{"agent"}},
+			&dnsgatev1.GetRecordRequest{Zone: "example.com", Name: "www.apps", Type: "A", Egress: dnsgatev1.Egress_EGRESS_GATEWAY},
+		},
 		"zones not granted": {
 			token.Permission{Verbs: []string{"get", "list"}},
 			&dnsgatev1.ListZonesRequest{},
@@ -403,6 +404,12 @@ func TestEgressSelection(t *testing.T) {
 		"gateway asked and allowed": {[]string{"gateway"}, dnsgatev1.Egress_EGRESS_GATEWAY, codes.OK, 0},
 		"agent asked, both allowed": {
 			nil, dnsgatev1.Egress_EGRESS_AGENT, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
+		},
+		"agent asked and allowed": {
+			[]string{"agent"}, dnsgatev1.Egress_EGRESS_AGENT, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
+		},
+		"agent asked, gateway only": {
+			[]string{"gateway"}, dnsgatev1.Egress_EGRESS_AGENT, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
 		},
 		"none asked, agent only": {
 			[]string{"agent"}, dnsgatev1.Egress_EGRESS_UNSPECIFIED, codes.Unimplemented, dnsgatev1.Error_CATEGORY_EGRESS_NOT_SUPPORTED,
