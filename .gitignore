@@ -15,6 +15,8 @@
 *.dylib
 tls.*
 dnsgate.yaml
+dnsgate.db
+dnsgate.db-*
 bootstrap-secret
 keys/
 bin/
