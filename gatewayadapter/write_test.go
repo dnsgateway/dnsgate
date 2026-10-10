@@ -435,6 +435,22 @@ func TestApplyChangesetTakesTheLowestTTLGivenWhateverTheOrder(t *testing.T) {
 	}
 }
 
+func TestAWriteToAZoneTheProviderDoesNotHoldIsNotFound(t *testing.T) {
+	h := newHarness(t)
+	p := h.provider(t, h.root)
+	gone := dnsprovider.Zone{ID: "example.net", Name: "example.net"}
+
+	_, err := p.CreateRecord(t.Context(), gone, dnsprovider.Record{Type: "TXT", Name: "www.example.net", Value: "hi", TTL: 300})
+	if !errors.Is(err, dnsprovider.ErrNotFound) {
+		t.Errorf("CreateRecord = %v, want ErrNotFound", err)
+	}
+
+	err = p.DeleteRecord(t.Context(), gone, dnsprovider.Record{Type: "TXT", Name: "www.example.net", Value: "hi", TTL: 300})
+	if !errors.Is(err, dnsprovider.ErrNotFound) {
+		t.Errorf("DeleteRecord = %v, want ErrNotFound", err)
+	}
+}
+
 func TestUpdateRecordGivingAnAbsentRecordExtraAsEmptyWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.fake.SetRecords("z1", wwwRecords()...)

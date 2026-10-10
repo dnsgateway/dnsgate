@@ -316,6 +316,12 @@ func (a *adapter) read(ctx context.Context, zone string, s *rrset) error {
 	switch err = providerError(ctx, err); {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err
+	// The Gateway answers a zone the Provider does not hold with the same
+	// NOT_FOUND category and gRPC code as an absent RRset, and only its
+	// free-text message differs, so the two are not told apart here. A
+	// missing zone still fails with dnsprovider.ErrNotFound: a change to
+	// a Record it held finds the Record gone, and a create fails at the
+	// Gateway.
 	case errors.Is(err, dnsprovider.ErrNotFound):
 		return nil
 	case err != nil:
