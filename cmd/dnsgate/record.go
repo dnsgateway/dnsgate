@@ -15,7 +15,7 @@ const namesHelp = "Record names are relative to the zone: www.apps for www.apps.
 
 // valuesHelp explains record values in the help of record commands that
 // change them.
-const valuesHelp = `Values are in zone-file presentation form, such as 192.0.2.1, "10 mail.example.com" for MX, or '"text"' for TXT.`
+const valuesHelp = `Values are in zone-file presentation form, such as 192.0.2.1, "10 mail.example.com" for MX, or "v=spf1 -all" for TXT, with no quotes inside the value.`
 
 func newRecordCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
