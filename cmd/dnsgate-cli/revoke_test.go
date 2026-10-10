@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dnsgateway/dnsgate/internal/provider"
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
@@ -65,7 +66,7 @@ func jti(t *testing.T, env *servertest.Env, gw *servertest.Gateway, tok string) 
 
 func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	root, tokens := onboardAndIssue(t, env, gw, issuingPermissionsYAML, "by-id", "by-token", "by-stdin", "kept")
 	byID, byToken, byStdin, kept := tokens[0], tokens[1], tokens[2], tokens[3]
@@ -98,7 +99,7 @@ func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
 	}
 
 	// The Gateway restarts on the same database.
-	gw2 := startServer(t, env.Config)
+	gw2 := startServer(t, env.Config, provider.Registry())
 
 	for name, tok := range map[string]string{"by-id": byID, "by-token": byToken, "by-stdin": byStdin} {
 		_, err := runClient(t, env, gw2, "token", "inspect", "--token", tok)
@@ -125,7 +126,7 @@ func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
 
 func TestRevokeIsDeniedWithoutDeleteOnTokens(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	_, tokens := onboardAndIssue(t, env, gw, "permissions:\n  - verbs: [create]\n    resources: [tokens]\n", "issuer", "target")
 

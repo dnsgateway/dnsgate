@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dnsgateway/dnsgate/internal/provider"
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
@@ -66,7 +67,7 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
 
 	// Onboard under key A, enc-e2e.
-	gwA := startServer(t, env.Config)
+	gwA := startServer(t, env.Config, provider.Registry())
 
 	out, err := runClient(t, env, gwA, "onboard", "--provider", "cloudflare")
 	if err != nil {
@@ -86,7 +87,7 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 	// Rotate to key B, enc-next, keeping A until its retirement deadline.
 	servertest.GenerateKeys(t, env, "next")
 
-	gwB := startServer(t, rotatedConfig(t, env, "rotated.yaml", time.Now().Add(24*time.Hour)))
+	gwB := startServer(t, rotatedConfig(t, env, "rotated.yaml", time.Now().Add(24*time.Hour)), provider.Registry())
 
 	if _, err := runClient(t, env, gwB, "token", "inspect", "--token", original); err != nil {
 		t.Fatalf("original token after rotation: %v", err)
@@ -128,7 +129,7 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 	}
 
 	// Retire A: its deadline has passed.
-	gwRetired := startServer(t, rotatedConfig(t, env, "retired.yaml", time.Now().Add(-time.Second)))
+	gwRetired := startServer(t, rotatedConfig(t, env, "retired.yaml", time.Now().Add(-time.Second)), provider.Registry())
 
 	got, err := runClient(t, env, gwRetired, "token", "inspect", "--token", resealed)
 	if err != nil {
@@ -147,7 +148,7 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 
 func TestTokenResealTakesTheTokenFromEnv(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)

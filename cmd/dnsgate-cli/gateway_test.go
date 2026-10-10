@@ -5,7 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsprovider"
+
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
@@ -14,16 +15,12 @@ const (
 	testCFToken         = "cf-api-token-E2E-SECRET"
 )
 
-// providers returns the Providers the Gateways the test starts call.
-// useFakeProvider replaces it with a fake Provider.
-var providers = provider.Registry
-
-// startServer runs the Gateway configured by config in the test process
-// until the test ends and waits for it to serve.
-func startServer(t *testing.T, config string) *servertest.Gateway {
+// startServer runs the Gateway configured by config, calling providers,
+// in the test process until the test ends and waits for it to serve.
+func startServer(t *testing.T, config string, providers dnsprovider.Registry) *servertest.Gateway {
 	t.Helper()
 
-	return servertest.Start(t, config, providers())
+	return servertest.Start(t, config, providers)
 }
 
 // runCLI runs dnsgate-cli with args, returning stdout and stderr together.
