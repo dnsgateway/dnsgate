@@ -344,6 +344,119 @@ func TestListsShowOnlyWhatALimitedTokenCovers(t *testing.T) {
 	}
 }
 
+func TestListZonesIsAPartialViewWhenThePermissionsDoNotCoverEveryZone(t *testing.T) {
+	list := []string{"list"}
+	zones := []string{"zones"}
+
+	for name, tc := range map[string]struct {
+		perms   []token.Permission
+		partial bool
+	}{
+		"unrestricted": {
+			perms: []token.Permission{{Verbs: list, Resources: zones}},
+		},
+		"spelling every zone": {
+			perms: []token.Permission{{Verbs: list, Resources: zones, Zones: []string{"*"}}},
+		},
+		"limited to some zones": {
+			perms:   []token.Permission{{Verbs: list, Resources: zones, Zones: []string{"example.com", "example.org"}}},
+			partial: true,
+		},
+		"a limited rule beside an unrestricted one": {
+			perms: []token.Permission{
+				{Verbs: list, Resources: zones, Zones: []string{"example.com"}},
+				{Verbs: list, Resources: []string{"zones", "records"}},
+			},
+		},
+		"limited by name, which zones do not have": {
+			perms: []token.Permission{{Verbs: list, Resources: []string{"zones", "records"}, Names: []string{"_acme-challenge"}}},
+		},
+		"limited by type, which zones do not have": {
+			perms: []token.Permission{{Verbs: list, Resources: zones, Types: []string{"TXT"}}},
+		},
+		"limited to another egress": {
+			perms: []token.Permission{
+				{Verbs: list, Resources: zones, Egress: []string{"gateway"}, Zones: []string{"example.com"}},
+				{Verbs: list, Resources: zones, Egress: []string{"agent"}},
+			},
+			partial: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.addZones()
+
+			tok := h.mint(t, nil, tc.perms...)
+
+			resp, err := h.client.ListZones(t.Context(), &dnsgatev1.ListZonesRequest{Token: tok})
+			if err != nil {
+				t.Fatalf("ListZones: %v", err)
+			}
+
+			if resp.GetPartial() != tc.partial {
+				t.Errorf("partial = %v, want %v", resp.GetPartial(), tc.partial)
+			}
+		})
+	}
+}
+
+func TestListRecordsIsAPartialViewWhenThePermissionsDoNotCoverTheZone(t *testing.T) {
+	list := []string{"list"}
+
+	for name, tc := range map[string]struct {
+		perms   []token.Permission
+		partial bool
+	}{
+		"unrestricted": {
+			perms: []token.Permission{{Verbs: list}},
+		},
+		"limited to the zone": {
+			perms: []token.Permission{{Verbs: list, Zones: []string{"example.com"}}},
+		},
+		"limited by name": {
+			perms:   []token.Permission{{Verbs: list, Names: []string{"*.apps"}}},
+			partial: true,
+		},
+		"limited by type": {
+			perms:   []token.Permission{{Verbs: list, Types: []string{"TXT"}}},
+			partial: true,
+		},
+		"limited by name on a rule over zones and records": {
+			perms:   []token.Permission{{Verbs: list, Resources: []string{"zones", "records"}, Names: []string{"_acme-challenge"}}},
+			partial: true,
+		},
+		"covering every name only together": {
+			perms: []token.Permission{
+				{Verbs: list, Names: []string{"@", "*"}},
+				{Verbs: list, Names: []string{"*.**"}},
+			},
+		},
+		"limited to another egress": {
+			perms: []token.Permission{
+				{Verbs: list, Egress: []string{"gateway"}, Names: []string{"*.apps"}},
+				{Verbs: list, Egress: []string{"agent"}},
+			},
+			partial: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.addZones()
+
+			tok := h.mint(t, nil, tc.perms...)
+
+			resp, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: tok, Zone: "example.com"})
+			if err != nil {
+				t.Fatalf("ListRecords: %v", err)
+			}
+
+			if resp.GetPartial() != tc.partial {
+				t.Errorf("partial = %v, want %v", resp.GetPartial(), tc.partial)
+			}
+		})
+	}
+}
+
 func TestNamePatternsOfRecordCalls(t *testing.T) {
 	for _, tc := range []struct {
 		pattern, name, typ string

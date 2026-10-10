@@ -16,10 +16,12 @@ func TestZonesHaveTheirNameAsIDAndAreFiltered(t *testing.T) {
 
 	p := h.provider(t, h.root)
 
-	zones, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+	zoneSet, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{})
 	if err != nil {
 		t.Fatalf("Zones: %v", err)
 	}
+
+	zones := zoneSet.Zones
 
 	want := []dnsprovider.Zone{
 		{ID: "example.com", Name: "example.com", State: dnsprovider.HostingActive, Nameservers: []string{"ns1.example.net"}},
@@ -29,10 +31,12 @@ func TestZonesHaveTheirNameAsIDAndAreFiltered(t *testing.T) {
 		t.Errorf("Zones = %+v, want %+v", zones, want)
 	}
 
-	zones, err = p.Zones(t.Context(), dnsprovider.ZoneFilter{Contains: ".ORG."})
+	zoneSet, err = p.Zones(t.Context(), dnsprovider.ZoneFilter{Contains: ".ORG."})
 	if err != nil {
 		t.Fatalf("Zones: %v", err)
 	}
+
+	zones = zoneSet.Zones
 
 	if !slices.EqualFunc(zones, want[1:], sameZone) {
 		t.Errorf("Zones filtered by .ORG. = %+v, want %+v", zones, want[1:])
@@ -144,6 +148,48 @@ func TestRecordsAreFiltered(t *testing.T) {
 
 	if got := valuesOf(set.Records); !slices.Equal(got, []string{"192.0.2.1", "192.0.2.2"}) {
 		t.Errorf("Records of type a holding WWW. = %v, want the www A values", got)
+	}
+}
+
+func TestZonesAndRecordsCarryThePartialViewTheGatewaySets(t *testing.T) {
+	read := []string{"get", "list"}
+
+	for name, tc := range map[string]struct {
+		perm    *dnsgatev1.Permission
+		partial bool
+	}{
+		"full view": {
+			perm: &dnsgatev1.Permission{Verbs: read, Resources: []string{"zones", "records"}},
+		},
+		"partial view": {
+			perm:    &dnsgatev1.Permission{Verbs: read, Resources: []string{"zones", "records"}, Zones: []string{"example.com"}, Types: []string{"A"}},
+			partial: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.fake.SetRecords("z1", wwwRecords()...)
+
+			p := h.provider(t, h.derive(t, tc.perm))
+
+			zoneSet, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+			if err != nil {
+				t.Fatalf("Zones: %v", err)
+			}
+
+			if zoneSet.Partial != tc.partial || len(zoneSet.Zones) != 1 {
+				t.Errorf("Zones = %+v, want example.com alone with Partial %v", zoneSet, tc.partial)
+			}
+
+			set, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
+			if err != nil {
+				t.Fatalf("Records: %v", err)
+			}
+
+			if set.Partial != tc.partial || len(set.Records) != 2 {
+				t.Errorf("Records = %+v, want the two www values with Partial %v", set, tc.partial)
+			}
+		})
 	}
 }
 

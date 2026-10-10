@@ -29,10 +29,11 @@ func newZoneListCmd(flags *Flags) *cobra.Command {
 		Use:   "list",
 		Short: "List the zones a Service Token covers",
 		Long: "Print, as JSON, the zones the token's Provider Credential reaches and its Permissions cover. " +
-			"The token needs list on zones.",
+			"The token needs list on zones. When the token's Permissions do not cover every zone, " +
+			"a note on stderr says the list is a partial view.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runZoneList(cmd.Context(), cmd.OutOrStdout(), flags)
+			return runZoneList(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), flags)
 		},
 	}
 
@@ -41,7 +42,7 @@ func newZoneListCmd(flags *Flags) *cobra.Command {
 	return cmd
 }
 
-func runZoneList(ctx context.Context, out io.Writer, f *Flags) error {
+func runZoneList(ctx context.Context, out, errOut io.Writer, f *Flags) error {
 	egress, err := checkReadFlags(f)
 	if err != nil {
 		return err
@@ -58,7 +59,7 @@ func runZoneList(ctx context.Context, out io.Writer, f *Flags) error {
 		zones = append(zones, newZoneOutput(z))
 	}
 
-	return printJSON(out, zones)
+	return printList(out, errOut, zones, resp.GetPartial(), "every zone")
 }
 
 func newZoneGetCmd(flags *Flags) *cobra.Command {

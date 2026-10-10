@@ -46,10 +46,11 @@ func newRecordListCmd(flags *Flags) *cobra.Command {
 		Use:   "list",
 		Short: "List the RRsets of a zone a Service Token covers",
 		Long: "Print, as JSON, the RRsets of --" + flagZone + " that the token's Permissions cover. " +
-			"The token needs list on records in the zone. " + namesHelp,
+			"The token needs list on records in the zone. When its Permissions do not cover every name and type in the zone, " +
+			"a note on stderr says the list is a partial view. " + namesHelp,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRecordList(cmd.Context(), cmd.OutOrStdout(), flags)
+			return runRecordList(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), flags)
 		},
 	}
 
@@ -58,7 +59,7 @@ func newRecordListCmd(flags *Flags) *cobra.Command {
 	return cmd
 }
 
-func runRecordList(ctx context.Context, out io.Writer, f *Flags) error {
+func runRecordList(ctx context.Context, out, errOut io.Writer, f *Flags) error {
 	egress, err := checkRecordFlags(f)
 	if err != nil {
 		return err
@@ -75,7 +76,7 @@ func runRecordList(ctx context.Context, out io.Writer, f *Flags) error {
 		sets = append(sets, newRecordSetOutput(s))
 	}
 
-	return printJSON(out, sets)
+	return printList(out, errOut, sets, resp.GetPartial(), "every name and type in "+f.Zone)
 }
 
 func newRecordGetCmd(flags *Flags) *cobra.Command {

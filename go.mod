@@ -3,8 +3,8 @@ module github.com/dnsgateway/dnsgate
 go 1.27
 
 require (
-	github.com/dnsgateway/dnsgate-go v0.0.0-20261010111459-33c4ab444171
-	github.com/dnsgateway/dnsprovider v0.0.0-20261010081524-44743bbc29c4
+	github.com/dnsgateway/dnsgate-go v0.0.0-20261010140319-45b81ef44951
+	github.com/dnsgateway/dnsprovider v0.0.0-20261010135532-454b5a0d851c
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/spf13/cobra v1.10.2

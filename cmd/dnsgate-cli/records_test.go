@@ -157,6 +157,88 @@ func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
 	}
 }
 
+func TestListsNoteAPartialViewOnStderrEndToEnd(t *testing.T) {
+	_, providers := fakeProviders()
+
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config, providers)
+
+	root, derived := onboardAndIssue(t, env, gw, `permissions:
+  - verbs: [list]
+    resources: [zones, records]
+    zones: [example.com]
+    types: [A]
+`, "app")
+
+	for name, tc := range map[string]struct {
+		tok, zones, records, zonesNote, recordsNote string
+	}{
+		"full view": {
+			tok:     root,
+			zones:   "example.com example.org",
+			records: "@ A,_acme-challenge TXT,www.apps A",
+		},
+		"partial view": {
+			tok:         derived[0],
+			zones:       "example.com",
+			records:     "@ A,www.apps A",
+			zonesNote:   "note: partial view: the token's Permissions do not cover every zone\n",
+			recordsNote: "note: partial view: the token's Permissions do not cover every name and type in example.com\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, errOut, err := runClientStderr(t, env, gw, "zone", "list", "--token", tc.tok)
+			if err != nil {
+				t.Fatalf("zone list: %v", err)
+			}
+
+			var zones []string
+			for _, z := range decode[[]zoneJSON](t, out) {
+				zones = append(zones, z.Name)
+			}
+
+			if got := strings.Join(zones, " "); got != tc.zones {
+				t.Errorf("zone list = %q, want %q", got, tc.zones)
+			}
+
+			if errOut != tc.zonesNote {
+				t.Errorf("zone list stderr = %q, want %q", errOut, tc.zonesNote)
+			}
+
+			out, errOut, err = runClientStderr(t, env, gw, "record", "list", "--zone", "example.com", "--token", tc.tok)
+			if err != nil {
+				t.Fatalf("record list: %v", err)
+			}
+
+			var sets []string
+			for _, s := range decode[[]recordSetJSON](t, out) {
+				sets = append(sets, s.Name+" "+s.Type)
+			}
+
+			if got := strings.Join(sets, ","); got != tc.records {
+				t.Errorf("record list = %q, want %q", got, tc.records)
+			}
+
+			if errOut != tc.recordsNote {
+				t.Errorf("record list stderr = %q, want %q", errOut, tc.recordsNote)
+			}
+		})
+	}
+}
+
+func TestListHelpMentionsThePartialViewNote(t *testing.T) {
+	for _, args := range [][]string{{"zone", "list", "--help"}, {"record", "list", "--help"}} {
+		out, err := runCLI(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+
+		if !strings.Contains(out, "partial view") || !strings.Contains(out, "stderr") {
+			t.Errorf("%v help lacks the partial view note on stderr:\n%s", args, out)
+		}
+	}
+}
+
 func TestReadRecordsFailures(t *testing.T) {
 	fake, providers := fakeProviders()
 
