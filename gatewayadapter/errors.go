@@ -1,10 +1,12 @@
 package gatewayadapter
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/dnsgateway/dnsprovider"
+	"google.golang.org/grpc/codes"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
@@ -29,13 +31,29 @@ var kinds = map[dnsgatev1.Error_Category]error{
 // *dnsprovider.APIError: its category to the typed Provider error, an
 // invalid request or record to HTTP status 400, any other to the
 // Provider's HTTP status the Gateway reports, if any. The Gateway's
-// message, which never quotes a secret, is its message. An error that
-// carries no gRPC status, such as a canceled context, is returned as it
-// is.
-func providerError(err error) error {
+// message, which never quotes a secret, is its message. A call whose
+// context ctx ended, or that ended with a canceled or expired gRPC
+// status, fails with context.Canceled or context.DeadlineExceeded. Any
+// other error that carries no gRPC status is returned as it is.
+func providerError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+
 	gwErr, ok := errors.AsType[*client.Error](err)
 	if !ok {
 		return err
+	}
+
+	switch gwErr.GRPCStatus().Code() {
+	case codes.Canceled:
+		return context.Canceled
+	case codes.DeadlineExceeded:
+		return context.DeadlineExceeded
 	}
 
 	detail := gwErr.Detail()

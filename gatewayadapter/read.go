@@ -27,7 +27,7 @@ import (
 func (a *adapter) Account(ctx context.Context) (dnsprovider.AccountInfo, error) {
 	inspected, err := a.client.InspectToken(ctx, a.token)
 	if err != nil {
-		err = providerError(err)
+		err = providerError(ctx, err)
 		if errors.Is(err, dnsprovider.ErrUnauthorized) {
 			err = fmt.Errorf("the Gateway did not accept the Service Token, and a Bound Token is not usable through the Gateway Adapter: %w", err)
 		}
@@ -39,7 +39,7 @@ func (a *adapter) Account(ctx context.Context) (dnsprovider.AccountInfo, error) 
 
 	if a.mayListZones(inspected.GetPermissions()) {
 		if _, err := a.client.ListZones(ctx, &dnsgatev1.ListZonesRequest{Token: a.token, Egress: a.egress}); err != nil {
-			return dnsprovider.AccountInfo{}, providerError(err)
+			return dnsprovider.AccountInfo{}, providerError(ctx, err)
 		}
 	}
 
@@ -85,7 +85,7 @@ func zoneOf(z *dnsgatev1.Zone) dnsprovider.Zone {
 func (a *adapter) Zones(ctx context.Context, f dnsprovider.ZoneFilter) ([]dnsprovider.Zone, error) {
 	resp, err := a.client.ListZones(ctx, &dnsgatev1.ListZonesRequest{Token: a.token, Egress: a.egress})
 	if err != nil {
-		return nil, providerError(err)
+		return nil, providerError(ctx, err)
 	}
 
 	var out []dnsprovider.Zone
@@ -103,7 +103,7 @@ func (a *adapter) Zones(ctx context.Context, f dnsprovider.ZoneFilter) ([]dnspro
 func (a *adapter) Zone(ctx context.Context, name string) (dnsprovider.Zone, error) {
 	resp, err := a.client.GetZone(ctx, &dnsgatev1.GetZoneRequest{Token: a.token, Egress: a.egress, Zone: name})
 	if err != nil {
-		return dnsprovider.Zone{}, providerError(err)
+		return dnsprovider.Zone{}, providerError(ctx, err)
 	}
 
 	return zoneOf(resp.GetZone()), nil
@@ -115,7 +115,7 @@ func (a *adapter) Zone(ctx context.Context, name string) (dnsprovider.Zone, erro
 func (a *adapter) Records(ctx context.Context, zone dnsprovider.Zone, f dnsprovider.RecordFilter) (dnsprovider.RecordSet, error) {
 	resp, err := a.client.ListRecords(ctx, &dnsgatev1.ListRecordsRequest{Token: a.token, Egress: a.egress, Zone: zone.Name})
 	if err != nil {
-		return dnsprovider.RecordSet{}, providerError(err)
+		return dnsprovider.RecordSet{}, providerError(ctx, err)
 	}
 
 	var out dnsprovider.RecordSet

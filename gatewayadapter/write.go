@@ -262,7 +262,9 @@ func rrsetKey(zone string, r dnsprovider.Record) (name, typ string, err error) {
 func (a *adapter) read(ctx context.Context, zone string, s *rrset) error {
 	resp, err := a.client.GetRecord(ctx, &dnsgatev1.GetRecordRequest{Token: a.token, Egress: a.egress, Zone: zone, Name: s.name, Type: s.typ})
 
-	switch err = providerError(err); {
+	switch err = providerError(ctx, err); {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return err
 	case errors.Is(err, dnsprovider.ErrNotFound):
 		return nil
 	case err != nil:
@@ -364,7 +366,7 @@ func (a *adapter) write(ctx context.Context, zone string, s *rrset, f dnsprovide
 	}
 
 	if err != nil {
-		return fmt.Errorf("gateway adapter: writing the RRset %s %s: %w", s.name, s.typ, providerError(err))
+		return fmt.Errorf("gateway adapter: writing the RRset %s %s: %w", s.name, s.typ, providerError(ctx, err))
 	}
 
 	s.written = true
