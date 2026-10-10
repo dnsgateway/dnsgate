@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/keys"
 )
 

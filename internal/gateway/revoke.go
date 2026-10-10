@@ -1,7 +1,8 @@
 package gateway
 
 import (
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
 	"github.com/dnsgateway/dnsgate/internal/revocation"

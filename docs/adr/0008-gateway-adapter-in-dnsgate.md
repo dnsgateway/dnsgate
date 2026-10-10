@@ -1,5 +1,7 @@
 # The Gateway Adapter lives in the dnsgate repo as a public package
 
+Superseded by [ADR 0009](0009-client-library-in-dnsgate-go.md).
+
 DNS tools built on the shared Provider interface (`github.com/dnsgateway/dnsprovider`), such as dnscli, reach the Gateway through the Gateway Adapter. It lives in this repo as `github.com/dnsgateway/dnsgate/gatewayadapter`, the first public Go package outside `api/`. It exports only `Factory`, `New`, `Config` and its field names, and is built on `internal/client`, so the protocol, its Relay and its error mapping have one owner and change together. It writes whole RRsets with `create`, `update` and `delete`, naming the Expected RRset on each `update` and `delete`, and never needs `patch`.
 
 ## Considered Options

@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate-go/client"
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/dnsgateway/dnsprovider/providertest"
 	"google.golang.org/grpc"
@@ -27,9 +29,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
-	"github.com/dnsgateway/dnsgate/internal/client"
 	"github.com/dnsgateway/dnsgate/internal/gateway"
 	"github.com/dnsgateway/dnsgate/internal/keys"
 	"github.com/dnsgateway/dnsgate/internal/revocation"

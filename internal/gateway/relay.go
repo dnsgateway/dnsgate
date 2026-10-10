@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"google.golang.org/grpc"
-
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 )
 
 // The relay framing is recorded in ADR 0006.

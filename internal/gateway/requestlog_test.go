@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/dnsgateway/dnsprovider/providertest"
 	"google.golang.org/grpc/codes"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 

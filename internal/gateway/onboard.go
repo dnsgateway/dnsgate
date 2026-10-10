@@ -4,7 +4,8 @@ import (
 	"crypto/subtle"
 	"time"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/provider"
 	"github.com/dnsgateway/dnsgate/internal/token"

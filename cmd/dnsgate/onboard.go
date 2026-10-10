@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate-go/client"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
-	"github.com/dnsgateway/dnsgate/internal/client"
 	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 

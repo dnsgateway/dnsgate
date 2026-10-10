@@ -4,10 +4,9 @@ import (
 	"context"
 	"io"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate-go/client"
 	"github.com/spf13/cobra"
-
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
-	"github.com/dnsgateway/dnsgate/internal/client"
 )
 
 // namesHelp explains record names in the help of record commands.

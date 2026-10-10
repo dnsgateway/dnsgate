@@ -4,11 +4,11 @@ import (
 	"errors"
 	"net/http"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsprovider"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/permission"
 )

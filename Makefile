@@ -11,10 +11,6 @@ GO_LDFLAGS := -ldflags "-w -s -X main.version=$(TAG) -X main.commit=$(SHA)"
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
 
-BUF_VERSION ?= v1.73.0
-PROTOC_GEN_GO_VERSION ?= v1.36.12
-PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
-
 ############
 
 # Help Menu
@@ -49,14 +45,6 @@ clean: ## Clean
 .PHONY: tools
 tools:
 	go install github.com/google/go-licenses@latest
-	go install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
-
-.PHONY: proto
-proto: ## Lint the protobuf API and regenerate its Go code
-	buf lint
-	buf generate
 
 .PHONY: build ## Build
 build:

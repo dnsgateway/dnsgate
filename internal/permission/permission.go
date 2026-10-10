@@ -10,7 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+
 	"github.com/dnsgateway/dnsgate/internal/dnsname"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )

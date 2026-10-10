@@ -7,9 +7,9 @@ on:
     paths:
       - "go.mod"
       - "go.sum"
-      - "api/**"
       - "cmd/**"
       - "internal/**"
+      - "test/**"
     types:
       - opened
       - reopened

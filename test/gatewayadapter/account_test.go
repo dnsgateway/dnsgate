@@ -6,11 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate-go/gatewayadapter"
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/dnsgateway/dnsprovider/providertest"
-
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
-	"github.com/dnsgateway/dnsgate/gatewayadapter"
 )
 
 // zonesListed reports whether the fake Provider was asked for its Zones.

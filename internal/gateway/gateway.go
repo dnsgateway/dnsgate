@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc"
@@ -23,7 +24,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/keys"
 	"github.com/dnsgateway/dnsgate/internal/provider"

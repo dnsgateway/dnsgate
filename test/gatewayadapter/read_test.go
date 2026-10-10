@@ -6,9 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsprovider"
-
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 )
 
 func TestZonesHaveTheirNameAsIDAndAreFiltered(t *testing.T) {

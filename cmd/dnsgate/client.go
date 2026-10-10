@@ -10,10 +10,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/dnsgateway/dnsgate-go/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-
-	"github.com/dnsgateway/dnsgate/internal/client"
 )
 
 // dialGateway connects to the Gateway at --gateway over TLS, verifying it

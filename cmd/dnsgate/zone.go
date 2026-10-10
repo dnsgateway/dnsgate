@@ -5,10 +5,9 @@ import (
 	"io"
 	"strings"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate-go/client"
 	"github.com/spf13/cobra"
-
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
-	"github.com/dnsgateway/dnsgate/internal/client"
 )
 
 func newZoneCmd(flags *Flags) *cobra.Command {

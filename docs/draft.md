@@ -523,5 +523,5 @@ A Service Token can be bound to a workload's OIDC identity: Kubernetes ServiceAc
 
 # Open Questions
 
-- ~~Exact claim schema and protobuf API definition.~~ Decided in the protobuf API, [api/dnsgate/v1/gateway.proto](../api/dnsgate/v1/gateway.proto), and the claims in [internal/token/claims.go](../internal/token/claims.go).
+- ~~Exact claim schema and protobuf API definition.~~ Decided in the protobuf API, [api/dnsgate/v1/gateway.proto](https://github.com/dnsgateway/dnsgate-go/blob/main/api/dnsgate/v1/gateway.proto) in dnsgate-go, and the claims in [internal/token/claims.go](../internal/token/claims.go).
 - ~~Relay framing inside the gRPC stream: OPEN/DATA/CLOSE messages, half-close, flow control, timeouts.~~ Decided in [ADR 0006](adr/0006-agent-egress-relay-framing.md).

@@ -10,10 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 )
 
 // cloudflareHost is where the Cloudflare Provider sends its requests.
