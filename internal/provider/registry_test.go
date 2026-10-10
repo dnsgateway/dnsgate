@@ -14,6 +14,10 @@ func TestRegistryOffersCloudflareOnly(t *testing.T) {
 		t.Errorf("Registry offers %v, want %v", types, want)
 	}
 
+	if names := provider.Names(); !slices.Equal(types, names) {
+		t.Errorf("Registry offers %v, but Names() = %v", types, names)
+	}
+
 	for _, absent := range []string{"godaddy", "namecheap"} {
 		if slices.Contains(types, absent) {
 			t.Errorf("Registry offers %q, want it left out", absent)
