@@ -10,6 +10,7 @@ import (
 	"github.com/dnsgateway/dnsprovider/providertest"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsgate/gatewayadapter"
 )
 
 // zonesListed reports whether the fake Provider was asked for its Zones.
@@ -104,5 +105,76 @@ func TestTTLRangeIsTheDefaultWhileTheProviderTypeIsUnknown(t *testing.T) {
 
 	if got := dnsprovider.ProxiableTypesOf(p); got != nil {
 		t.Errorf("ProxiableTypesOf = %v, want none", got)
+	}
+}
+
+// readProviderType reads the TTL range and proxiable types of p twice.
+func readProviderType(p dnsprovider.Provider) {
+	for range 2 {
+		dnsprovider.TTLRangeOf(p)
+		dnsprovider.ProxiableTypesOf(p)
+	}
+}
+
+func TestTheProviderTypeIsInspectedOnce(t *testing.T) {
+	h := newHarness(t)
+
+	unknownType, err := gatewayadapter.Factory(gatewayadapter.WithRootCAs(h.roots), gatewayadapter.WithProviders(dnsprovider.Registry{})).
+		New(map[string]string{gatewayadapter.FieldGateway: h.addr, gatewayadapter.FieldToken: h.root})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, p := range map[string]dnsprovider.Provider{
+		"known":         h.provider(t, h.root),
+		"unknown":       unknownType,
+		"token refused": h.provider(t, "not-a-token"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			h.mu.Lock()
+			h.requests = nil
+			h.mu.Unlock()
+
+			readProviderType(p)
+
+			if n := h.inspections(); n != 1 {
+				t.Errorf("the Gateway Adapter inspected the token %d times, want once", n)
+			}
+		})
+	}
+}
+
+func TestAccountLearnsTheProviderTypeEvenWhenUnknown(t *testing.T) {
+	h := newHarness(t)
+
+	p, err := gatewayadapter.Factory(gatewayadapter.WithRootCAs(h.roots), gatewayadapter.WithProviders(dnsprovider.Registry{})).
+		New(map[string]string{gatewayadapter.FieldGateway: h.addr, gatewayadapter.FieldToken: h.root})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.Account(t.Context()); err != nil {
+		t.Fatalf("Account: %v", err)
+	}
+
+	readProviderType(p)
+
+	if n := h.inspections(); n != 1 {
+		t.Errorf("the Gateway Adapter inspected the token %d times, want once, by Account", n)
+	}
+}
+
+func TestADeleteNeedsNoProviderType(t *testing.T) {
+	h := newHarness(t)
+	h.fake.SetRecords("z1", dnsprovider.Record{ID: "r1", Type: "TXT", Name: "old.example.com", Value: "bye", TTL: 300})
+
+	p := h.provider(t, h.root)
+
+	if err := p.DeleteRecord(t.Context(), zone(t, p), readAll(t, p)[0]); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+
+	if n := h.inspections(); n != 0 {
+		t.Errorf("the Gateway Adapter inspected the token %d times, want never", n)
 	}
 }
