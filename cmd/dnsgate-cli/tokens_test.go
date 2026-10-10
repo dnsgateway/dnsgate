@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
 const appPermissionsYAML = `permissions:
@@ -22,8 +24,8 @@ const appPermissionsYAML = `permissions:
 func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 	useFakeProvider(t)
 
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -37,7 +39,7 @@ func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 	t.Setenv("DNSGATE_TOKEN", root)
 
 	perms := filepath.Join(t.TempDir(), "app.yaml")
-	writeFile(t, perms, appPermissionsYAML, 0o600)
+	servertest.WriteFile(t, perms, appPermissionsYAML, 0o600)
 
 	out, err = runClient(t, env, gw, "token", "create", "--sub", "external-dns-prod", "--permissions", perms, "--expires", "24h")
 	if err != nil {
@@ -83,15 +85,15 @@ func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 		t.Error("a token without create on tokens issued one")
 	}
 
-	audit := gw.audit.String()
+	audit := gw.Audit.String()
 	if !strings.Contains(audit, `"event":"token.create"`) || !strings.Contains(audit, `"jti":"`+got.Jti+`"`) ||
 		!strings.Contains(audit, `"parent_jti":"`+got.Ancestors[0]+`"`) {
 		t.Errorf("server audit output has no token.create event for %s:\n%s", got.Jti, audit)
 	}
 
 	for _, secret := range []string{testCFToken, testBootstrapSecret, root, derived} {
-		if strings.Contains(audit, secret) || strings.Contains(gw.logs.String(), secret) {
-			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gw.logs.String())
+		if strings.Contains(audit, secret) || strings.Contains(gw.Logs.String(), secret) {
+			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gw.Logs.String())
 		}
 	}
 }
@@ -99,8 +101,8 @@ func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
 	useFakeProvider(t)
 
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -144,7 +146,7 @@ func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
 
 	for name, content := range files {
 		path := filepath.Join(dir, name)
-		writeFile(t, path, content, 0o600)
+		servertest.WriteFile(t, path, content, 0o600)
 
 		out, err := runClient(t, env, gw, "token", "create", "--sub", "app", "--permissions", path)
 		if err != nil {
@@ -177,16 +179,16 @@ func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
 func TestTheConfigLimitsTheChainDepth(t *testing.T) {
 	useFakeProvider(t)
 
-	env := newGatewayEnv(t)
+	env := servertest.NewEnv(t)
 
-	config, err := os.ReadFile(env.config)
+	config, err := os.ReadFile(env.Config)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	writeFile(t, env.config, string(config)+"tokens:\n  maxAncestors: 1\n", 0o600)
+	servertest.WriteFile(t, env.Config, string(config)+"tokens:\n  maxAncestors: 1\n", 0o600)
 
-	gw := startServer(t, env.config)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -197,7 +199,7 @@ func TestTheConfigLimitsTheChainDepth(t *testing.T) {
 	}
 
 	issuer := filepath.Join(t.TempDir(), "issuer.yaml")
-	writeFile(t, issuer, "permissions:\n  - verbs: [create]\n    resources: [tokens]\n", 0o600)
+	servertest.WriteFile(t, issuer, "permissions:\n  - verbs: [create]\n    resources: [tokens]\n", 0o600)
 
 	t.Setenv("DNSGATE_TOKEN", strings.TrimSpace(out))
 
@@ -217,7 +219,7 @@ func TestTokenCreateChecksItsFlagsAndFile(t *testing.T) {
 	dir := t.TempDir()
 	file := func(name, data string) string {
 		path := filepath.Join(dir, name)
-		writeFile(t, path, data, 0o600)
+		servertest.WriteFile(t, path, data, 0o600)
 
 		return path
 	}

@@ -8,23 +8,24 @@ import (
 	"time"
 
 	"github.com/dnsgateway/dnsgate/internal/revocation"
+	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
 func TestServerLogsDebugLinesAtDebug(t *testing.T) {
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config, "--log-level", "debug")
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config, "--log-level", "debug")
 
-	logs := gw.logs.String()
+	logs := gw.Logs.String()
 	if !strings.Contains(logs, `"level":"DEBUG"`) || !strings.Contains(logs, `"msg":"serving"`) {
 		t.Errorf("server logs at debug have no debug line or no serving line:\n%s", logs)
 	}
 }
 
 func TestServerLogsAtInfoByDefault(t *testing.T) {
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
-	logs := gw.logs.String()
+	logs := gw.Logs.String()
 	if strings.Contains(logs, `"level":"DEBUG"`) || !strings.Contains(logs, `"msg":"serving"`) {
 		t.Errorf("server logs by default have a debug line or no serving line:\n%s", logs)
 	}
@@ -33,13 +34,13 @@ func TestServerLogsAtInfoByDefault(t *testing.T) {
 func TestServerTakesLogLevelFromEnvUnlessTheFlagIsSet(t *testing.T) {
 	t.Setenv("DNSGATE_LOG_LEVEL", "debug")
 
-	env := newGatewayEnv(t)
+	env := servertest.NewEnv(t)
 
-	if logs := startServer(t, env.config).logs.String(); !strings.Contains(logs, `"level":"DEBUG"`) {
+	if logs := startServer(t, env.Config).Logs.String(); !strings.Contains(logs, `"level":"DEBUG"`) {
 		t.Errorf("server logs with DNSGATE_LOG_LEVEL=debug have no debug line:\n%s", logs)
 	}
 
-	if logs := startServer(t, env.config, "--log-level", "info").logs.String(); strings.Contains(logs, `"level":"DEBUG"`) {
+	if logs := startServer(t, env.Config, "--log-level", "info").Logs.String(); strings.Contains(logs, `"level":"DEBUG"`) {
 		t.Errorf("server logs with --log-level info over DNSGATE_LOG_LEVEL=debug have a debug line:\n%s", logs)
 	}
 }
@@ -73,28 +74,25 @@ func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
 
 	t.Cleanup(func() { _ = held.Close() })
 
-	env := newGatewayEnvAt(t, held.Addr().String())
+	env := servertest.NewEnvAt(t, held.Addr().String())
 
-	out, err := runCLI(t, "server", "--config", env.config, "--log-level", "verbose")
+	out, err := runCLI(t, "server", "--config", env.Config, "--log-level", "verbose")
 	if err == nil || !strings.Contains(err.Error(), `"verbose"`) || !strings.Contains(err.Error(), "error, warn, info, debug") {
 		t.Errorf("server error = %v, want one naming the level and the accepted levels before it listens\n%s", err, out)
 	}
 }
 
 func TestServerLogsEachRequestAtDebugOnly(t *testing.T) {
-	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
-	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
-
 	for level, want := range map[string]bool{"debug": true, "info": false} {
 		t.Run(level, func(t *testing.T) {
-			env := newGatewayEnvAt(t, freePort(t))
+			env := servertest.NewEnvAt(t, servertest.FreePort(t))
 			gw := startServerAt(t, env, "--log-level", level)
 
-			if _, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare"); err != nil {
+			if err := onboard(t, env, gw); err != nil {
 				t.Fatalf("onboard: %v", err)
 			}
 
-			logs := gw.logs.String()
+			logs := gw.Logs.String()
 
 			logged := strings.Contains(logs, `"msg":"request"`) && strings.Contains(logs, `"operation":"onboard"`) &&
 				strings.Contains(logs, `"code":"OK"`) && strings.Contains(logs, `"peer":"127.0.0.1:`)
@@ -106,21 +104,18 @@ func TestServerLogsEachRequestAtDebugOnly(t *testing.T) {
 }
 
 func TestServerAtErrorDropsInfoLinesButStillAudits(t *testing.T) {
-	env := newGatewayEnvAt(t, freePort(t))
+	env := servertest.NewEnvAt(t, servertest.FreePort(t))
 	gw := startServerAt(t, env, "--log-level", "error")
 
-	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
-	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
-
-	if _, err := runClient(t, env, gw, "onboard", "--provider", "cloudflare"); err != nil {
+	if err := onboard(t, env, gw); err != nil {
 		t.Fatalf("onboard: %v", err)
 	}
 
-	if logs := gw.logs.String(); strings.Contains(logs, `"msg":"serving"`) || strings.Contains(logs, `"level":"INFO"`) {
+	if logs := gw.Logs.String(); strings.Contains(logs, `"msg":"serving"`) || strings.Contains(logs, `"level":"INFO"`) {
 		t.Errorf("server logs at error have info lines:\n%s", logs)
 	}
 
-	if audit := gw.audit.String(); !strings.Contains(audit, `"event":"onboard"`) {
+	if audit := gw.Audit.String(); !strings.Contains(audit, `"event":"onboard"`) {
 		t.Errorf("server audit output at error has no onboard event:\n%s", audit)
 	}
 }
@@ -131,9 +126,9 @@ func TestRunningServerPurgesAnEntryOnceItsTokenExpires(t *testing.T) {
 
 	t.Cleanup(func() { purgeInterval = saved })
 
-	env := newGatewayEnv(t)
+	env := servertest.NewEnv(t)
 
-	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))
+	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.Dir, "dnsgate.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +142,7 @@ func TestRunningServerPurgesAnEntryOnceItsTokenExpires(t *testing.T) {
 		}
 	}
 
-	startServer(t, env.config)
+	startServer(t, env.Config)
 
 	revoked := func(id string) bool {
 		t.Helper()
@@ -178,9 +173,9 @@ func TestRunningServerPurgesAnEntryOnceItsTokenExpires(t *testing.T) {
 }
 
 func TestServerPurgesExpiredEntriesAtStartup(t *testing.T) {
-	env := newGatewayEnv(t)
+	env := servertest.NewEnv(t)
 
-	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))
+	store, err := revocation.OpenSQLite(t.Context(), filepath.Join(env.Dir, "dnsgate.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,9 +194,9 @@ func TestServerPurgesExpiredEntriesAtStartup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	startServer(t, env.config)
+	startServer(t, env.Config)
 
-	store, err = revocation.OpenSQLite(t.Context(), filepath.Join(env.dir, "dnsgate.db"))
+	store, err = revocation.OpenSQLite(t.Context(), filepath.Join(env.Dir, "dnsgate.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

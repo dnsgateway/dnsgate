@@ -10,6 +10,8 @@ import (
 
 	"github.com/dnsgateway/dnsprovider"
 	"github.com/dnsgateway/dnsprovider/providertest"
+
+	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
 // useFakeProvider makes the Gateways the test starts call a fake
@@ -92,8 +94,8 @@ func decode[T any](t *testing.T, out string) T {
 func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
 	fake := useFakeProvider(t)
 
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -156,8 +158,8 @@ func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
 	}
 
 	for _, secret := range []string{testCFToken, testBootstrapSecret, root} {
-		if strings.Contains(gw.audit.String(), secret) || strings.Contains(gw.logs.String(), secret) {
-			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", gw.audit.String(), gw.logs.String())
+		if strings.Contains(gw.Audit.String(), secret) || strings.Contains(gw.Logs.String(), secret) {
+			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", gw.Audit.String(), gw.Logs.String())
 		}
 	}
 }
@@ -165,8 +167,8 @@ func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
 func TestReadRecordsFailures(t *testing.T) {
 	fake := useFakeProvider(t)
 
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -209,7 +211,7 @@ func TestReadRecordsFailures(t *testing.T) {
 		})
 	}
 
-	audit := gw.audit.String()
+	audit := gw.Audit.String()
 	if !strings.Contains(audit, `"category":"unauthenticated"`) {
 		t.Errorf("audit output lacks the denials:\n%s", audit)
 	}
@@ -225,8 +227,8 @@ func TestReadRecordsFailures(t *testing.T) {
 func TestChangeRecordsEndToEnd(t *testing.T) {
 	useFakeProvider(t)
 
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -289,14 +291,14 @@ func TestChangeRecordsEndToEnd(t *testing.T) {
 	}
 
 	for _, verb := range []string{"create", "update", "patch", "delete"} {
-		if !strings.Contains(gw.audit.String(), `"event":"records.`+verb+`"`) {
-			t.Errorf("audit output lacks records.%s:\n%s", verb, gw.audit.String())
+		if !strings.Contains(gw.Audit.String(), `"event":"records.`+verb+`"`) {
+			t.Errorf("audit output lacks records.%s:\n%s", verb, gw.Audit.String())
 		}
 	}
 
 	for _, secret := range []string{testCFToken, testBootstrapSecret, root} {
-		if strings.Contains(gw.audit.String(), secret) || strings.Contains(gw.logs.String(), secret) {
-			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", gw.audit.String(), gw.logs.String())
+		if strings.Contains(gw.Audit.String(), secret) || strings.Contains(gw.Logs.String(), secret) {
+			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", gw.Audit.String(), gw.Logs.String())
 		}
 	}
 }
@@ -304,8 +306,8 @@ func TestChangeRecordsEndToEnd(t *testing.T) {
 func TestChangeRecordsFailures(t *testing.T) {
 	fake := useFakeProvider(t)
 
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)

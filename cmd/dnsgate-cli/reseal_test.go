@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
 // outerKeyID returns the kid in a Service Token's readable JWE header.
@@ -31,14 +33,14 @@ func outerKeyID(t *testing.T, tok string) string {
 	return h.Kid
 }
 
-// rotatedConfig writes a config file name in env.dir with enc-next as the
+// rotatedConfig writes a config file name in env.Dir with enc-next as the
 // current encryption key and enc-e2e as a decryption key until retireAt.
-func rotatedConfig(t *testing.T, env *gatewayEnv, name string, retireAt time.Time) string {
+func rotatedConfig(t *testing.T, env *servertest.Env, name string, retireAt time.Time) string {
 	t.Helper()
 
-	path := filepath.Join(env.dir, name)
+	path := filepath.Join(env.Dir, name)
 
-	writeFile(t, path, `
+	servertest.WriteFile(t, path, `
 listen: 127.0.0.1:0
 tls:
   certFile: tls.crt
@@ -58,13 +60,13 @@ database:
 }
 
 func TestRotateThenResealEndToEnd(t *testing.T) {
-	env := newGatewayEnv(t)
+	env := servertest.NewEnv(t)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
 
 	// Onboard under key A, enc-e2e.
-	gwA := startServer(t, env.config)
+	gwA := startServer(t, env.Config)
 
 	out, err := runClient(t, env, gwA, "onboard", "--provider", "cloudflare")
 	if err != nil {
@@ -82,9 +84,7 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 	}
 
 	// Rotate to key B, enc-next, keeping A until its retirement deadline.
-	if out, err := runCLI(t, "keys", "generate", "--key-dir", filepath.Join(env.dir, "keys"), "--key-id-suffix", "next"); err != nil {
-		t.Fatalf("keys generate: %v\n%s", err, out)
-	}
+	servertest.GenerateKeys(t, env, "next")
 
 	gwB := startServer(t, rotatedConfig(t, env, "rotated.yaml", time.Now().Add(24*time.Hour)))
 
@@ -116,14 +116,14 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 		t.Errorf("resealed token kid = %q, want enc-next", kid)
 	}
 
-	audit := gwB.audit.String()
+	audit := gwB.Audit.String()
 	if !strings.Contains(audit, `"event":"token.reseal"`) {
 		t.Errorf("server audit output has no token.reseal event:\n%s", audit)
 	}
 
 	for _, secret := range []string{testCFToken, original, resealed} {
-		if strings.Contains(audit, secret) || strings.Contains(gwB.logs.String(), secret) {
-			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gwB.logs.String())
+		if strings.Contains(audit, secret) || strings.Contains(gwB.Logs.String(), secret) {
+			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gwB.Logs.String())
 		}
 	}
 
@@ -146,8 +146,8 @@ func TestRotateThenResealEndToEnd(t *testing.T) {
 }
 
 func TestTokenResealTakesTheTokenFromEnv(t *testing.T) {
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)

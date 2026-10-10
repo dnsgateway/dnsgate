@@ -1,4 +1,5 @@
-// Command dnsgate is the DNS Gateway CLI.
+// Command dnsgate runs the DNS Gateway and manages its keys. The commands
+// that call the Gateway are in dnsgate-cli.
 package main
 
 import (
@@ -36,21 +37,18 @@ func newRootCmd() *cobra.Command {
 	flags := DefaultFlags()
 
 	rootCmd := &cobra.Command{
-		Use:           bin,
-		Short:         "DNS Gateway CLI",
-		Long:          "dnsgate manages DNS records at a Provider through the Gateway.",
+		Use:   bin,
+		Short: "DNS Gateway",
+		Long: "dnsgate runs the Gateway and manages its keys.\n\n" +
+			"To call the Gateway, use dnsgate-cli: onboard, token, zone and record.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
 	rootCmd.AddCommand(
 		newKeysCmd(flags),
-		newOnboardCmd(flags),
-		newRecordCmd(flags),
 		newServerCmd(flags),
-		newTokenCmd(flags),
 		newVersionCmd(),
-		newZoneCmd(flags),
 	)
 
 	return rootCmd
