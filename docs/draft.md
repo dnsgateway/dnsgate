@@ -167,7 +167,7 @@ The Gateway database stores **only revoked token IDs**. A token is rejected if i
 
 Any token holding `delete` on `tokens` may revoke any token ID. With no token registry, the Gateway can't check which chain an ID belongs to (ADR 0001).
 
-Entries for tokens with an expiry can be removed once that expiry passes. Entries for tokens without an expiry stay forever. The Gateway learns a token's expiry only from the token itself: `dnsgate token revoke` takes either a token ID or the full Service Token. Given the token, the Gateway opens it and keeps the entry until its `exp`. Given only an ID, it cannot know the expiry, so the entry stays forever (ADR 0007).
+Entries for tokens with an expiry can be removed once that expiry passes. Entries for tokens without an expiry stay forever. The Gateway learns a token's expiry only from the token itself: `dnsgate-cli token revoke` takes either a token ID or the full Service Token. Given the token, the Gateway opens it and keeps the entry until its `exp`. Given only an ID, it cannot know the expiry, so the entry stays forever (ADR 0007).
 
 ## Rotation
 
@@ -179,7 +179,7 @@ Entries for tokens with an expiry can be removed once that expiry passes. Entrie
 
 The Gateway configuration names one current encryption key and any number of older decryption keys, each with a retirement deadline. From its deadline on, a decryption key opens no token, so a token not resealed by then stops working.
 
-A token authorizes its own Resealing: `dnsgate token reseal` needs no Permission, because the resealed token carries the same claims and signature and grants its holder nothing new. A token that no longer opens (expired, tampered, or sealed under a retired key) cannot be resealed. Resealing writes a `token.reseal` audit event naming the old and new `kid`. Only the encryption key rotates this way; the signing key stays, so a resealed token keeps its signature.
+A token authorizes its own Resealing: `dnsgate-cli token reseal` needs no Permission, because the resealed token carries the same claims and signature and grants its holder nothing new. A token that no longer opens (expired, tampered, or sealed under a retired key) cannot be resealed. Resealing writes a `token.reseal` audit event naming the old and new `kid`. Only the encryption key rotates this way; the signing key stays, so a resealed token keeps its signature.
 
 ---
 
@@ -427,14 +427,16 @@ Never logged: the Provider Credential, the Service Token itself, Identity Tokens
 
 # CLI
 
+The CLI comes as two binaries, both built by `make build`. `dnsgate` runs the Gateway and manages its keys: `dnsgate server`, `dnsgate keys generate` and `dnsgate version`. `dnsgate-cli` holds every command that calls the Gateway:
+
 ```text
-dnsgate onboard --provider cloudflare [--expires DURATION]   # needs the bootstrap secret → Root Token
-dnsgate token create --sub NAME --permissions FILE [--expires DURATION] [--bind-k8s|--bind-github|--bind-gitlab ...]   # binding: v2, see oidc.md
-dnsgate token revoke TOKEN_ID|TOKEN|-                         # a token, or - for stdin, lets the entry be purged at its exp
-dnsgate token reseal TOKEN
-dnsgate token inspect                                        # the Gateway decrypts and shows permissions to the holder
-dnsgate zone list|get ...
-dnsgate record list|get|create|update|patch|delete ...
+dnsgate-cli onboard --provider cloudflare [--expires DURATION]   # needs the bootstrap secret → Root Token
+dnsgate-cli token create --sub NAME --permissions FILE [--expires DURATION] [--bind-k8s|--bind-github|--bind-gitlab ...]   # binding: v2, see oidc.md
+dnsgate-cli token revoke TOKEN_ID|TOKEN|-                         # a token, or - for stdin, lets the entry be purged at its exp
+dnsgate-cli token reseal TOKEN
+dnsgate-cli token inspect                                        # the Gateway decrypts and shows permissions to the holder
+dnsgate-cli zone list|get ...
+dnsgate-cli record list|get|create|update|patch|delete ...
 ```
 
 There are no `service-account` commands, because Service Accounts are labels. There is no `token list`, because the Gateway keeps no token registry.
