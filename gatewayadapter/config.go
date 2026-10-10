@@ -16,6 +16,7 @@ import (
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/client"
+	"github.com/dnsgateway/dnsgate/internal/permission"
 	"github.com/dnsgateway/dnsgate/internal/provider"
 )
 
@@ -36,17 +37,22 @@ const (
 	// the token allows it, else Agent Egress.
 	egressAuto = "auto"
 	// egressGateway asks for Gateway Egress.
-	egressGateway = "gateway"
+	egressGateway = string(permission.EgressGateway)
 	// egressAgent asks for Agent Egress: the Gateway Adapter is the
 	// Egress Agent.
-	egressAgent = "agent"
+	egressAgent = string(permission.EgressAgent)
 )
 
-// egresses maps each FieldEgress value to the API's Egress.
-var egresses = map[string]dnsgatev1.Egress{
-	egressAuto:    dnsgatev1.Egress_EGRESS_UNSPECIFIED,
-	egressGateway: dnsgatev1.Egress_EGRESS_GATEWAY,
-	egressAgent:   dnsgatev1.Egress_EGRESS_AGENT,
+// apiEgress returns the API's Egress the FieldEgress value v asks for,
+// one of its Choices.
+func apiEgress(v string) dnsgatev1.Egress {
+	if v == egressAuto {
+		v = ""
+	}
+
+	e, _ := permission.Egress(v).API()
+
+	return e
 }
 
 // fields are the Factory's fields, in form order.
@@ -115,7 +121,7 @@ func Factory(opts ...Option) dnsprovider.Factory {
 			return New(Config{
 				Gateway:   m[FieldGateway],
 				Token:     m[FieldToken],
-				Egress:    egresses[m[FieldEgress]],
+				Egress:    apiEgress(m[FieldEgress]),
 				RootCAs:   o.rootCAs,
 				providers: o.providers,
 			}, popts...)
@@ -176,7 +182,9 @@ func New(cfg Config, opts ...dnsprovider.Option) (dnsprovider.Provider, error) {
 		return nil, errors.New("gateway adapter: no Gateway address")
 	case cfg.Token == "":
 		return nil, errors.New("gateway adapter: no Service Token")
-	case !slices.Contains(slices.Collect(maps.Values(egresses)), cfg.Egress):
+	}
+
+	if _, ok := permission.EgressFromAPI(cfg.Egress); !ok {
 		return nil, errors.New("gateway adapter: unknown Egress")
 	}
 

@@ -108,6 +108,36 @@ func TestTTLRangeIsTheDefaultWhileTheProviderTypeIsUnknown(t *testing.T) {
 	}
 }
 
+func TestEachEgressIsAskedFor(t *testing.T) {
+	h := newHarness(t)
+
+	for field, want := range map[string]dnsgatev1.Egress{
+		"auto":    dnsgatev1.Egress_EGRESS_UNSPECIFIED,
+		"gateway": dnsgatev1.Egress_EGRESS_GATEWAY,
+		"agent":   dnsgatev1.Egress_EGRESS_AGENT,
+	} {
+		t.Run(field, func(t *testing.T) {
+			p, err := h.factory().New(map[string]string{gatewayadapter.FieldGateway: h.addr, gatewayadapter.FieldToken: h.root, gatewayadapter.FieldEgress: field})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			h.mu.Lock()
+			h.requests = nil
+			h.mu.Unlock()
+
+			_, _ = p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+
+			h.mu.Lock()
+			defer h.mu.Unlock()
+
+			if len(h.requests) != 1 || h.requests[0].GetListZones().GetEgress() != want {
+				t.Errorf("requests = %v, want one zone list asking for %v", h.requests, want)
+			}
+		})
+	}
+}
+
 // readProviderType reads the TTL range and proxiable types of p twice.
 func readProviderType(p dnsprovider.Provider) {
 	for range 2 {
