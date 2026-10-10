@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: dnsgate
+
+dist: bin
+builds:
+  - id: default
+    main: ./cmd/dnsgate
+    binary: dnsgate
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    goamd64:
+      - v1
+    goarm64:
+      - v8.0
+
+snapshot:
+  version_template: edge
+
+changelog:
+  disable: true
+
+dockers_v2:
+  - id: docker
+    flags:
+      - --target=gorelease
+    images:
+      - "ghcr.io/dnsgateway/{{ .ProjectName }}"
+    tags:
+      - "{{ if not .IsSnapshot }}v{{.Version}}{{ else }}edge{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    annotations:
+      org.opencontainers.image.name: "{{ .ProjectName }}"
+      org.opencontainers.image.description: "Talos MCP is an opinionated MCP server for Talos Linux"
+      org.opencontainers.image.licenses: "Apache-2.0"
+      org.opencontainers.image.source: "https://github.com/dnsgateway/{{ .ProjectName }}"
+      org.opencontainers.image.url: "{{ .GitURL }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/dnsgateway/{{ .ProjectName }}/main/README.md"
+      io.artifacthub.package.license: "Apache-2.0"
+
+# docker_signs:
+#   - id: docker
+#     cmd: cosign
+#     args:
+#       - sign
+#       - "--yes"
+#       - "${artifact}"
+#     output: true
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# signs:
+#   - artifacts: checksum
+#     signature: "${artifact}.sigstore.json"
+#     cmd: cosign
+#     args:
+#       - sign-blob
+#       - "--yes"
+#       - "--bundle=${signature}"
+#       - "${artifact}"
+#     output: true
