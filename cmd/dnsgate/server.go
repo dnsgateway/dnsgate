@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -11,8 +12,9 @@ import (
 )
 
 // purgeInterval is how often the Gateway purges the entries of revoked
-// tokens that have expired. Tests shorten it.
-var purgeInterval = server.DefaultPurgeInterval
+// tokens that have expired; zero means server.DefaultPurgeInterval. Tests
+// shorten it.
+var purgeInterval time.Duration
 
 func newServerCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
