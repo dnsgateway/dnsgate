@@ -74,6 +74,10 @@ _Avoid_: admin password, master secret, setup token
 A rule inside a Service Token that grants verbs on zones, records or tokens, limited to certain zones, record name patterns, record types and Egress. Permissions only add up; there is no deny.
 _Avoid_: policy, role, capability, scope
 
+**Partial View**:
+A list result that the token's Permissions do not cover in full: a zone list for a token limited to certain zones, or a zone's RRsets for a token limited to certain names or types. It says the token cannot see everything, not that anything was left out.
+_Avoid_: filtered result, subset, truncated list
+
 **Narrowing**:
 The rule that a Derived Token's permissions and expiry never exceed its Parent Token's, and that it keeps the Parent Token's Identity Binding.
 _Avoid_: attenuation, scoping down
