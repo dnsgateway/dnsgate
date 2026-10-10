@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dnsgateway/dnsgate/internal/permission"
-	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsgate/internal/provider/catalog"
 )
 
 const (
@@ -223,7 +223,7 @@ func (f *Flags) recordValues(values []string) ([]*dnsgatev1.RecordValue, error) 
 // AddOnboardFlags registers the flags of "onboard".
 func (f *Flags) AddOnboardFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Provider, flagProvider, "", f.Provider,
-		"Provider the credential authenticates to: "+strings.Join(provider.Names(), ", "))
+		"Provider the credential authenticates to: "+strings.Join(catalog.Names(), ", "))
 	flags.StringVarP(&f.Credential, flagCredential, "", f.Credential,
 		"Provider Credential, such as a Cloudflare API token (env "+envCredential+secretHelp+")")
 	flags.StringVarP(&f.BootstrapSecret, flagBootstrapSecret, "", f.BootstrapSecret,

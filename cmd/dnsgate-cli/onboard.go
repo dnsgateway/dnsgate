@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsgate/internal/provider/catalog"
 )
 
 func newOnboardCmd(flags *Flags) *cobra.Command {
@@ -36,7 +36,7 @@ func newOnboardCmd(flags *Flags) *cobra.Command {
 }
 
 func runOnboard(ctx context.Context, out io.Writer, f *Flags) error {
-	credType, ok := provider.CredentialType(f.Provider)
+	credType, ok := catalog.CredentialType(f.Provider)
 
 	switch {
 	case f.Provider == "":
