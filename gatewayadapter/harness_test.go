@@ -42,8 +42,9 @@ const bootstrapSecret = "bootstrap-secret-0123456789"
 type harness struct {
 	// addr is the Gateway's address, host:port.
 	addr string
-	// roots trust the Gateway's certificate.
+	// roots trust the Gateway's certificate, cert.
 	roots *x509.CertPool
+	cert  *x509.Certificate
 	// fake is the Provider the Gateway calls.
 	fake *providertest.Provider
 	// client calls the Gateway directly, to set tokens up.
@@ -227,7 +228,7 @@ func newHarness(t *testing.T, extras ...dnsprovider.ExtraSpec) *harness {
 	})
 
 	cert, roots := selfSigned(t)
-	h.roots = roots
+	h.roots, h.cert = roots, cert.Leaf
 
 	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
