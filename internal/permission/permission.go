@@ -85,6 +85,36 @@ func EgressFromAPI(a dnsgatev1.Egress) (Egress, bool) {
 	return "", false
 }
 
+// FromAPI returns the API's Permissions as a token's.
+func FromAPI(perms []*dnsgatev1.Permission) []token.Permission {
+	out := make([]token.Permission, 0, len(perms))
+
+	for _, p := range perms {
+		out = append(out, token.Permission{
+			Verbs:     p.GetVerbs(),
+			Resources: p.GetResources(),
+			Zones:     p.GetZones(),
+			Names:     p.GetNames(),
+			Types:     p.GetTypes(),
+			Egress:    p.GetEgress(),
+		})
+	}
+
+	return out
+}
+
+// ToAPI returns a token's Permission as the API's.
+func ToAPI(p token.Permission) *dnsgatev1.Permission {
+	return &dnsgatev1.Permission{
+		Verbs:     p.Verbs,
+		Resources: p.Resources,
+		Zones:     p.Zones,
+		Names:     p.Names,
+		Types:     p.Types,
+		Egress:    p.Egress,
+	}
+}
+
 // Check returns an error for the first malformed rule of perms: one
 // without verbs, naming an unknown verb, resource or egress, or holding an
 // empty zone, type or name, or a name with an empty label or "@" among
