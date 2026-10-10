@@ -15,7 +15,6 @@ import (
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/internal/dnsname"
 	"github.com/dnsgateway/dnsgate/internal/permission"
-	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
 // Account inspects the Service Token, and lists the zones too when its
@@ -51,15 +50,7 @@ func (a *adapter) Account(ctx context.Context) (dnsprovider.AccountInfo, error) 
 func (a *adapter) mayListZones(perms []*dnsgatev1.Permission) bool {
 	egress, _ := permission.EgressFromAPI(a.egress)
 
-	rules := make([]token.Permission, 0, len(perms))
-	for _, p := range perms {
-		rules = append(rules, token.Permission{
-			Verbs: p.GetVerbs(), Resources: p.GetResources(), Zones: p.GetZones(),
-			Names: p.GetNames(), Types: p.GetTypes(), Egress: p.GetEgress(),
-		})
-	}
-
-	return permission.Allows(rules, permission.Request{Verb: permission.VerbList, Resource: permission.ResourceZones, Egress: egress})
+	return permission.Allows(permission.FromAPI(perms), permission.Request{Verb: permission.VerbList, Resource: permission.ResourceZones, Egress: egress})
 }
 
 // states maps each zone state of the API to its Hosting State.

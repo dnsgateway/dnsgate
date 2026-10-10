@@ -42,7 +42,7 @@ func (g *Gateway) createToken(r *request, req *dnsgatev1.CreateTokenRequest) (*d
 		Ancestors:   append(append([]string{}, parent.Ancestors...), parent.ID),
 		Provider:    parent.Provider,
 		Credential:  parent.Credential,
-		Permissions: permissionsFromAPI(req.GetPermissions()),
+		Permissions: permission.FromAPI(req.GetPermissions()),
 	}
 
 	if req.Expires != nil {
@@ -86,7 +86,7 @@ func checkCreateTokenRequest(req *dnsgatev1.CreateTokenRequest) error {
 		return invalidRequest("expires must be positive")
 	}
 
-	if err := permission.Check(permissionsFromAPI(req.GetPermissions())); err != nil {
+	if err := permission.Check(permission.FromAPI(req.GetPermissions())); err != nil {
 		return invalidRequest(err.Error())
 	}
 
