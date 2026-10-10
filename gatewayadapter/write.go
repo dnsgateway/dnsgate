@@ -373,12 +373,12 @@ func (a *adapter) write(ctx context.Context, zone string, s *rrset, f dnsprovide
 }
 
 // targetTTL is the TTL the RRset is written with: the lowest a change
-// gives it, else its own.
+// gives it, else its own. A TTL of 0 gives none.
 func (s *rrset) targetTTL() uint32 {
 	ttl := uint32(0)
 
 	for _, t := range s.target {
-		if t.set && (ttl == 0 || t.TTL < ttl) {
+		if t.set && t.TTL != 0 && (ttl == 0 || t.TTL < ttl) {
 			ttl = t.TTL
 		}
 	}
