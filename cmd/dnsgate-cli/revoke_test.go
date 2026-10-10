@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
 const issuingPermissionsYAML = `permissions:
@@ -16,7 +18,7 @@ const issuingPermissionsYAML = `permissions:
 // onboardAndIssue onboards against gw and issues, under the Root Token,
 // one Derived Token per Service Account in subs, with the Permissions in
 // perms. It returns the Root Token and the Derived Tokens.
-func onboardAndIssue(t *testing.T, env *gatewayEnv, gw *runningGateway, perms string, subs ...string) (string, []string) {
+func onboardAndIssue(t *testing.T, env *servertest.Env, gw *servertest.Gateway, perms string, subs ...string) (string, []string) {
 	t.Helper()
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
@@ -30,7 +32,7 @@ func onboardAndIssue(t *testing.T, env *gatewayEnv, gw *runningGateway, perms st
 	root := strings.TrimSpace(out)
 
 	file := filepath.Join(t.TempDir(), "perms.yaml")
-	writeFile(t, file, perms, 0o600)
+	servertest.WriteFile(t, file, perms, 0o600)
 
 	tokens := make([]string, 0, len(subs))
 
@@ -47,7 +49,7 @@ func onboardAndIssue(t *testing.T, env *gatewayEnv, gw *runningGateway, perms st
 }
 
 // jti returns the ID of tok, as "token inspect" shows it.
-func jti(t *testing.T, env *gatewayEnv, gw *runningGateway, tok string) string {
+func jti(t *testing.T, env *servertest.Env, gw *servertest.Gateway, tok string) string {
 	t.Helper()
 
 	out, err := runClient(t, env, gw, "token", "inspect", "--token", tok)
@@ -62,8 +64,8 @@ func jti(t *testing.T, env *gatewayEnv, gw *runningGateway, tok string) string {
 }
 
 func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	root, tokens := onboardAndIssue(t, env, gw, issuingPermissionsYAML, "by-id", "by-token", "by-stdin", "kept")
 	byID, byToken, byStdin, kept := tokens[0], tokens[1], tokens[2], tokens[3]
@@ -89,14 +91,14 @@ func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
 	cmd.SetIn(strings.NewReader(byStdin + "\n"))
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"token", "revoke", "-", "--gateway", gw.addr, "--ca-file", env.caFile})
+	cmd.SetArgs([]string{"token", "revoke", "-", "--gateway", gw.Addr, "--ca-file", env.CAFile})
 
 	if err := cmd.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("token revoke -: %v", err)
 	}
 
 	// The Gateway restarts on the same database.
-	gw2 := startServer(t, env.config)
+	gw2 := startServer(t, env.Config)
 
 	for name, tok := range map[string]string{"by-id": byID, "by-token": byToken, "by-stdin": byStdin} {
 		_, err := runClient(t, env, gw2, "token", "inspect", "--token", tok)
@@ -109,21 +111,21 @@ func TestRevokeByIDAndByTokenEndToEnd(t *testing.T) {
 		t.Errorf("a token that was not revoked: %v", err)
 	}
 
-	audit := gw.audit.String()
+	audit := gw.Audit.String()
 	if strings.Count(audit, `"event":"token.revoke"`) != 3 || !strings.Contains(audit, `"revoked_jti":"`+byIDJti+`"`) {
 		t.Errorf("server audit output does not have the three token.revoke events:\n%s", audit)
 	}
 
 	for _, secret := range []string{testCFToken, root, byToken, byStdin} {
-		if strings.Contains(audit, secret) || strings.Contains(gw.logs.String(), secret) {
-			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gw.logs.String())
+		if strings.Contains(audit, secret) || strings.Contains(gw.Logs.String(), secret) {
+			t.Errorf("server output contains a secret:\naudit:\n%s\nlogs:\n%s", audit, gw.Logs.String())
 		}
 	}
 }
 
 func TestRevokeIsDeniedWithoutDeleteOnTokens(t *testing.T) {
-	env := newGatewayEnv(t)
-	gw := startServer(t, env.config)
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config)
 
 	_, tokens := onboardAndIssue(t, env, gw, "permissions:\n  - verbs: [create]\n    resources: [tokens]\n", "issuer", "target")
 
@@ -134,7 +136,7 @@ func TestRevokeIsDeniedWithoutDeleteOnTokens(t *testing.T) {
 		t.Errorf("token revoke error = %v, want permission denied", err)
 	}
 
-	if audit := gw.audit.String(); !strings.Contains(audit, `"event":"token.revoke"`) || !strings.Contains(audit, `"result":"denied"`) {
+	if audit := gw.Audit.String(); !strings.Contains(audit, `"event":"token.revoke"`) || !strings.Contains(audit, `"result":"denied"`) {
 		t.Errorf("server audit output has no denied token.revoke event:\n%s", audit)
 	}
 }
