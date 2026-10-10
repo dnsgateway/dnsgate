@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/dnsgateway/dnsprovider"
 
@@ -106,10 +107,11 @@ func (s *rrset) index(value string) int {
 }
 
 // ApplyChangeset writes each RRset the Changeset touches whole: it reads
-// each one, works out the records it is to hold, and writes it with
-// create, update or delete, naming the RRset as read as the Expected RRset
-// on each update and delete, so a write built on an RRset that changed
-// since is refused with dnsprovider.ErrConflict. It never patches.
+// them all, several at once, works out the records each is to hold, and
+// writes each with create, update or delete, naming the RRset as read as
+// the Expected RRset on each update and delete, so a write built on an
+// RRset that changed since is refused with dnsprovider.ErrConflict. It
+// never patches.
 //
 // The RRsets the Changeset empties are written first, then those it
 // changes, then those it creates. The writes stop at the first that
@@ -119,7 +121,8 @@ func (s *rrset) index(value string) int {
 // from a Record the RRset no longer holds fails with
 // dnsprovider.ErrNotFound, one that would add a Record the RRset holds
 // with dnsprovider.ErrConflict: then nothing is written. A failed read is
-// the Changeset's error.
+// the Changeset's error: that of the first RRset in the order the changes
+// touch them.
 //
 // Every record of an RRset takes one TTL: the lowest of the TTLs the
 // changes give it, or the RRset's own when they give none.
@@ -171,10 +174,8 @@ func (a *adapter) ApplyChangeset(ctx context.Context, cs dnsprovider.Changeset) 
 		return notMade(res), nil
 	}
 
-	for _, s := range order {
-		if err := a.read(ctx, cs.Zone.Name, s); err != nil {
-			return dnsprovider.ApplyResult{}, err
-		}
+	if err := a.readAll(ctx, cs.Zone.Name, order); err != nil {
+		return dnsprovider.ApplyResult{}, err
 	}
 
 	for _, i := range dnsprovider.ApplyOrder(cs.Changes) {
@@ -273,6 +274,38 @@ func rrsetKey(zone string, r dnsprovider.Record) (name, typ string, err error) {
 	}
 
 	return name, strings.ToUpper(r.Type), nil
+}
+
+// maxReads bounds the RRsets ApplyChangeset reads at once.
+const maxReads = 8
+
+// readAll reads the RRsets of order, up to maxReads at once, and returns
+// the error of the first in order whose read failed.
+func (a *adapter) readAll(ctx context.Context, zone string, order []*rrset) error {
+	errs := make([]error, len(order))
+	sem := make(chan struct{}, maxReads)
+
+	var wg sync.WaitGroup
+
+	for i, s := range order {
+		sem <- struct{}{}
+
+		wg.Go(func() {
+			defer func() { <-sem }()
+
+			errs[i] = a.read(ctx, zone, s)
+		})
+	}
+
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // read reads the RRset s as the Gateway holds it, none when it holds
