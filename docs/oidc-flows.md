@@ -244,7 +244,7 @@ A workflow in `acme/infra` deploys to the `production` environment and replaces 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant J as Workflow job<br/>(dnsgate CLI)
+    participant J as Workflow job<br/>(dnsgate-cli)
     participant GH as GitHub token service<br/>(ACTIONS_ID_TOKEN_REQUEST_URL)
     participant GW as Gateway
     participant IS as token.actions.githubusercontent.com<br/>(JWKS)

@@ -191,7 +191,7 @@ The CLI has presets that build an Identity Binding. Presets bind on **immutable 
 Binding: issuer + `sub`. The issuer identifies the cluster, so namespace and ServiceAccount name are enough.
 
 ```text
-dnsgate token create --sub external-dns-prod --permissions external-dns.yaml \
+dnsgate-cli token create --sub external-dns-prod --permissions external-dns.yaml \
     --bind-k8s --issuer https://cluster-prod.example --service-account dns/external-dns
 ```
 
@@ -229,7 +229,7 @@ The kubelet rotates `identity.jwt`. The CLI re-reads it for every request.
 Binding: issuer + `repository_id` + `repository_owner_id`, with optional `ref` and `environment`.
 
 ```text
-dnsgate token create --sub infra-dns-prod --permissions infra.yaml \
+dnsgate-cli token create --sub infra-dns-prod --permissions infra.yaml \
     --bind-github --repository-id 123456 --owner-id 7890 --environment production
 ```
 
@@ -253,7 +253,7 @@ In the workflow, the job needs `permissions: id-token: write`. The CLI fetches t
 Binding: issuer + `project_id` + `namespace_id`, with optional `ref`, `ref_protected` and `environment`.
 
 ```text
-dnsgate token create --sub gitlab-infra-main --permissions infra.yaml \
+dnsgate-cli token create --sub gitlab-infra-main --permissions infra.yaml \
     --bind-gitlab --project-id 42 --namespace-id 7 --ref main --ref-protected
 ```
 
@@ -277,7 +277,7 @@ deploy-dns:
     DNSGATE_IDENTITY_TOKEN:
       aud: https://gateway.example
   script:
-    - dnsgate record update ... --identity-token-env DNSGATE_IDENTITY_TOKEN
+    - dnsgate-cli record update ... --identity-token-env DNSGATE_IDENTITY_TOKEN
 ```
 
 ## CLI options
