@@ -175,7 +175,7 @@ The ACME Endpoint **only adds** challenge values. It never deletes or prunes the
 
 Consequences:
 
-- Values pile up at each Challenge Target, roughly two per renewal plus retries. The Administrator removes them with `dnsgate record patch` (removing values) or `dnsgate record delete`.
+- Values pile up at each Challenge Target, roughly two per renewal plus retries. The Administrator removes them with `dnsgate-cli record patch` (removing values) or `dnsgate-cli record delete`.
 - To stop a client stuck in a retry loop from filling the zone, the ACME Endpoint **refuses** to add new values once a target holds `acme.maxValuesPerTarget` values (default 20), replying `400 bad_txt` until someone cleans up.
 
 ---
