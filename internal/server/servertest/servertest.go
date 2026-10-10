@@ -54,8 +54,8 @@ func (b *SyncBuffer) String() string {
 }
 
 // Env is a configured Gateway: its key files, TLS certificate, bootstrap
-// secret and config file in a temporary directory, and the address its
-// config listens on.
+// secret and config file in a temporary directory, and the address it
+// listens on.
 type Env struct {
 	Dir    string
 	Config string
@@ -116,7 +116,6 @@ func (env *Env) writeConfig(t *testing.T, decryptionKeys string) {
 
 	// Relative paths are resolved against the config file's directory.
 	WriteFile(t, env.Config, `
-listen: `+env.Listen+`
 tls:
   certFile: tls.crt
   keyFile: tls.key
@@ -185,14 +184,16 @@ type Gateway struct {
 // logs until ctx is done.
 type RunFunc func(ctx context.Context, audit, logs io.Writer) error
 
-// Start runs the Gateway configured by config, logging at info and
-// calling providers, until the test ends, and waits for it to serve.
+// Start runs the Gateway configured by config on an ephemeral port,
+// logging at info and calling providers, until the test ends, and waits
+// for it to serve.
 func Start(t *testing.T, config string, providers dnsprovider.Registry) *Gateway {
 	t.Helper()
 
 	return Launch(t, func(ctx context.Context, audit, logs io.Writer) error {
 		return server.Run(ctx, server.Options{
 			ConfigFile: config,
+			Listen:     "127.0.0.1:0",
 			LogLevel:   slog.LevelInfo,
 			Audit:      audit,
 			Log:        logs,

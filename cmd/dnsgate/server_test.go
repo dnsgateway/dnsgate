@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"io"
 	"net"
 	"path/filepath"
 	"strings"
@@ -65,7 +67,7 @@ func TestServerHelpDocumentsTheLogLevel(t *testing.T) {
 }
 
 func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
-	// Something else holds the configured address, so a server that tried
+	// Something else holds the given address, so a server that tried
 	// to listen before checking the level would fail on the address instead.
 	held, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -76,7 +78,7 @@ func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
 
 	env := servertest.NewEnvAt(t, held.Addr().String())
 
-	out, err := runCLI(t, "server", "--config", env.Config, "--log-level", "verbose")
+	out, err := runCLI(t, "server", "--config", env.Config, "--listen", env.Listen, "--log-level", "verbose")
 	if err == nil || !strings.Contains(err.Error(), `"verbose"`) || !strings.Contains(err.Error(), "error, warn, info, debug") {
 		t.Errorf("server error = %v, want one naming the level and the accepted levels before it listens\n%s", err, out)
 	}
@@ -212,5 +214,31 @@ func TestServerPurgesExpiredEntriesAtStartup(t *testing.T) {
 		if got != want {
 			t.Errorf("%s revoked after the server started = %v, want %v", id, got, want)
 		}
+	}
+}
+
+func TestServerTakesListenAddressFromEnv(t *testing.T) {
+	env := servertest.NewEnvAt(t, servertest.FreePort(t))
+	t.Setenv("LISTEN_ADDRESS", env.Listen)
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"server", "--config", env.Config})
+
+	servertest.LaunchAt(t, env.Listen, func(ctx context.Context, audit, logs io.Writer) error {
+		cmd.SetOut(audit)
+		cmd.SetErr(logs)
+
+		return cmd.ExecuteContext(ctx)
+	})
+}
+
+func TestServerHelpDocumentsTheListenAddress(t *testing.T) {
+	out, err := runCLI(t, "server", "--help")
+	if err != nil {
+		t.Fatalf("server --help: %v", err)
+	}
+
+	if !strings.Contains(out, "(env LISTEN_ADDRESS)") || !strings.Contains(out, `(default ":8443")`) {
+		t.Errorf("server help does not document --listen, LISTEN_ADDRESS and the default:\n%s", out)
 	}
 }

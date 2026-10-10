@@ -7,17 +7,21 @@ import (
 	"strings"
 
 	"github.com/spf13/pflag"
+
+	"github.com/dnsgateway/dnsgate/internal/server"
 )
 
 const (
 	flagKeyDir      = "key-dir"
 	flagKeyIDSuffix = "key-id-suffix"
 	flagConfig      = "config"
+	flagListen      = "listen"
 	flagLogLevel    = "log-level"
 
 	envKeyDir      = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix = "DNSGATE_KEY_ID_SUFFIX"
 	envConfig      = "DNSGATE_CONFIG"
+	envListen      = "DNSGATE_LISTEN_ADDRESS"
 	envLogLevel    = "DNSGATE_LOG_LEVEL"
 )
 
@@ -25,6 +29,7 @@ const (
 	defaultKeyDir      = "keys"
 	defaultKeyIDSuffix = ""
 	defaultConfig      = "dnsgate.yaml"
+	defaultListen      = server.DefaultListen
 	defaultLogLevel    = "info"
 )
 
@@ -35,6 +40,7 @@ type Flags struct {
 	KeyIDSuffix string
 
 	Config   string
+	Listen   string
 	LogLevel string
 }
 
@@ -45,6 +51,7 @@ func DefaultFlags() *Flags {
 		KeyDir:      withDefaultEnv(envKeyDir, defaultKeyDir),
 		KeyIDSuffix: withDefaultEnv(envKeyIDSuffix, defaultKeyIDSuffix),
 		Config:      withDefaultEnv(envConfig, defaultConfig),
+		Listen:      withDefaultEnv(envListen, defaultListen),
 		LogLevel:    withDefaultEnv(envLogLevel, defaultLogLevel),
 	}
 }
@@ -61,6 +68,8 @@ func (f *Flags) AddKeysGenerateFlags(flags *pflag.FlagSet) {
 func (f *Flags) AddServerFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Config, flagConfig, "", f.Config,
 		"Gateway configuration file (env "+envConfig+")")
+	flags.StringVarP(&f.Listen, flagListen, "", f.Listen,
+		"TCP address the gRPC API is served on (env "+envListen+")")
 	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
 		"lowest level of the logs written: "+logLevelNames()+" (env "+envLogLevel+")")
 }

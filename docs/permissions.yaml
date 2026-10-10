@@ -1,0 +1,4 @@
+permissions:
+  - verbs: [get, list, create, update, patch]
+    resources: [zones, records]
+    egress: [gateway, agent]

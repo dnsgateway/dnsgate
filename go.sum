@@ -1,6 +1,10 @@
 github.com/cloudflare/cloudflare-go/v7 v7.12.0 h1:EpIL4ncuktc/xpICUCtOpjlyIRm6PgIhrnNbXhPxgUE=
 github.com/cloudflare/cloudflare-go/v7 v7.12.0/go.mod h1:9zcoIAtu6cmcoPszCNISvqYMXs8wObtVGXE1qGFMrNU=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
+github.com/dnsgateway/dnsgate-go v0.0.0-20261010140319-45b81ef44951 h1:/M+fVbD1kTRXgZHNCUtIpft3IDd5T9CT4HJJohOFs38=
+github.com/dnsgateway/dnsgate-go v0.0.0-20261010140319-45b81ef44951/go.mod h1:CK4B38159xWvFbGXBAQvP5mXncSrIwW0LRPxerfCCcs=
+github.com/dnsgateway/dnsprovider v0.0.0-20261010135532-454b5a0d851c h1:6zcR9Ed2S90sJpnattcNu+yviMsz19Ib3d717cQq0FE=
+github.com/dnsgateway/dnsprovider v0.0.0-20261010135532-454b5a0d851c/go.mod h1:KYzrl15MjomimpL0tPp3AkwFYv3m+f+OWkcm+1LI0q4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-jose/go-jose/v4 v4.1.5 h1:RjgjO2LOtWOJKUC5wpwY9LR3B3vwVAz6JS2YHfYU6eA=

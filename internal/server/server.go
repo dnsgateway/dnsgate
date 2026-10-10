@@ -27,10 +27,17 @@ import (
 // revoked tokens that have expired, unless Options set another interval.
 const DefaultPurgeInterval = time.Hour
 
+// DefaultListen is the address a Gateway serves on, unless Options set
+// another address.
+const DefaultListen = ":8443"
+
 // Options configure a Gateway run.
 type Options struct {
 	// ConfigFile is the Gateway's YAML configuration file.
 	ConfigFile string
+	// Listen is the TCP address the gRPC API is served on; empty means
+	// DefaultListen.
+	Listen string
 	// LogLevel is the lowest level of the logs written.
 	LogLevel slog.Level
 	// Audit receives the audit events, as JSON lines.
@@ -69,7 +76,12 @@ func Run(ctx context.Context, o Options) error {
 	}
 
 	log := slog.New(slog.NewJSONHandler(o.Log, &slog.HandlerOptions{Level: o.LogLevel}))
-	log.Debug("loaded config", "file", o.ConfigFile, "listen", cfg.Listen)
+	listen := o.Listen
+	if listen == "" {
+		listen = DefaultListen
+	}
+
+	log.Debug("loaded config", "file", o.ConfigFile, "listen", listen)
 
 	revokedIDs, err := revocation.OpenSQLite(ctx, cfg.Database.SQLiteFile)
 	if err != nil {
@@ -104,7 +116,7 @@ func Run(ctx context.Context, o Options) error {
 		Logger:          log,
 	}))
 
-	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Listen)
+	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listening: %w", err)
 	}

@@ -15,9 +15,6 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
-// DefaultListen is the listen address of a configuration that sets none.
-const DefaultListen = ":8443"
-
 // minBootstrapSecret is the shortest bootstrap secret the Gateway accepts.
 const minBootstrapSecret = 16
 
@@ -25,10 +22,8 @@ const minBootstrapSecret = 16
 // Relative file paths are resolved against the configuration file's
 // directory.
 type File struct {
-	// Listen is the TCP address the gRPC API is served on.
-	Listen string `json:"listen"`
-	TLS    TLS    `json:"tls"`
-	Keys   Keys   `json:"keys"`
+	TLS  TLS  `json:"tls"`
+	Keys Keys `json:"keys"`
 	// BootstrapSecretFile holds the secret that authorizes Onboarding. It
 	// must not be readable or writable by group or others.
 	BootstrapSecretFile string   `json:"bootstrapSecretFile"`
@@ -92,10 +87,6 @@ func Load(path string) (*File, error) {
 
 	if err := yaml.UnmarshalStrict(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
-	}
-
-	if cfg.Listen == "" {
-		cfg.Listen = DefaultListen
 	}
 
 	if cfg.Tokens.MaxAncestors < 0 {

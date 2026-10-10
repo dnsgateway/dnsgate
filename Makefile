@@ -56,7 +56,7 @@ build:
 
 .PHONY: run
 run: ## Run
-	go run $(GO_LDFLAGS) ./cmd/...
+	go run $(GO_LDFLAGS) ./cmd/dnsgate server --log-level=debug
 
 .PHONY: lint
 lint: ## Lint Code

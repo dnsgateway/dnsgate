@@ -16,10 +16,10 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
-// serverCmd runs "dnsgate server --config" with args.
-func serverCmd(config string, args []string) servertest.RunFunc {
+// serverCmd runs "dnsgate server --config --listen" with args.
+func serverCmd(config, listen string, args []string) servertest.RunFunc {
 	cmd := newRootCmd()
-	cmd.SetArgs(append([]string{"server", "--config", config}, args...))
+	cmd.SetArgs(append([]string{"server", "--config", config, "--listen", listen}, args...))
 
 	return func(ctx context.Context, audit, logs io.Writer) error {
 		cmd.SetOut(audit)
@@ -29,12 +29,12 @@ func serverCmd(config string, args []string) servertest.RunFunc {
 	}
 }
 
-// startServer runs "dnsgate server --config" with args until the test ends
-// and waits for it to log its listen address.
+// startServer runs "dnsgate server --config" on an ephemeral port with args
+// until the test ends and waits for it to log its listen address.
 func startServer(t *testing.T, config string, args ...string) *servertest.Gateway {
 	t.Helper()
 
-	return servertest.Launch(t, serverCmd(config, args))
+	return servertest.Launch(t, serverCmd(config, "127.0.0.1:0", args))
 }
 
 // startServerAt runs "dnsgate server --config" for env with args until the
@@ -43,7 +43,7 @@ func startServer(t *testing.T, config string, args ...string) *servertest.Gatewa
 func startServerAt(t *testing.T, env *servertest.Env, args ...string) *servertest.Gateway {
 	t.Helper()
 
-	return servertest.LaunchAt(t, env.Listen, serverCmd(env.Config, args))
+	return servertest.LaunchAt(t, env.Listen, serverCmd(env.Config, env.Listen, args))
 }
 
 // onboard onboards a Cloudflare credential at gw, trusting env's CA.

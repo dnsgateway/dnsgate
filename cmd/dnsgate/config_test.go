@@ -20,13 +20,24 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 		},
 		"unknown field": {
 			edit: func(t *testing.T, env *servertest.Env) {
-				servertest.WriteFile(t, env.Config, "listen: 127.0.0.1:0\nbootstrapSecret: inline\n", 0o600)
+				servertest.WriteFile(t, env.Config, "bootstrapSecret: inline\n", 0o600)
 			},
 			want: "bootstrapSecret",
 		},
+		"listen setting": {
+			edit: func(t *testing.T, env *servertest.Env) {
+				config, err := os.ReadFile(env.Config)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				servertest.WriteFile(t, env.Config, "listen: "+env.Listen+"\n"+string(config), 0o600)
+			},
+			want: "listen",
+		},
 		"missing setting": {
 			edit: func(t *testing.T, env *servertest.Env) {
-				servertest.WriteFile(t, env.Config, "listen: 127.0.0.1:0\n", 0o600)
+				servertest.WriteFile(t, env.Config, "", 0o600)
 			},
 			want: "is required",
 		},
@@ -126,7 +137,7 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 			env := servertest.NewEnv(t)
 			tc.edit(t, env)
 
-			out, err := runCLI(t, "server", "--config", env.Config)
+			out, err := runCLI(t, "server", "--config", env.Config, "--listen", env.Listen)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("server error = %v, want one containing %q\n%s", err, tc.want, out)
 			}
