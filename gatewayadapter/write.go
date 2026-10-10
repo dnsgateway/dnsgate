@@ -86,6 +86,20 @@ func (s *rrset) held(value string) *dnsprovider.Record {
 	return nil
 }
 
+// setsExtras reports whether a change gives a record of s, or the record
+// it replaces, Record Extras.
+func (s *rrset) setsExtras() bool {
+	return slices.ContainsFunc(s.target, func(t target) bool {
+		if !t.set {
+			return false
+		}
+
+		held := s.held(t.Value)
+
+		return len(t.Extras) > 0 || held != nil && len(held.Extras) > 0
+	})
+}
+
 // index returns the index of the target record holding value, or -1.
 func (s *rrset) index(value string) int {
 	return slices.IndexFunc(s.target, func(t target) bool { return t.Value == value })
@@ -174,7 +188,11 @@ func (a *adapter) ApplyChangeset(ctx context.Context, cs dnsprovider.Changeset) 
 		return notMade(res), nil
 	}
 
-	f := a.providerType(ctx)
+	// The Provider type decides only which Record Extras are sent.
+	var f dnsprovider.Factory
+	if slices.ContainsFunc(order, (*rrset).setsExtras) {
+		f = a.providerType(ctx)
+	}
 
 	for _, s := range writeOrder(order) {
 		if failed {

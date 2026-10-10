@@ -125,6 +125,23 @@ func (h *harness) writes() []string {
 	return out
 }
 
+// inspections returns how many InspectToken requests the Gateway
+// received.
+func (h *harness) inspections() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	n := 0
+
+	for _, req := range h.requests {
+		if _, ok := req.GetOperation().(*dnsgatev1.Request_InspectToken); ok {
+			n++
+		}
+	}
+
+	return n
+}
+
 func formatExpect(e *dnsgatev1.ExpectedRRset) string {
 	if e == nil {
 		return "none"
