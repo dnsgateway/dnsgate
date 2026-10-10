@@ -100,7 +100,7 @@ func TestARequestLineAndItsAuditEventAgreeOnDuration(t *testing.T) {
 	})
 
 	if _, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
-		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 600, Values: []string{"192.0.2.30"},
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 600, Records: values("192.0.2.30"),
 	}); err != nil {
 		t.Fatalf("CreateRecord: %v", err)
 	}

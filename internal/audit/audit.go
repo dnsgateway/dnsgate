@@ -3,7 +3,11 @@
 // An Event has a fixed set of fields, and nothing else is ever written:
 // that field allowlist is what keeps Provider Credentials, Service Tokens
 // and bootstrap secrets out of the audit log. Callers fill only values the
-// Gateway itself produced or validated.
+// Gateway itself produced or validated, but for a mutation's Changes: they
+// hold its records before and after it, as the Provider holds them and the
+// Gateway writes them, with only their values, TTLs and the Record Extras
+// the Provider type declares by name. They never hold the other fields of
+// its API that a Provider passes through as Record Extras unmodelled.
 package audit
 
 import (
@@ -98,10 +102,41 @@ type Event struct {
 	// mutation, the changes that stay made. nil for an event with no
 	// Changeset.
 	ChangesApplied *int `json:"changes_applied,omitempty"`
+	// Changes are the changes of a mutation's Changeset, in the order
+	// the Gateway applies them, to records of the event's RecordName and
+	// RecordType.
+	Changes []Change `json:"changes,omitempty"`
 	// DurationMS is how long the request took until the event, in
 	// milliseconds: for a request the Gateway carried out, including its
 	// Provider calls.
 	DurationMS int64 `json:"duration_ms"`
+}
+
+// Change is one change of a mutation's Changeset, with the record before
+// it, but for an addition, and after it, but for a deletion.
+type Change struct {
+	Kind   ChangeKind `json:"kind"`
+	Before *Record    `json:"before,omitempty"`
+	After  *Record    `json:"after,omitempty"`
+}
+
+// ChangeKind is what a Change does to a record.
+type ChangeKind string
+
+// Change kinds.
+const (
+	ChangeAdd    ChangeKind = "add"
+	ChangeModify ChangeKind = "modify"
+	ChangeDelete ChangeKind = "delete"
+)
+
+// Record is a record a Change makes or acts on: its value, TTL and the
+// Record Extras the Provider type declares by name, a Record Extra a write
+// clears as "".
+type Record struct {
+	Value  string            `json:"value"`
+	TTL    uint32            `json:"ttl"`
+	Extras map[string]string `json:"extras,omitempty"`
 }
 
 // Log writes Events to an io.Writer, one JSON object per line.

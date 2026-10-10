@@ -25,6 +25,9 @@ type dnsCall struct {
 	// Egress it goes through.
 	perm     permission.Request
 	provider dnsprovider.Provider
+	// factory is the Factory of the token's Provider type, which declares
+	// the TTLs and Record Extras its Providers take.
+	factory dnsprovider.Factory
 }
 
 // tokenRequest is a zone or record request: it presents a Service Token
@@ -174,7 +177,7 @@ func (g *Gateway) connect(c *dnsCall) error {
 		return g.fail(c, internal())
 	}
 
-	c.provider = p
+	c.provider, c.factory = p, g.providers[name]
 
 	return nil
 }

@@ -83,7 +83,9 @@ func (g *Gateway) readRecords(c *dnsCall, f dnsprovider.RecordFilter) (dnsprovid
 
 // recordSets groups the records of zone into RRsets, keeping those keep
 // returns true for, sorted by name and type. Names are relative to zone
-// and types in upper case; each RRset has the lowest TTL of its records.
+// and types in upper case; each RRset has the lowest TTL of its records,
+// and each value its record's Record Extras, but those of "", which a
+// write cleared.
 func recordSets(zone string, records []dnsprovider.Record, keep func(name, typ string) bool) []*dnsgatev1.RecordSet {
 	type key struct{ name, typ string }
 
@@ -110,7 +112,7 @@ func recordSets(zone string, records []dnsprovider.Record, keep func(name, typ s
 		}
 
 		s.Ttl = min(s.GetTtl(), rec.TTL)
-		s.Values = append(s.Values, rec.Value)
+		s.Records = append(s.Records, &dnsgatev1.RecordValue{Value: rec.Value, Extras: setExtras(rec.Extras)})
 	}
 
 	slices.SortFunc(sets, func(a, b *dnsgatev1.RecordSet) int {

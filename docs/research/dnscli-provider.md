@@ -116,8 +116,10 @@ Settled in a second pass; they override the matching items below and the
   stays value strings.
 - **Record Extras merge per key.** A key sent sets that Record Extra, a key
   sent as `""` clears it, a key not sent keeps its current value; a new value
-  starts with the keys it was sent. `plan()` treats an extras-only change as
-  a modify.
+  starts with the keys it was sent, plus any non-writable ones the Provider
+  keeps on the record `plan()` reuses for it. A non-writable key sent for a
+  new value, even `""`, is INVALID_RECORD; one sent unchanged for a held
+  value is allowed. `plan()` treats an extras-only change as a modify.
 - **Optional fields.** `dnsprovider.Field` gains `Default` (a field with a
   default is optional) and `Choices` (the form offers a picker). Egress is
   `{Default: "auto", Choices: [auto, gateway, agent]}`.

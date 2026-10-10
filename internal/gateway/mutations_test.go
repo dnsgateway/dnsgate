@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -30,7 +31,8 @@ func newMutationHarness(t *testing.T) *harness {
 
 // changesets formats the changes of each Changeset the fake Provider
 // applied, one line per change: "add TYPE NAME VALUE TTL", "delete TYPE
-// NAME VALUE TTL" or "modify TYPE NAME VALUE TTL -> VALUE TTL".
+// NAME VALUE TTL" or "modify TYPE NAME VALUE TTL -> VALUE TTL", each
+// VALUE followed by its Record Extras, if any, as formatExtras does.
 func (h *harness) changesets() [][]string {
 	var out [][]string
 
@@ -52,13 +54,15 @@ func (h *harness) changesets() [][]string {
 }
 
 func formatChange(c dnsprovider.Change) string {
-	rec := func(r dnsprovider.Record) string { return fmt.Sprintf("%s %s %s %d", r.Type, r.Name, r.Value, r.TTL) }
+	rec := func(r dnsprovider.Record) string {
+		return fmt.Sprintf("%s %s %s%s %d", r.Type, r.Name, r.Value, formatExtras(r.Extras), r.TTL)
+	}
 
 	switch c.Kind {
 	case dnsprovider.ChangeAdd:
 		return "add " + rec(c.After)
 	case dnsprovider.ChangeModify:
-		return fmt.Sprintf("modify %s -> %s %d", rec(c.Before), c.After.Value, c.After.TTL)
+		return fmt.Sprintf("modify %s -> %s%s %d", rec(c.Before), c.After.Value, formatExtras(c.After.Extras), c.After.TTL)
 	case dnsprovider.ChangeDelete:
 		return "delete " + rec(c.Before)
 	}
@@ -114,7 +118,7 @@ func TestCreateRecordCreatesAnRRset(t *testing.T) {
 	root := h.onboard(t, onboardRequest())
 
 	resp, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
-		Token: root, Zone: "example.com", Name: "API", Type: "a", Ttl: 600, Values: []string{"192.0.2.30", "192.0.2.31"},
+		Token: root, Zone: "example.com", Name: "API", Type: "a", Ttl: 600, Records: values("192.0.2.30", "192.0.2.31"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRecord: %v", err)
@@ -141,7 +145,7 @@ func TestCreateRecordOfAnRRsetTheZoneHoldsIsAConflict(t *testing.T) {
 	root := h.onboard(t, onboardRequest())
 
 	_, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
-		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Values: []string{"192.0.2.99"},
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Records: values("192.0.2.99"),
 	})
 	wantError(t, err, codes.AlreadyExists, dnsgatev1.Error_CATEGORY_CONFLICT)
 
@@ -176,7 +180,7 @@ func TestMalformedRecordsAreRefusedBeforeTheProvider(t *testing.T) {
 			root := h.onboard(t, onboardRequest())
 
 			_, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
-				Token: root, Zone: "example.com", Name: "api", Type: tc.typ, Ttl: tc.ttl, Values: tc.values,
+				Token: root, Zone: "example.com", Name: "api", Type: tc.typ, Ttl: tc.ttl, Records: values(tc.values...),
 			})
 			wantError(t, err, tc.code, tc.category)
 
@@ -194,9 +198,14 @@ func TestMalformedRecordsAreRefusedBeforeTheProvider(t *testing.T) {
 
 // sortedSet formats an RRset as recordSets does, its values sorted.
 func sortedSet(s *dnsgatev1.RecordSet) string {
-	values := slices.Sorted(slices.Values(s.GetValues()))
+	var vs []string
+	for _, r := range s.GetRecords() {
+		vs = append(vs, formatValue(r))
+	}
 
-	return fmt.Sprintf("%s %s %d %s", s.GetName(), s.GetType(), s.GetTtl(), strings.Join(values, ","))
+	slices.Sort(vs)
+
+	return fmt.Sprintf("%s %s %d %s", s.GetName(), s.GetType(), s.GetTtl(), strings.Join(vs, ","))
 }
 
 // readSet reads one RRset of example.com with tok, formatted by
@@ -255,7 +264,7 @@ func TestUpdateRecordReplacesEveryValueOfTheRRset(t *testing.T) {
 			root := h.onboard(t, onboardRequest())
 
 			resp, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
-				Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: tc.ttl, Values: tc.values,
+				Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: tc.ttl, Records: values(tc.values...),
 			})
 			if err != nil {
 				t.Fatalf("UpdateRecord: %v", err)
@@ -285,7 +294,7 @@ func TestUpdateRecordWithTheValuesTheRRsetHoldsChangesNothing(t *testing.T) {
 	root := h.onboard(t, onboardRequest())
 
 	resp, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
-		Token: root, Zone: "example.com", Name: "@", Type: "A", Ttl: 300, Values: []string{"192.0.2.1"},
+		Token: root, Zone: "example.com", Name: "@", Type: "A", Ttl: 300, Records: values("192.0.2.1"),
 	})
 	if err != nil {
 		t.Fatalf("UpdateRecord: %v", err)
@@ -309,12 +318,12 @@ func TestPatchRecordAddsAndRemovesSingleValues(t *testing.T) {
 		want string
 	}{
 		"add a value with the RRset's TTL": {
-			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Add: []string{`"def"`}},
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Add: values(`"def"`)},
 			[]string{`add TXT ` + acme + ` "def" 60`},
 			`_acme-challenge.www TXT 60 "abc","def"`,
 		},
 		"add a value with its own TTL": {
-			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Ttl: 120, Add: []string{`"def"`}},
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Ttl: 120, Add: values(`"def"`)},
 			[]string{`add TXT ` + acme + ` "def" 120`},
 			`_acme-challenge.www TXT 60 "abc","def"`,
 		},
@@ -324,17 +333,17 @@ func TestPatchRecordAddsAndRemovesSingleValues(t *testing.T) {
 			"www.apps A 120 192.0.2.11",
 		},
 		"add one value and remove another": {
-			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Add: []string{`"def"`}, Remove: []string{`"abc"`}},
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.www", Type: "TXT", Add: values(`"def"`), Remove: []string{`"abc"`}},
 			[]string{`modify TXT ` + acme + ` "abc" 60 -> "def" 60`},
 			`_acme-challenge.www TXT 60 "def"`,
 		},
 		"add a value held and remove one not held": {
-			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"192.0.2.10"}, Remove: []string{"192.0.2.99"}},
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: values("192.0.2.10"), Remove: []string{"192.0.2.99"}},
 			nil,
 			"www.apps A 120 192.0.2.10,192.0.2.11",
 		},
 		"add to an RRset the zone lacks": {
-			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Ttl: 120, Add: []string{`"xyz"`}},
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Ttl: 120, Add: values(`"xyz"`)},
 			[]string{`add TXT _acme-challenge.api.example.com "xyz" 120`},
 			`_acme-challenge.api TXT 120 "xyz"`,
 		},
@@ -394,23 +403,23 @@ func TestMalformedPatchesAreRefused(t *testing.T) {
 			dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
 		},
 		"value added and removed": {
-			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"192.0.2.10"}, Remove: []string{"192.0.2.10"}},
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: values("192.0.2.10"), Remove: []string{"192.0.2.10"}},
 			dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
 		},
 		"value added twice": {
-			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"192.0.2.12", "192.0.2.12"}},
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: values("192.0.2.12", "192.0.2.12")},
 			dnsgatev1.Error_CATEGORY_INVALID_REQUEST,
 		},
 		"malformed value": {
-			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: []string{"www"}},
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Add: values("www")},
 			dnsgatev1.Error_CATEGORY_INVALID_RECORD,
 		},
 		"TTL out of range": {
-			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Ttl: 5, Add: []string{"192.0.2.12"}},
+			&dnsgatev1.PatchRecordRequest{Name: "www.apps", Type: "A", Ttl: 5, Add: values("192.0.2.12")},
 			dnsgatev1.Error_CATEGORY_INVALID_RECORD,
 		},
 		"no TTL for a new RRset": {
-			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Add: []string{`"xyz"`}},
+			&dnsgatev1.PatchRecordRequest{Name: "_acme-challenge.api", Type: "TXT", Add: values(`"xyz"`)},
 			dnsgatev1.Error_CATEGORY_INVALID_RECORD,
 		},
 	} {
@@ -467,9 +476,9 @@ func TestDeleteRecordDeletesEveryValueOfTheRRset(t *testing.T) {
 // example.com, through egress.
 func mutations(name, typ string, egress dnsgatev1.Egress) map[string]any {
 	return map[string]any{
-		"create": &dnsgatev1.CreateRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Ttl: 300, Values: []string{`"v"`}},
-		"update": &dnsgatev1.UpdateRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Ttl: 300, Values: []string{`"v"`}},
-		"patch":  &dnsgatev1.PatchRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Add: []string{`"v"`}},
+		"create": &dnsgatev1.CreateRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Ttl: 300, Records: values(`"v"`)},
+		"update": &dnsgatev1.UpdateRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Ttl: 300, Records: values(`"v"`)},
+		"patch":  &dnsgatev1.PatchRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress, Add: values(`"v"`)},
 		"delete": &dnsgatev1.DeleteRecordRequest{Zone: "example.com", Name: name, Type: typ, Egress: egress},
 	}
 }
@@ -569,9 +578,9 @@ func TestEachMutationAndDenialIsAuditedOnceWithoutSecrets(t *testing.T) {
 	gw := dnsgatev1.Egress_EGRESS_GATEWAY
 
 	requests := []any{
-		&dnsgatev1.CreateRecordRequest{Zone: "Example.COM", Name: "_acme-challenge.api", Type: "txt", Egress: gw, Ttl: 300, Values: []string{`"a"`}},
-		&dnsgatev1.PatchRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw, Add: []string{`"b"`}},
-		&dnsgatev1.UpdateRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw, Ttl: 60, Values: []string{`"c"`}},
+		&dnsgatev1.CreateRecordRequest{Zone: "Example.COM", Name: "_acme-challenge.api", Type: "txt", Egress: gw, Ttl: 300, Records: values(`"a"`)},
+		&dnsgatev1.PatchRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw, Add: values(`"b"`)},
+		&dnsgatev1.UpdateRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw, Ttl: 60, Records: values(`"c"`)},
 		&dnsgatev1.DeleteRecordRequest{Zone: "example.com", Name: "_acme-challenge.api", Type: "TXT", Egress: gw},
 		// Denied: a name outside the token's.
 		&dnsgatev1.DeleteRecordRequest{Zone: "example.com", Name: "www.apps", Type: "TXT", Egress: gw},
@@ -683,7 +692,7 @@ func TestProviderFailuresOfAChangesetReachTheClientAsCategories(t *testing.T) {
 			for verb, req := range mutations("_acme-challenge.www", "TXT", 0) {
 				switch r := req.(type) {
 				case *dnsgatev1.PatchRecordRequest:
-					r.Add = []string{`"new"`}
+					r.Add = values(`"new"`)
 				case *dnsgatev1.CreateRecordRequest:
 					r.Name = "_acme-challenge.api"
 				}
@@ -735,7 +744,7 @@ func TestAChangeTheProviderFailsFailsTheCallAndTheOthersStayMade(t *testing.T) {
 	root := h.onboard(t, onboardRequest())
 
 	_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
-		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Values: []string{"192.0.2.12", "192.0.2.13"},
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Records: values("192.0.2.12", "192.0.2.13"),
 	})
 	wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD)
 
@@ -759,9 +768,349 @@ func TestUpdateRecordOfAnRRsetTheZoneLacksIsNotFound(t *testing.T) {
 	root := h.onboard(t, onboardRequest())
 
 	_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
-		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 300, Values: []string{"192.0.2.1"},
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 300, Records: values("192.0.2.1"),
 	})
 	wantError(t, err, codes.NotFound, dnsgatev1.Error_CATEGORY_NOT_FOUND)
 
 	wantChangesets(t, h)
+}
+
+// serveFactory restarts the Gateway with the fake Provider's Factory as
+// edit leaves it, standing in for a Provider type that declares what
+// edit sets.
+func (h *harness) serveFactory(t *testing.T, edit func(*dnsprovider.Factory)) {
+	t.Helper()
+
+	f := h.fake.Factory()
+	edit(&f)
+
+	h.providers = dnsprovider.Registry{"cloudflare": f}
+	h.serve(t, h.keys)
+}
+
+func TestTheTTLIsCheckedAgainstTheRangeOfTheProviderType(t *testing.T) {
+	h := newMutationHarness(t)
+	h.serveFactory(t, func(f *dnsprovider.Factory) { f.TTL = dnsprovider.TTLRange{Min: 600, Max: 86400} })
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 300, Records: values("192.0.2.1"),
+	})
+	wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD)
+
+	_, err = h.client.PatchRecord(t.Context(), &dnsgatev1.PatchRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 300, Add: values("192.0.2.1"),
+	})
+	wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD)
+
+	if _, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 600, Records: values("192.0.2.1"),
+	}); err != nil {
+		t.Errorf("CreateRecord with a TTL in range: %v", err)
+	}
+}
+
+// serveProxied restarts the Gateway with a Provider type whose A, AAAA
+// and CNAME records carry a writable "proxied" Record Extra, and every
+// record a "comment" one that writes keep.
+func (h *harness) serveProxied(t *testing.T) {
+	t.Helper()
+
+	h.serveFactory(t, func(f *dnsprovider.Factory) {
+		f.Extras = []dnsprovider.ExtraSpec{
+			dnsprovider.ProxiedExtra("A", "AAAA", "CNAME"),
+			{Key: "comment", Label: "Comment", Kind: dnsprovider.ExtraString},
+		}
+	})
+}
+
+func TestCreateRecordSetsTheRecordExtrasOfEachValue(t *testing.T) {
+	h := newMutationHarness(t)
+	h.serveProxied(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	resp, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
+		Token: root, Zone: "example.com", Name: "api", Type: "A", Ttl: 300, Records: []*dnsgatev1.RecordValue{
+			{Value: "192.0.2.30", Extras: map[string]string{"proxied": "true"}},
+			{Value: "192.0.2.31"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateRecord: %v", err)
+	}
+
+	want := "api A 300 192.0.2.30{proxied=true},192.0.2.31"
+	if got := sortedSet(resp.GetRecordSet()); got != want {
+		t.Errorf("created RRset = %q, want %q", got, want)
+	}
+
+	wantChangesets(t, h, []string{
+		"add A api.example.com 192.0.2.30{proxied=true} 300",
+		"add A api.example.com 192.0.2.31 300",
+	})
+
+	if got := h.readSet(t, root, "api", "A"); got != want {
+		t.Errorf("RRset read back = %q, want %q", got, want)
+	}
+}
+
+// newProxiedHarness returns a mutation harness serving a Provider type
+// as serveProxied does, whose example.com holds only the A RRset of www:
+// 192.0.2.1, proxied and with a comment, and 192.0.2.2, with no Record
+// Extras.
+func newProxiedHarness(t *testing.T) *harness {
+	t.Helper()
+
+	h := newMutationHarness(t)
+	h.fake.SetRecords("z-com",
+		dnsprovider.Record{ID: "r1", Type: "A", Name: "www.example.com", Value: "192.0.2.1", TTL: 300, Extras: map[string]string{"proxied": "true", "comment": "web"}},
+		dnsprovider.Record{ID: "r2", Type: "A", Name: "www.example.com", Value: "192.0.2.2", TTL: 300},
+	)
+	h.serveProxied(t)
+
+	return h
+}
+
+func TestWritesMergeTheRecordExtrasOfHeldValuesPerKey(t *testing.T) {
+	for name, tc := range map[string]struct {
+		records []*dnsgatev1.RecordValue
+		changes []string
+		want    string
+	}{
+		"a key sent sets its Record Extra": {
+			[]*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: map[string]string{"proxied": "false"}}, {Value: "192.0.2.2", Extras: map[string]string{"proxied": "true"}}},
+			[]string{
+				"modify A www.example.com 192.0.2.1{comment=web;proxied=true} 300 -> 192.0.2.1{comment=web;proxied=false} 300",
+				"modify A www.example.com 192.0.2.2 300 -> 192.0.2.2{proxied=true} 300",
+			},
+			"www A 300 192.0.2.1{comment=web;proxied=false},192.0.2.2{proxied=true}",
+		},
+		"a key sent as empty clears its Record Extra": {
+			[]*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: map[string]string{"proxied": ""}}, {Value: "192.0.2.2"}},
+			[]string{"modify A www.example.com 192.0.2.1{comment=web;proxied=true} 300 -> 192.0.2.1{comment=web;proxied=} 300"},
+			"www A 300 192.0.2.1{comment=web},192.0.2.2",
+		},
+		"a key not sent keeps its Record Extra": {
+			values("192.0.2.1", "192.0.2.2"),
+			nil,
+			"www A 300 192.0.2.1{comment=web;proxied=true},192.0.2.2",
+		},
+		"the proxy flag off is no proxy flag": {
+			[]*dnsgatev1.RecordValue{{Value: "192.0.2.1"}, {Value: "192.0.2.2", Extras: map[string]string{"proxied": "false"}}},
+			nil,
+			"www A 300 192.0.2.1{comment=web;proxied=true},192.0.2.2",
+		},
+		"a new value in a held record's place keeps the Record Extras writes keep": {
+			[]*dnsgatev1.RecordValue{{Value: "192.0.2.2"}, {Value: "192.0.2.9"}},
+			[]string{"modify A www.example.com 192.0.2.1{comment=web;proxied=true} 300 -> 192.0.2.9{comment=web;proxied=} 300"},
+			"www A 300 192.0.2.2,192.0.2.9{comment=web}",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newProxiedHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			resp, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: tc.records,
+			})
+			if err != nil {
+				t.Fatalf("UpdateRecord: %v", err)
+			}
+
+			if got := sortedSet(resp.GetRecordSet()); got != tc.want {
+				t.Errorf("updated RRset = %q, want %q", got, tc.want)
+			}
+
+			if tc.changes == nil {
+				wantChangesets(t, h)
+			} else {
+				wantChangesets(t, h, tc.changes)
+			}
+
+			if got := h.readSet(t, root, "www", "A"); got != tc.want {
+				t.Errorf("RRset read back = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPatchRecordChangesTheRecordExtrasOfAValueItAddsAgain(t *testing.T) {
+	h := newProxiedHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	resp, err := h.client.PatchRecord(t.Context(), &dnsgatev1.PatchRecordRequest{
+		Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 600,
+		Add: []*dnsgatev1.RecordValue{{Value: "192.0.2.2", Extras: map[string]string{"proxied": "true"}}},
+	})
+	if err != nil {
+		t.Fatalf("PatchRecord: %v", err)
+	}
+
+	// The value keeps its TTL: patch sets the TTL of the values it adds.
+	want := "www A 300 192.0.2.1{comment=web;proxied=true},192.0.2.2{proxied=true}"
+	if got := sortedSet(resp.GetRecordSet()); got != want {
+		t.Errorf("patched RRset = %q, want %q", got, want)
+	}
+
+	wantChangesets(t, h, []string{"modify A www.example.com 192.0.2.2 300 -> 192.0.2.2{proxied=true} 300"})
+}
+
+func TestRecordExtrasAWriteCannotSetAreRefused(t *testing.T) {
+	type extras = map[string]string
+
+	for name, tc := range map[string]struct {
+		typ     string
+		records []*dnsgatev1.RecordValue
+	}{
+		"a key the Provider does not read":             {"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: extras{"color": "blue"}}, {Value: "192.0.2.2"}}},
+		"a key the Provider does not read on the type": {"TXT", []*dnsgatev1.RecordValue{{Value: "v=1", Extras: extras{"proxied": "true"}}}},
+		"a key the Provider does not read, cleared":    {"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: extras{"color": ""}}, {Value: "192.0.2.2"}}},
+		"a bool that is not true or false":             {"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: extras{"proxied": "yes"}}, {Value: "192.0.2.2"}}},
+		"a key writes keep, changed on a held value":   {"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: extras{"comment": "api"}}, {Value: "192.0.2.2"}}},
+		"a key writes keep, cleared on a held value":   {"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1", Extras: extras{"comment": ""}}, {Value: "192.0.2.2"}}},
+		"a key writes keep, set on a held value":       {"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1"}, {Value: "192.0.2.2", Extras: extras{"comment": "web"}}}},
+		"a key writes keep, set on a value not held": {
+			"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1"}, {Value: "192.0.2.2"}, {Value: "192.0.2.3", Extras: extras{"comment": "web"}}},
+		},
+		"a key writes keep, cleared on a value not held": {
+			"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.1"}, {Value: "192.0.2.2"}, {Value: "192.0.2.3", Extras: extras{"comment": ""}}},
+		},
+		"a key writes keep, on a new value in a held record's place": {
+			"A", []*dnsgatev1.RecordValue{{Value: "192.0.2.2"}, {Value: "192.0.2.9", Extras: extras{"comment": "web"}}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newProxiedHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: tc.typ, Ttl: 300, Records: tc.records,
+			})
+			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD)
+
+			wantChangesets(t, h)
+
+			if got, want := h.readSet(t, root, "www", "A"), "www A 300 192.0.2.1{comment=web;proxied=true},192.0.2.2"; got != want {
+				t.Errorf("RRset = %q, want it untouched: %q", got, want)
+			}
+		})
+	}
+}
+
+func TestRecordExtrasAWriteKeepsMayBeSentAsHeld(t *testing.T) {
+	h := newProxiedHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: []*dnsgatev1.RecordValue{
+			{Value: "192.0.2.1", Extras: map[string]string{"comment": "web", "proxied": "false"}},
+			{Value: "192.0.2.2", Extras: map[string]string{"comment": ""}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	wantChangesets(t, h, []string{"modify A www.example.com 192.0.2.1{comment=web;proxied=true} 300 -> 192.0.2.1{comment=web;proxied=false} 300"})
+}
+
+func TestPatchRecordRefusesRecordExtrasAWriteCannotSet(t *testing.T) {
+	for name, add := range map[string]*dnsgatev1.RecordValue{
+		"a key the Provider does not read":          {Value: "192.0.2.3", Extras: map[string]string{"color": "blue"}},
+		"a key writes keep, on a held value":        {Value: "192.0.2.2", Extras: map[string]string{"comment": "web"}},
+		"a key writes keep, cleared on a new value": {Value: "192.0.2.3", Extras: map[string]string{"comment": ""}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newProxiedHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			_, err := h.client.PatchRecord(t.Context(), &dnsgatev1.PatchRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Add: []*dnsgatev1.RecordValue{add},
+			})
+			wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_RECORD)
+
+			wantChangesets(t, h)
+		})
+	}
+}
+
+func TestTheAuditEventOfAMutationShowsItsChangeset(t *testing.T) {
+	h := newProxiedHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	if _, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: []*dnsgatev1.RecordValue{
+			{Value: "192.0.2.1", Extras: map[string]string{"proxied": "false"}},
+			{Value: "192.0.2.3"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	events := h.auditEvents(t)
+	got, err := json.Marshal(events[len(events)-1]["changes"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The proxy toggle shows in the Record Extras before and after.
+	want := `[` +
+		`{"after":{"extras":{"comment":"web","proxied":"false"},"ttl":300,"value":"192.0.2.1"},` +
+		`"before":{"extras":{"comment":"web","proxied":"true"},"ttl":300,"value":"192.0.2.1"},"kind":"modify"},` +
+		`{"after":{"ttl":300,"value":"192.0.2.3"},"before":{"ttl":300,"value":"192.0.2.2"},"kind":"modify"}` +
+		`]`
+	if string(got) != want {
+		t.Errorf("audited changes =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestTheAuditEventShowsOnlyTheRecordExtrasTheProviderTypeNames(t *testing.T) {
+	h := newMutationHarness(t)
+	h.fake.SetRecords("z-com",
+		dnsprovider.Record{ID: "r1", Type: "A", Name: "www.example.com", Value: "192.0.2.1", TTL: 300, Extras: map[string]string{"comment": "web", "labels": `{"team":"web"}`}},
+	)
+	h.serveFactory(t, func(f *dnsprovider.Factory) {
+		f.Extras = []dnsprovider.ExtraSpec{
+			dnsprovider.ProxiedExtra("A"),
+			{Key: "comment", Label: "Comment", Kind: dnsprovider.ExtraString},
+			{Key: dnsprovider.ExtraOther, Label: "Other fields", Kind: dnsprovider.ExtraJSON},
+		}
+	})
+
+	root := h.onboard(t, onboardRequest())
+
+	if _, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: []*dnsgatev1.RecordValue{
+			{Value: "192.0.2.1", Extras: map[string]string{"proxied": "true"}},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	wantChangesets(t, h, []string{
+		`modify A www.example.com 192.0.2.1{comment=web;labels={"team":"web"}} 300 -> 192.0.2.1{comment=web;labels={"team":"web"};proxied=true} 300`,
+	})
+
+	events := h.auditEvents(t)
+	got, err := json.Marshal(events[len(events)-1]["changes"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// labels, a field the Provider passes through unmodelled, stays out.
+	want := `[` +
+		`{"after":{"extras":{"comment":"web","proxied":"true"},"ttl":300,"value":"192.0.2.1"},` +
+		`"before":{"extras":{"comment":"web"},"ttl":300,"value":"192.0.2.1"},"kind":"modify"}` +
+		`]`
+	if string(got) != want {
+		t.Errorf("audited changes =\n%s\nwant\n%s", got, want)
+	}
 }

@@ -70,7 +70,7 @@ func (h *harness) wantRevoked(t *testing.T, name, tok string) {
 	wantError(t, err, codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED)
 
 	_, err = h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
-		Token: tok, Zone: "example.com", Name: "new", Type: "A", Ttl: 300, Values: []string{"192.0.2.99"},
+		Token: tok, Zone: "example.com", Name: "new", Type: "A", Ttl: 300, Records: values("192.0.2.99"),
 	})
 	wantError(t, err, codes.Unauthenticated, dnsgatev1.Error_CATEGORY_UNAUTHENTICATED)
 

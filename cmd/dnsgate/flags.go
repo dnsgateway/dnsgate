@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"log/slog"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ const (
 	flagTTL             = "ttl"
 	flagAdd             = "add"
 	flagRemove          = "remove"
+	flagExtra           = "extra"
 
 	envKeyDir          = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix     = "DNSGATE_KEY_ID_SUFFIX"
@@ -87,6 +89,7 @@ type Flags struct {
 	TTL    uint32
 	Add    []string
 	Remove []string
+	Extras []string
 }
 
 // DefaultFlags returns the flags resolved from the environment and
@@ -220,17 +223,29 @@ func checkRecordFlags(f *Flags) (dnsgatev1.Egress, error) {
 func (f *Flags) AddRecordWriteFlags(flags *pflag.FlagSet) {
 	flags.Uint32VarP(&f.TTL, flagTTL, "", f.TTL,
 		"TTL of the records in seconds, such as 300; required")
+	f.addExtraFlag(flags, "every VALUE")
 	f.AddRecordFlags(flags)
 }
 
 // checkRecordWriteFlags checks the flags of "record create" and "record
-// update" and returns the Egress asked for.
-func checkRecordWriteFlags(f *Flags) (dnsgatev1.Egress, error) {
+// update" and returns the Egress asked for and values as records, each
+// with the Record Extras the --extra flags set.
+func checkRecordWriteFlags(f *Flags, values []string) (dnsgatev1.Egress, []*dnsgatev1.RecordValue, error) {
 	if f.TTL == 0 {
-		return 0, errors.New("no TTL: set --" + flagTTL)
+		return 0, nil, errors.New("no TTL: set --" + flagTTL)
 	}
 
-	return checkRecordFlags(f)
+	egress, err := checkRecordFlags(f)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	records, err := f.recordValues(values)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	return egress, records, nil
 }
 
 // AddRecordPatchFlags registers the flags of "record patch": the record
@@ -242,7 +257,41 @@ func (f *Flags) AddRecordPatchFlags(flags *pflag.FlagSet) {
 		"value to remove from the RRset; repeat it to remove several")
 	flags.Uint32VarP(&f.TTL, flagTTL, "", f.TTL,
 		"TTL of the records added in seconds; required to create the RRset (default: the RRset's TTL)")
+	f.addExtraFlag(flags, "every --"+flagAdd+" value")
 	f.AddRecordFlags(flags)
+}
+
+// addExtraFlag registers --extra, which sets a Record Extra on the values
+// that a record write gives, as its help names them in setOn.
+func (f *Flags) addExtraFlag(flags *pflag.FlagSet, setOn string) {
+	flags.StringArrayVarP(&f.Extras, flagExtra, "", f.Extras,
+		"Record Extra KEY=VALUE to set on "+setOn+", such as proxied=true; KEY= clears it; repeat it to set several")
+}
+
+// recordValues returns values as records, each with the Record Extras
+// the --extra flags set.
+func (f *Flags) recordValues(values []string) ([]*dnsgatev1.RecordValue, error) {
+	var extras map[string]string
+
+	for _, kv := range f.Extras {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			return nil, errors.New("--" + flagExtra + " takes KEY=VALUE")
+		}
+
+		if extras == nil {
+			extras = map[string]string{}
+		}
+
+		extras[k] = v
+	}
+
+	out := make([]*dnsgatev1.RecordValue, 0, len(values))
+	for _, v := range values {
+		out = append(out, &dnsgatev1.RecordValue{Value: v, Extras: maps.Clone(extras)})
+	}
+
+	return out, nil
 }
 
 // AddOnboardFlags registers the flags of "onboard".

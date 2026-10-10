@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ func useFakeProvider(t *testing.T) *providertest.Provider {
 			dnsprovider.Record{ID: "r4", Type: "TXT", Name: "_acme-challenge.example.com", Value: `"abc"`, TTL: 60},
 		).
 		AddZone(dnsprovider.Zone{ID: "z-org", Name: "example.org", State: dnsprovider.HostingPending})
+	fake.SetProxiableTypes("A", "AAAA", "CNAME")
 
 	saved := providers
 	providers = func() dnsprovider.Registry { return dnsprovider.Registry{"cloudflare": fake.Factory()} }
@@ -40,10 +42,40 @@ type zoneJSON struct {
 }
 
 type recordSetJSON struct {
-	Name   string   `json:"name"`
-	Type   string   `json:"type"`
-	TTL    uint32   `json:"ttl"`
-	Values []string `json:"values"`
+	Name    string            `json:"name"`
+	Type    string            `json:"type"`
+	TTL     uint32            `json:"ttl"`
+	Records []recordValueJSON `json:"records"`
+}
+
+type recordValueJSON struct {
+	Value  string            `json:"value"`
+	Extras map[string]string `json:"extras"`
+}
+
+// format formats s as "name type ttl value,value", its values sorted,
+// each followed by its Record Extras, if any, as "{key=extra;...}".
+func (s recordSetJSON) format() string {
+	var values []string
+
+	for _, r := range s.Records {
+		v := r.Value
+
+		if len(r.Extras) > 0 {
+			var kvs []string
+			for _, k := range slices.Sorted(maps.Keys(r.Extras)) {
+				kvs = append(kvs, k+"="+r.Extras[k])
+			}
+
+			v += "{" + strings.Join(kvs, ";") + "}"
+		}
+
+		values = append(values, v)
+	}
+
+	slices.Sort(values)
+
+	return fmt.Sprintf("%s %s %d %s", s.Name, s.Type, s.TTL, strings.Join(values, ","))
 }
 
 func decode[T any](t *testing.T, out string) T {
@@ -114,9 +146,8 @@ func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
 		t.Fatalf("record get: %v", err)
 	}
 
-	want := recordSetJSON{Name: "www.apps", Type: "A", TTL: 300, Values: []string{"192.0.2.10", "192.0.2.11"}}
-	if got := decode[recordSetJSON](t, out); got.Name != want.Name || got.Type != want.Type || got.TTL != want.TTL || !slices.Equal(got.Values, want.Values) {
-		t.Errorf("record get = %+v, want %+v", got, want)
+	if got, want := decode[recordSetJSON](t, out).format(), "www.apps A 300 192.0.2.10,192.0.2.11"; got != want {
+		t.Errorf("record get = %q, want %q", got, want)
 	}
 
 	// The fake Provider was built from the onboarded Provider Credential.
@@ -214,8 +245,15 @@ func TestChangeRecordsEndToEnd(t *testing.T) {
 		// want is the RRset printed, "" for nothing.
 		want string
 	}{
-		{[]string{"record", "create", "api", "A", "192.0.2.30", "192.0.2.31", "--ttl", "600"}, "api A 600 192.0.2.30,192.0.2.31"},
-		{[]string{"record", "update", "api", "A", "192.0.2.31", "192.0.2.32", "--ttl", "300"}, "api A 300 192.0.2.31,192.0.2.32"},
+		{
+			[]string{"record", "create", "api", "A", "192.0.2.30", "192.0.2.31", "--ttl", "600", "--extra", "proxied=true"},
+			"api A 600 192.0.2.30{proxied=true},192.0.2.31{proxied=true}",
+		},
+		{[]string{"record", "update", "api", "A", "192.0.2.31", "192.0.2.32", "--ttl", "300"}, "api A 300 192.0.2.31{proxied=true},192.0.2.32"},
+		{
+			[]string{"record", "patch", "api", "A", "--add", "192.0.2.31", "--add", "192.0.2.32", "--extra", "proxied="},
+			"api A 300 192.0.2.31,192.0.2.32",
+		},
 		{[]string{"record", "patch", "_acme-challenge", "TXT", "--add", `"def"`, "--add", `"g,h"`}, `_acme-challenge TXT 60 "abc","def","g,h"`},
 		{[]string{"record", "patch", "_acme-challenge", "TXT", "--remove", `"abc"`}, `_acme-challenge TXT 60 "def","g,h"`},
 		{[]string{"record", "patch", "_acme-challenge", "TXT", "--remove", `"def"`, "--remove", `"g,h"`}, ""},
@@ -228,9 +266,7 @@ func TestChangeRecordsEndToEnd(t *testing.T) {
 
 		got := ""
 		if out != "" {
-			s := decode[recordSetJSON](t, out)
-			slices.Sort(s.Values)
-			got = fmt.Sprintf("%s %s %d %s", s.Name, s.Type, s.TTL, strings.Join(s.Values, ","))
+			got = decode[recordSetJSON](t, out).format()
 		}
 
 		if got != step.want {
@@ -298,6 +334,12 @@ func TestChangeRecordsFailures(t *testing.T) {
 		},
 		"malformed value": {
 			[]string{"record", "create", "api", "A", "www", "--ttl", "300"}, "invalid record",
+		},
+		"Record Extra without a value": {
+			[]string{"record", "create", "api", "A", "192.0.2.1", "--ttl", "300", "--extra", "proxied"}, "--extra takes KEY=VALUE",
+		},
+		"Record Extra the Provider does not read": {
+			[]string{"record", "create", "api", "A", "192.0.2.1", "--ttl", "300", "--extra", "color=blue"}, "invalid record",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

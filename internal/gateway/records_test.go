@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -139,12 +140,50 @@ func TestGetZoneWithRootToken(t *testing.T) {
 	}
 }
 
-// recordSets formats RRsets as "name type ttl value,value" lines.
+// recordSets formats RRsets as "name type ttl value,value" lines, each
+// value followed by its Record Extras, if any, as formatValue does.
 func recordSets(sets []*dnsgatev1.RecordSet) []string {
 	var out []string
 
 	for _, s := range sets {
-		out = append(out, fmt.Sprintf("%s %s %d %s", s.GetName(), s.GetType(), s.GetTtl(), strings.Join(s.GetValues(), ",")))
+		var values []string
+		for _, r := range s.GetRecords() {
+			values = append(values, formatValue(r))
+		}
+
+		out = append(out, fmt.Sprintf("%s %s %d %s", s.GetName(), s.GetType(), s.GetTtl(), strings.Join(values, ",")))
+	}
+
+	return out
+}
+
+// formatValue formats a value with its Record Extras as
+// "value{key=extra;key=extra}", keys sorted, or the value alone when it
+// has none.
+func formatValue(r *dnsgatev1.RecordValue) string {
+	return r.GetValue() + formatExtras(r.GetExtras())
+}
+
+// formatExtras formats Record Extras as "{key=extra;key=extra}", keys
+// sorted, or "" for none.
+func formatExtras(extras map[string]string) string {
+	if len(extras) == 0 {
+		return ""
+	}
+
+	var kvs []string
+	for _, k := range slices.Sorted(maps.Keys(extras)) {
+		kvs = append(kvs, k+"="+extras[k])
+	}
+
+	return "{" + strings.Join(kvs, ";") + "}"
+}
+
+// values returns RecordValues of vs, without Record Extras.
+func values(vs ...string) []*dnsgatev1.RecordValue {
+	out := make([]*dnsgatev1.RecordValue, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, &dnsgatev1.RecordValue{Value: v})
 	}
 
 	return out
@@ -201,6 +240,36 @@ func TestGetRecordWithRootToken(t *testing.T) {
 		if got := recordSets([]*dnsgatev1.RecordSet{resp.GetRecordSet()}); got[0] != tc.want {
 			t.Errorf("GetRecord %s %s = %q, want %q", tc.name, tc.typ, got[0], tc.want)
 		}
+	}
+}
+
+func TestRecordsCarryTheirRecordExtrasPerValue(t *testing.T) {
+	h := newHarness(t)
+	h.fake.AddZone(dnsprovider.Zone{ID: "z-com", Name: "example.com", State: dnsprovider.HostingActive},
+		dnsprovider.Record{ID: "r1", Type: "A", Name: "www.example.com", Value: "192.0.2.1", TTL: 300, Extras: map[string]string{"proxied": "true", "comment": "web"}},
+		dnsprovider.Record{ID: "r2", Type: "A", Name: "www.example.com", Value: "192.0.2.2", TTL: 300},
+	)
+
+	root := h.onboard(t, onboardRequest())
+
+	want := "www A 300 192.0.2.1{comment=web;proxied=true},192.0.2.2"
+
+	get, err := h.client.GetRecord(t.Context(), &dnsgatev1.GetRecordRequest{Token: root, Zone: "example.com", Name: "www", Type: "A"})
+	if err != nil {
+		t.Fatalf("GetRecord: %v", err)
+	}
+
+	if got := recordSets([]*dnsgatev1.RecordSet{get.GetRecordSet()}); got[0] != want {
+		t.Errorf("GetRecord = %q, want %q", got[0], want)
+	}
+
+	list, err := h.client.ListRecords(t.Context(), &dnsgatev1.ListRecordsRequest{Token: root, Zone: "example.com"})
+	if err != nil {
+		t.Fatalf("ListRecords: %v", err)
+	}
+
+	if got := recordSets(list.GetRecordSets()); !slices.Equal(got, []string{want}) {
+		t.Errorf("ListRecords = %q, want %q", got, want)
 	}
 }
 
@@ -601,7 +670,7 @@ func TestDenialsAreAuditedWithoutSecrets(t *testing.T) {
 	errs = append(errs, h.call(t, tok, &dnsgatev1.GetRecordRequest{Zone: "example.com", Name: cfToken + ".", Type: "A"}))
 	errs = append(errs, h.call(t, tok+"x", &dnsgatev1.DeleteRecordRequest{Zone: "Example.COM", Name: "WWW.apps", Type: "a"}))
 	errs = append(errs, h.call(t, tok, &dnsgatev1.CreateRecordRequest{
-		Zone: "example.com", Name: "www.apps", Type: "A-", Ttl: 300, Values: []string{"192.0.2.1"},
+		Zone: "example.com", Name: "www.apps", Type: "A-", Ttl: 300, Records: values("192.0.2.1"),
 	}))
 
 	events := h.auditEvents(t)
