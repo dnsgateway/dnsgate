@@ -1,7 +1,9 @@
-# dnsgate as a Provider in dnscli
+# dnsgate through the Gateway Adapter in dnscli
 
-Research note: how to add the Gateway (this repo) as a Provider type in the
-multi-provider DNS editor `dnscli` (`../dnscli`).
+Research note: how the multi-provider DNS editor `dnscli` (`../dnscli`) can
+manage records through the Gateway (this repo), by way of a Gateway Adapter.
+The Gateway itself is never a Provider (`GLOSSARY.md`). Where the adapter
+lives is recorded in `docs/adr/0008-gateway-adapter-in-dnsgate.md`.
 
 Sources are the three sibling repos as checked out on 2026-10-09:
 
@@ -78,6 +80,57 @@ Settled after the first pass; they override the matching items below.
 - **Record extras are supported generally, `proxied` first.** dnsgate may
   change as needed to carry Provider-specific record parameters. Changing
   them needs plain `update`/`patch`. See §3a.
+
+## Decisions (2026-10-10)
+
+Settled in a second pass; they override the matching items below and the
+2026-10-09 decisions where they differ.
+
+- **Name and place.** The adapter is the **Gateway Adapter** (`GLOSSARY.md`).
+  It lives in `github.com/dnsgateway/dnsgate/gatewayadapter` and exports only
+  `Factory`, `New`, `Config` and the field names (ADR 0008).
+- **Whole-RRset writes.** The Gateway Adapter's `ApplyChangeset` groups the
+  changes by RRset and writes each RRset's target with `create`, `update` or
+  `delete`; it never uses `patch`. RRsets that end empty go first, then the
+  changed ones, then the new ones (`dnsprovider.ApplyOrder` at RRset level).
+  It stops at the first failure.
+- **Expected RRset.** `UpdateRecord` and `DeleteRecord` take an optional
+  `ExpectedRRset{ttl, records}`. The Gateway compares it with the current
+  RRset inside its read-then-apply (values as a set, TTL, and Record Extras
+  under dnsprovider's equality rule) and refuses with `CONFLICT`. `create`
+  already refuses an existing RRset; `patch` takes no Expected RRset. The
+  dnsgate CLI does not expose it.
+- **One TTL per RRset.** Accepted: every Record of an RRset carries the
+  RRset's TTL, and a write sets it on all of them.
+- **Account.** `Account()` calls `InspectToken`, and also `ListZones` when the
+  token's Permissions grant `list` on `zones`. It returns
+  `Tenant{ID: jti, Name: sub}`. Bound Tokens fail with a clear error until
+  `internal/client` sends Identity Tokens.
+- **TTL range and Record Extras metadata on `Factory`.** dnsprovider gains a
+  per-type TTL range and automatic TTL, and `Extras []ExtraSpec`, on `Factory`
+  (`ProxyFlag` becomes one entry). The Gateway's TTL check uses the same
+  source, and it rejects unknown or read-only Record Extras with
+  `INVALID_RECORD`.
+- **Wire shape.** `repeated RecordValue records` replaces `values` in
+  `RecordSet` and the write requests (the API is unreleased). `patch remove`
+  stays value strings.
+- **Record Extras merge per key.** A key sent sets that Record Extra, a key
+  sent as `""` clears it, a key not sent keeps its current value; a new value
+  starts with the keys it was sent. `plan()` treats an extras-only change as
+  a modify.
+- **Optional fields.** `dnsprovider.Field` gains `Default` (a field with a
+  default is optional) and `Choices` (the form offers a picker). Egress is
+  `{Default: "auto", Choices: [auto, gateway, agent]}`.
+- **CA trust per process.** No CA field on the Account. dnscli takes a
+  repeatable `--ca-file` (env `DNSCLI_CA_FILE`, a path list), adds them to
+  the system roots, and registers `gatewayadapter.Factory(WithRootCAs(pool))`.
+  `dnsgate --ca-file` becomes repeatable and keeps replacing the system roots.
+- **Connections.** One `*grpc.ClientConn` per Gateway address, kept for the
+  life of the process.
+- **Partial view.** No flag in v1; a follow-up.
+- **TXT help.** The dnsgate CLI help was wrong (TXT values are unquoted
+  text); fixed. The `record` commands will be removed once dnscli manages
+  records through the Gateway Adapter.
 
 ## 1. dnscli's provider architecture
 
@@ -541,16 +594,16 @@ In dnscli:
 
 ## 5. Open questions and dnsgate-side changes
 
-1. **Where does the adapter live, and under what name?** Option A needs a new
+1. ~~**Where does the adapter live, and under what name?**~~ Closed: `gatewayadapter`, ADR 0008. Option A needs a new
    public package in dnsgate. Is the Gateway repo willing to carry a public
    Go API surface, given that it is otherwise all `internal/`?
 2. ~~**Go version / dependency weight.**~~ Closed: dnscli moves to `go 1.27`
    anyway (see Decisions).
-3. **Optional credential fields.** Egress is decided as an Account setting
+3. ~~**Optional credential fields.**~~ Closed: `Field.Default` and `Choices`; CA trust is per process. Egress is decided as an Account setting
    (see Decisions); what remains is how: an `Optional`/`Default` (and maybe
    `Choices`) on `dnsprovider.Field` plus dnscli form support
    (`account.go:509-519`), which also covers a CA file/PEM.
-4. **Write preconditions.** The API has no "expected current values" on
+4. ~~**Write preconditions.**~~ Closed: the Expected RRset on `update` and `delete`. The API has no "expected current values" on
    `UpdateRecord`/`PatchRecord`/`DeleteRecord`. dnscli's Apply stale check
    (ADR 0001, `dnscli/docs/adr/0001-cache-first-with-write-gate.md:3`)
    therefore runs client-side, followed by a separate unconditional write.
@@ -558,25 +611,25 @@ In dnscli:
    would let the Gateway refuse with `CONFLICT` inside its own read-then-apply (`mutations.go:300-357`).
 5. ~~**TTL range / automatic TTL.**~~ Closed: derived from
    `InspectToken.provider` (see Decisions). Remaining choice: per-type lookup
-   in dnsprovider vs a table in the adapter.
-6. **Record identity.** No record IDs, and the RRset TTL is the minimum
+   in dnsprovider, on `Factory` (decided 2026-10-10).
+6. ~~**Record identity.**~~ Closed: one TTL per RRset, accepted. No record IDs, and the RRset TTL is the minimum
    (`records.go:112`). Records of one RRset with different TTLs cannot be
    edited individually through the API. Accept, or return per-value TTLs.
-7. **Account verification.** `InspectToken` does not touch the Provider. Should
+7. ~~**Account verification.**~~ Closed: `ListZones` too, when permitted. `InspectToken` does not touch the Provider. Should
    `Account()` also call `ListZones` (needs `list zones`) to prove the Provider
    Credential still works?
-8. **Visibility of filtering.** List responses silently drop out-of-scope
+8. ~~**Visibility of filtering.**~~ Deferred to a follow-up. List responses silently drop out-of-scope
    zones and RRsets. A flag such as `partial: true` would let dnscli label the
    zone as a partial view instead of implying the rest does not exist.
 9. **Optional Zone operations** (Onboard/Offboard zone, DNSSEC/HSTS status,
    Tenants) are absent from the API. That is fine for v1. dnscli hides them
    through the `Can*` checks.
-10. **Bound Tokens.** Identity Tokens in stream metadata are not in
+10. ~~**Bound Tokens.**~~ Closed: unbound only until a follow-up. Identity Tokens in stream metadata are not in
     `internal/client` yet. dnscli would support unbound tokens only until then.
-11. **gRPC connection lifetime.** `dnsprovider.Provider` has no `Close`, and
+11. ~~**gRPC connection lifetime.**~~ Closed: one connection per address. `dnsprovider.Provider` has no `Close`, and
     dnscli's Opener keeps Providers per credentials (`open.go:24-28`). The
     adapter should share one `*grpc.ClientConn` per Gateway address
     (package-level) rather than leak one per `New`.
-12. **TXT value form.** The dnsgate CLI help (`cmd/dnsgate/record.go:18`) and
+12. ~~**TXT value form.**~~ Closed: the CLI help was wrong, fixed. The dnsgate CLI help (`cmd/dnsgate/record.go:18`) and
     dnsprovider (`dnsprovider/record.go:20`) describe TXT differently. Confirm
     which one the Gateway expects before dnscli users edit TXT through it.

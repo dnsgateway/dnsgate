@@ -22,6 +22,10 @@ _Avoid_: Client Agent, relay, proxy
 A DNS service whose API the Gateway calls on a client's behalf, such as Cloudflare.
 _Avoid_: backend, upstream, DNS host
 
+**Gateway Adapter**:
+The client library that presents the Gateway to DNS tools built on the shared Provider interface, so that they can manage records through the Gateway as they would through a Provider. The Gateway itself is never a Provider.
+_Avoid_: dnsgate provider, gateway backend, gateway provider
+
 ### Identities
 
 **Administrator**:
@@ -107,6 +111,14 @@ _Avoid_: master key, provider token, API key, provider account
 **RRset**:
 Every record of one name and type in a zone. It is what the record verbs act on: `create`, `update` and `delete` take a whole RRset, `patch` single values inside one.
 _Avoid_: record set, record group, record
+
+**Expected RRset**:
+The state of an RRset that a write request says it was built on. The Gateway refuses the write when the RRset no longer matches.
+_Avoid_: precondition, version, etag, if-match
+
+**Record Extra**:
+A Provider-specific setting of one record besides its value and TTL, such as Cloudflare's proxy flag.
+_Avoid_: metadata, attributes, record options, extras
 
 **Changeset**:
 The changes (add, modify, delete) to one zone's records that the Gateway applies through the Provider to carry out one record verb. A Provider that confirms each change on its own may make some of them and fail others.
