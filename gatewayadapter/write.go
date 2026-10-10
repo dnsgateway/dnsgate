@@ -350,7 +350,7 @@ func (a *adapter) write(ctx context.Context, zone string, s *rrset, f dnsprovide
 			Token: a.token, Egress: a.egress, Zone: zone, Name: s.name, Type: s.typ, Ttl: ttl, Records: s.values(f),
 		})
 		s.stored = recordsOf(zone, resp.GetRecordSet())
-	case s.unchanged(ttl):
+	case s.unchanged(ttl, f):
 		s.stored = s.current
 
 		return nil
@@ -391,20 +391,44 @@ func (s *rrset) targetTTL() uint32 {
 }
 
 // unchanged reports whether the target, with ttl, is the RRset as it is:
-// the same values, TTL and Record Extras.
-func (s *rrset) unchanged(ttl uint32) bool {
+// the same values and TTL, and Record Extras a write would leave as they
+// are. f is the token's Provider type.
+func (s *rrset) unchanged(ttl uint32, f dnsprovider.Factory) bool {
 	if ttl != s.ttl || len(s.target) != len(s.current) {
 		return false
 	}
 
 	for _, t := range s.target {
 		held := s.held(t.Value)
-		if held == nil || t.set && !dnsprovider.SameExtras(held.Extras, t.Extras) {
+		if held == nil {
+			return false
+		}
+
+		if t.set && !dnsprovider.SameExtras(held.Extras, applied(held.Extras, sentExtras(held, t.Extras, f))) {
 			return false
 		}
 	}
 
 	return true
+}
+
+// applied returns the Record Extras held after a write sends sent: each
+// sent "" clears its key.
+func applied(held, sent map[string]string) map[string]string {
+	out := maps.Clone(held)
+	if out == nil {
+		out = map[string]string{}
+	}
+
+	for k, v := range sent {
+		if v == "" {
+			delete(out, k)
+		} else {
+			out[k] = v
+		}
+	}
+
+	return out
 }
 
 // expected is the Expected RRset of a write of s: the RRset as read.
@@ -421,9 +445,10 @@ func (s *rrset) expected() *dnsgatev1.ExpectedRRset {
 // it changes. A value no change touches is sent bare, and the Gateway
 // keeps its Record Extras as they are. A value a change gives is sent
 // with its Record Extras, and with "" for each one the record it keeps
-// has and the change does not give, which clears it. A value the RRset
-// does not hold yet is sent without the Record Extras the Provider type
-// f keeps on write, which the Gateway refuses on a new value.
+// has and the change does not give, which clears it, unless the Provider
+// type f keeps that one on write: the Gateway refuses to clear it. A
+// value the RRset does not hold yet is sent without the Record Extras f
+// keeps on write, which the Gateway refuses on a new value.
 func (s *rrset) values(f dnsprovider.Factory) []*dnsgatev1.RecordValue {
 	out := make([]*dnsgatev1.RecordValue, 0, len(s.target))
 
@@ -459,9 +484,15 @@ func sentExtras(held *dnsprovider.Record, want map[string]string, f dnsprovider.
 
 	if held != nil {
 		for k, v := range held.Extras {
-			if v != "" && want[k] == "" {
-				out[k] = ""
+			if v == "" || want[k] != "" {
+				continue
 			}
+
+			if s, ok := f.Extra(k); ok && !s.Writable {
+				continue
+			}
+
+			out[k] = ""
 		}
 	}
 

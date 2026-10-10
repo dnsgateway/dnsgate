@@ -357,3 +357,72 @@ func TestWritesNeedNoPatch(t *testing.T) {
 		}
 	}
 }
+
+// comment is a Record Extra the Provider keeps on write, as Cloudflare
+// keeps a record's comment.
+var comment = dnsprovider.ExtraSpec{Key: "comment", Label: "Comment", Kind: dnsprovider.ExtraString}
+
+// commentedWWW are the www A Records, the first with a comment.
+func commentedWWW() []dnsprovider.Record {
+	records := wwwRecords()
+	records[0].Extras = map[string]string{dnsprovider.ExtraProxied: "true", "comment": "hi"}
+
+	return records
+}
+
+func TestUpdateRecordLeavesAKeptRecordExtraItOmits(t *testing.T) {
+	h := newHarness(t, comment)
+	h.fake.SetRecords("z1", commentedWWW()...)
+
+	p := h.provider(t, h.root)
+	before := readWWW(t, p)[0]
+
+	after := before
+	after.Extras = map[string]string{dnsprovider.ExtraProxied: "false"}
+
+	if _, err := p.UpdateRecord(t.Context(), zone(t, p), before, after); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	// The comment is not sent: the Provider keeps it, and the Gateway
+	// refuses a write that clears it.
+	wantWrites(t, h, "update www A 300 [192.0.2.2 192.0.2.1{proxied=false}] expect 300 [192.0.2.1{comment=hi,proxied=true} 192.0.2.2{proxied=false}]")
+
+	if got := readWWW(t, p); got[0].Extras["comment"] != "hi" {
+		t.Errorf("Records = %+v, want 192.0.2.1 to keep its comment", got)
+	}
+}
+
+func TestUpdateRecordThatOmitsOnlyAKeptRecordExtraWritesNothing(t *testing.T) {
+	h := newHarness(t, comment)
+	h.fake.SetRecords("z1", commentedWWW()...)
+
+	p := h.provider(t, h.root)
+	before := readWWW(t, p)[0]
+
+	after := before
+	after.Extras = map[string]string{dnsprovider.ExtraProxied: "true"}
+
+	if _, err := p.UpdateRecord(t.Context(), zone(t, p), before, after); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	wantWrites(t, h)
+}
+
+func TestUpdateRecordGivingAnAbsentRecordExtraAsEmptyWritesNothing(t *testing.T) {
+	h := newHarness(t)
+	h.fake.SetRecords("z1", wwwRecords()...)
+
+	p := h.provider(t, h.root)
+	before := readWWW(t, p)[0]
+
+	after := before
+	after.Extras = map[string]string{dnsprovider.ExtraProxied: "true", "comment": ""}
+
+	if _, err := p.UpdateRecord(t.Context(), zone(t, p), before, after); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	wantWrites(t, h)
+}
