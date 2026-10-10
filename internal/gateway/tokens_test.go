@@ -671,7 +671,7 @@ func TestADerivedTokenWorksWithinItsPermissionsOnly(t *testing.T) {
 		t.Fatalf("GetRecord within the Permissions: %v", err)
 	}
 
-	if got := resp.GetRecordSet().GetValues(); len(got) != 2 {
+	if got := resp.GetRecordSet().GetRecords(); len(got) != 2 {
 		t.Errorf("values = %v, want the two A records of www.apps", got)
 	}
 

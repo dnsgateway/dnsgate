@@ -307,13 +307,13 @@ func TestGatewayEgressChangesCloudflareRecords(t *testing.T) {
 	root := h.onboard(t, onboardRequest())
 
 	if _, err := h.client.PatchRecord(t.Context(), &dnsgatev1.PatchRecordRequest{
-		Token: root, Zone: "example.com", Name: "_acme-challenge.www", Type: "TXT", Add: []string{`"def"`},
+		Token: root, Zone: "example.com", Name: "_acme-challenge.www", Type: "TXT", Add: values(`"def"`),
 	}); err != nil {
 		t.Fatalf("PatchRecord: %v", err)
 	}
 
 	if _, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
-		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Values: []string{"192.0.2.10", "192.0.2.12"},
+		Token: root, Zone: "example.com", Name: "www.apps", Type: "A", Ttl: 300, Records: values("192.0.2.10", "192.0.2.12"),
 	}); err != nil {
 		t.Fatalf("UpdateRecord: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestGatewayEgressChangesCloudflareRecords(t *testing.T) {
 	}
 
 	if _, err := h.client.CreateRecord(t.Context(), &dnsgatev1.CreateRecordRequest{
-		Token: root, Zone: "example.com", Name: "api", Type: "AAAA", Ttl: 120, Values: []string{"2001:db8::1"},
+		Token: root, Zone: "example.com", Name: "api", Type: "AAAA", Ttl: 120, Records: values("2001:db8::1"),
 	}); err != nil {
 		t.Fatalf("CreateRecord: %v", err)
 	}

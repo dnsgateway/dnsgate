@@ -382,9 +382,9 @@ message CreateRecordRequest {
   // ttl is the TTL of every record, in seconds, in the range the Provider
   // takes.
   uint32 ttl = 6;
-  // values are the records' values in zone-file presentation form, at
-  // least one and each once.
-  repeated string values = 7;
+  // records are the records' values, at least one and each value once,
+  // with the Record Extras each sets.
+  repeated RecordValue records = 7;
 }
 
 // CreateRecordResponse carries the RRset as created.
@@ -410,9 +410,9 @@ message UpdateRecordRequest {
   // ttl is the TTL of every record, in seconds, in the range the Provider
   // takes.
   uint32 ttl = 6;
-  // values are the records' values in zone-file presentation form, at
-  // least one and each once.
-  repeated string values = 7;
+  // records are the records' values, at least one and each value once,
+  // with the Record Extras each sets.
+  repeated RecordValue records = 7;
 }
 
 // UpdateRecordResponse carries the RRset as replaced.
@@ -423,9 +423,9 @@ message UpdateRecordResponse {
 // PatchRecordRequest asks to add values to an RRset and remove others
 // from it, leaving its other records as they are, as an ACME client does
 // with its TXT values. It needs patch on records for the zone, name and
-// type. Adding a value the RRset holds and removing one it does not hold
-// change nothing. Adding to an RRset the zone lacks creates it; removing
-// its last value deletes it.
+// type. Adding a value the RRset holds changes only its Record Extras, as
+// given, and removing one it does not hold changes nothing. Adding to an
+// RRset the zone lacks creates it; removing its last value deletes it.
 message PatchRecordRequest {
   // token is the Service Token that authorizes the request.
   string token = 1;
@@ -440,8 +440,9 @@ message PatchRecordRequest {
   // ttl is the TTL of the records added, in seconds. Left out, they take
   // the RRset's TTL; it is needed to create an RRset.
   uint32 ttl = 6;
-  // add are the values to add, in zone-file presentation form.
-  repeated string add = 7;
+  // add are the values to add, with the Record Extras each sets. A value
+  // the RRset holds keeps its record, its Record Extras changed as given.
+  repeated RecordValue add = 7;
   // remove are the values to remove. A value is given once, in add or in
   // remove.
   repeated string remove = 8;
@@ -482,8 +483,26 @@ message RecordSet {
   string type = 2;
   // ttl is the RRset's TTL in seconds: the lowest of its records'.
   uint32 ttl = 3;
-  // values are the records' values in zone-file presentation form.
-  repeated string values = 4;
+  // records are the RRset's records: each value with its Record Extras.
+  repeated RecordValue records = 4;
+}
+
+// RecordValue is one record of an RRset: its value and its Record Extras.
+message RecordValue {
+  // value is the record's value in zone-file presentation form.
+  string value = 1;
+  // extras are the record's Record Extras, Provider-specific settings
+  // such as Cloudflare's "proxied", keyed as the Provider names them.
+  //
+  // On a write, a key given sets that Record Extra, a key given as ""
+  // clears it, and a key left out keeps the value the record holds. A
+  // value the RRset does not hold yet starts with the keys given, plus
+  // the Record Extras the Provider keeps on write of a record the Gateway
+  // reuses for it. Refused as invalid records are a key the Provider does
+  // not read on records of the type, and a key it does not take on write
+  // given for a new value, even as "", or for a held value with anything
+  // but the record's current value.
+  map<string, string> extras = 2;
 }
 
 // Permission grants verbs on resources, limited by the zone, name, type

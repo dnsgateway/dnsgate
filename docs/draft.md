@@ -207,6 +207,8 @@ Permissions follow the **Kubernetes RBAC** style.
 
 `patch` alone may also create and delete an RRset: adding a value to an RRset the zone lacks creates it, and removing its last value deletes it. An ACME client needs both, and holds only `patch`. A token limited to `patch` can therefore still create and empty RRsets within its zones, names and types; what it cannot do is replace or delete an RRset whole in one request.
 
+Each value of an RRset carries its Record Extras, Provider-specific settings such as Cloudflare's proxy flag. Changing a Record Extra needs the same verb as changing the record, `update` or `patch`; there is no verb or filter of its own. A write merges them per key: a key given sets the Record Extra, a key given as `""` clears it, and a key left out keeps the value the record holds. A new value starts with the keys given, plus the Record Extras the Provider keeps on write of a record the Gateway reuses for it, as it modifies a record into the new value rather than deleting one and adding another. The Gateway refuses, as an invalid record, a key the Provider does not read on records of the type, and a key the Provider keeps on write given for a new value, even as `""`, or given for a held value with another value than the record holds.
+
 On `tokens`, `create` issues a Derived Token and `delete` revokes a token.
 
 ## Name patterns
@@ -413,7 +415,7 @@ Fields: timestamp, request ID, Service Account, token `jti`, provider, zone, rec
 
 Results: `ok`; `denied` for a request outside the token's Permissions or refused before they are checked (a token that does not open, a malformed zone, name or type); `failed` for a request the Permissions allowed that then failed, such as malformed record values or TTL, an RRset that already exists or is missing, or a Provider error. Every denial carries the verb, and the zone, record name and type that passed the Gateway's form checks, even when the token does not open; one that failed them may hold anything and is left out.
 
-Mutation events also carry `changes_applied`, the number of changes of the Changeset the Provider confirmed. A Provider that confirms changes one at a time may make some and fail others: the request fails, the changes made stay, and `changes_applied` says how many there were.
+Mutation events also carry `changes`, the Changeset the Gateway applies: each change's kind (`add`, `modify` or `delete`) and the record's value, TTL and Record Extras before and after it, so a change to a Record Extra alone, such as Cloudflare's proxy flag, shows. Only the Record Extras the Provider type declares by name are shown: the other fields of its API that a Provider passes through as Record Extras without modelling them are left out. A Record Extra the change clears shows as `""`. They carry `changes_applied`, the number of changes of the Changeset the Provider confirmed. A Provider that confirms changes one at a time may make some and fail others: the request fails, the changes made stay, and `changes_applied` says how many there were.
 
 An audit event of a zone or record request that cannot be written is logged as an operational error, naming the request ID and event. A denied or failed request is refused to the client either way. A mutation the Provider already made stays made and is answered as successful: the change cannot be withheld, so its only trace is then that operational log line.
 
