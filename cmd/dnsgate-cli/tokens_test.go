@@ -22,10 +22,10 @@ const appPermissionsYAML = `permissions:
 `
 
 func TestCreateADerivedTokenEndToEnd(t *testing.T) {
-	useFakeProvider(t)
+	_, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -99,10 +99,10 @@ func TestCreateADerivedTokenEndToEnd(t *testing.T) {
 }
 
 func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
-	useFakeProvider(t)
+	_, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -177,7 +177,7 @@ func TestTokenCreateTakesAJSONPermissionsFileLikeAYAMLOne(t *testing.T) {
 }
 
 func TestTheConfigLimitsTheChainDepth(t *testing.T) {
-	useFakeProvider(t)
+	_, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
 
@@ -188,7 +188,7 @@ func TestTheConfigLimitsTheChainDepth(t *testing.T) {
 
 	servertest.WriteFile(t, env.Config, string(config)+"tokens:\n  maxAncestors: 1\n", 0o600)
 
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)

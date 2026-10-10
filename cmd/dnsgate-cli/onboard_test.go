@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dnsgateway/dnsgate/internal/provider"
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
@@ -35,7 +36,7 @@ type inspectedPermission struct {
 
 func TestOnboardThenInspectEndToEnd(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -100,7 +101,7 @@ func TestOnboardThenInspectEndToEnd(t *testing.T) {
 
 func TestOnboardFailsWithWrongOrMissingBootstrapSecret(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
 
@@ -128,7 +129,7 @@ func TestOnboardFailsWithWrongOrMissingBootstrapSecret(t *testing.T) {
 
 func TestOnboardRefusesAnUnverifiedGateway(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -146,7 +147,7 @@ func TestOnboardRefusesAnUnverifiedGateway(t *testing.T) {
 
 func TestOnboardTrustsEveryRepeatedCAFile(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 	other := writeUnrelatedCAFile(t)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
@@ -162,7 +163,7 @@ func TestOnboardTrustsEveryRepeatedCAFile(t *testing.T) {
 
 func TestOnboardTakesTheCAFilesFromEnvAsAPathList(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 	other := writeUnrelatedCAFile(t)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
@@ -177,7 +178,7 @@ func TestOnboardTakesTheCAFilesFromEnvAsAPathList(t *testing.T) {
 
 func TestOnboardCAFileFlagReplacesTheEnvPathList(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 	other := writeUnrelatedCAFile(t)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
@@ -198,7 +199,7 @@ func TestOnboardCAFileFlagReplacesTheEnvPathList(t *testing.T) {
 
 func TestOnboardRefusesACAFileWithNoCertificate(t *testing.T) {
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, provider.Registry())
 
 	empty := filepath.Join(t.TempDir(), "empty.crt")
 	servertest.WriteFile(t, empty, "no certificate here", 0o644)

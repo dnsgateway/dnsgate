@@ -14,11 +14,9 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
-// useFakeProvider makes the Gateways the test starts call a fake
-// Provider as "cloudflare", scripted with example.com and example.org.
-func useFakeProvider(t *testing.T) *providertest.Provider {
-	t.Helper()
-
+// fakeProviders returns a fake Provider scripted with example.com and
+// example.org, and a Registry offering it as "cloudflare".
+func fakeProviders() (*providertest.Provider, dnsprovider.Registry) {
 	fake := providertest.New().
 		AddZone(dnsprovider.Zone{ID: "z-com", Name: "example.com", State: dnsprovider.HostingActive},
 			dnsprovider.Record{ID: "r1", Type: "A", Name: "example.com", Value: "192.0.2.1", TTL: 300},
@@ -29,12 +27,7 @@ func useFakeProvider(t *testing.T) *providertest.Provider {
 		AddZone(dnsprovider.Zone{ID: "z-org", Name: "example.org", State: dnsprovider.HostingPending})
 	fake.SetProxiableTypes("A", "AAAA", "CNAME")
 
-	saved := providers
-	providers = func() dnsprovider.Registry { return dnsprovider.Registry{"cloudflare": fake.Factory()} }
-
-	t.Cleanup(func() { providers = saved })
-
-	return fake
+	return fake, dnsprovider.Registry{"cloudflare": fake.Factory()}
 }
 
 type zoneJSON struct {
@@ -92,10 +85,10 @@ func decode[T any](t *testing.T, out string) T {
 }
 
 func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
-	fake := useFakeProvider(t)
+	fake, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -165,10 +158,10 @@ func TestReadZonesAndRecordsEndToEnd(t *testing.T) {
 }
 
 func TestReadRecordsFailures(t *testing.T) {
-	fake := useFakeProvider(t)
+	fake, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -225,10 +218,10 @@ func TestReadRecordsFailures(t *testing.T) {
 }
 
 func TestChangeRecordsEndToEnd(t *testing.T) {
-	useFakeProvider(t)
+	_, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
@@ -304,10 +297,10 @@ func TestChangeRecordsEndToEnd(t *testing.T) {
 }
 
 func TestChangeRecordsFailures(t *testing.T) {
-	fake := useFakeProvider(t)
+	fake, providers := fakeProviders()
 
 	env := servertest.NewEnv(t)
-	gw := startServer(t, env.Config)
+	gw := startServer(t, env.Config, providers)
 
 	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
 	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
