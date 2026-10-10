@@ -17,20 +17,23 @@ import (
 )
 
 // dialGateway connects to the Gateway at --gateway over TLS, verifying it
-// against --ca-file or the system's CA certificates. closeConn releases the
-// connection.
+// against the certificates of every --ca-file or, without one, the
+// system's CA certificates. closeConn releases the connection.
 func dialGateway(f *Flags) (c *client.Client, closeConn func(), err error) {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
 
-	if f.CAFile != "" {
-		pem, err := os.ReadFile(f.CAFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("reading CA file: %w", err)
-		}
-
+	if len(f.CAFiles) > 0 {
 		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, nil, fmt.Errorf("CA file %s holds no PEM certificate", f.CAFile)
+
+		for _, file := range f.CAFiles {
+			pem, err := os.ReadFile(file)
+			if err != nil {
+				return nil, nil, fmt.Errorf("reading CA file: %w", err)
+			}
+
+			if !pool.AppendCertsFromPEM(pem) {
+				return nil, nil, fmt.Errorf("CA file %s holds no PEM certificate", file)
+			}
 		}
 
 		tlsCfg.RootCAs = pool

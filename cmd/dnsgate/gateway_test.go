@@ -160,6 +160,17 @@ func writeTLSCert(t *testing.T, certFile, keyFile string) {
 	writeFile(t, keyFile, string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})), 0o600)
 }
 
+// writeUnrelatedCAFile writes a self-signed certificate that does not sign
+// the Gateway's certificate and returns its path.
+func writeUnrelatedCAFile(t *testing.T) string {
+	t.Helper()
+
+	certFile := filepath.Join(t.TempDir(), "other.crt")
+	writeTLSCert(t, certFile, filepath.Join(t.TempDir(), "other.key"))
+
+	return certFile
+}
+
 // runningGateway is a "dnsgate server" running in the test process.
 type runningGateway struct {
 	addr  string
@@ -414,6 +425,75 @@ func TestOnboardRefusesAnUnverifiedGateway(t *testing.T) {
 
 	if audit := gw.audit.String(); audit != "" {
 		t.Errorf("the Gateway saw a request:\n%s", audit)
+	}
+}
+
+func TestOnboardTrustsEveryRepeatedCAFile(t *testing.T) {
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+	other := writeUnrelatedCAFile(t)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	// The Gateway's CA comes last, so it is trusted only if every file is pooled.
+	out, err := runCLI(t, "onboard", "--provider", "cloudflare", "--gateway", gw.addr,
+		"--ca-file", other, "--ca-file", env.caFile)
+	if err != nil {
+		t.Fatalf("onboard: %v\n%s", err, out)
+	}
+}
+
+func TestOnboardTakesTheCAFilesFromEnvAsAPathList(t *testing.T) {
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+	other := writeUnrelatedCAFile(t)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+	t.Setenv("DNSGATE_CA_FILE", other+string(os.PathListSeparator)+env.caFile)
+
+	out, err := runCLI(t, "onboard", "--provider", "cloudflare", "--gateway", gw.addr)
+	if err != nil {
+		t.Fatalf("onboard: %v\n%s", err, out)
+	}
+}
+
+func TestOnboardCAFileFlagReplacesTheEnvPathList(t *testing.T) {
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+	other := writeUnrelatedCAFile(t)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+	t.Setenv("DNSGATE_CA_FILE", env.caFile)
+
+	// --ca-file replaces DNSGATE_CA_FILE, so the Gateway's CA is not trusted.
+	out, err := runCLI(t, "onboard", "--provider", "cloudflare", "--gateway", gw.addr,
+		"--ca-file", other)
+	if err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Errorf("onboard error = %v, want a certificate error\n%s", err, out)
+	}
+
+	if audit := gw.audit.String(); audit != "" {
+		t.Errorf("the Gateway saw a request:\n%s", audit)
+	}
+}
+
+func TestOnboardRefusesACAFileWithNoCertificate(t *testing.T) {
+	env := newGatewayEnv(t)
+	gw := startServer(t, env.config)
+
+	empty := filepath.Join(t.TempDir(), "empty.crt")
+	writeFile(t, empty, "no certificate here", 0o644)
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	_, err := runCLI(t, "onboard", "--provider", "cloudflare", "--gateway", gw.addr,
+		"--ca-file", env.caFile, "--ca-file", empty)
+	if err == nil || !strings.Contains(err.Error(), empty) {
+		t.Errorf("onboard error = %v, want one naming %s", err, empty)
 	}
 }
 

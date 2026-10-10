@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ type Flags struct {
 	LogLevel string
 
 	Gateway string
-	CAFile  string
+	CAFiles []string
 	Token   string
 
 	BootstrapSecret string
@@ -101,7 +102,7 @@ func DefaultFlags() *Flags {
 		Config:          withDefaultEnv(envConfig, defaultConfig),
 		LogLevel:        withDefaultEnv(envLogLevel, defaultLogLevel),
 		Gateway:         withDefaultEnv(envGateway, defaultGateway),
-		CAFile:          withDefaultEnv(envCAFile, ""),
+		CAFiles:         envPathList(envCAFile),
 		Token:           withDefaultEnv(envToken, ""),
 		BootstrapSecret: withDefaultEnv(envBootstrapSecret, ""),
 		Credential:      withDefaultEnv(envCredential, ""),
@@ -165,8 +166,8 @@ func checkServerFlags(f *Flags) (slog.Level, error) {
 func (f *Flags) AddClientFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Gateway, flagGateway, "", f.Gateway,
 		"Gateway address as host:port (env "+envGateway+")")
-	flags.StringVarP(&f.CAFile, flagCAFile, "", f.CAFile,
-		"PEM file of the CA certificates that verify the Gateway, instead of the system's (env "+envCAFile+")")
+	flags.StringArrayVarP(&f.CAFiles, flagCAFile, "", f.CAFiles,
+		"PEM file of the CA certificates that verify the Gateway, instead of the system's; repeat it to trust several (env "+envCAFile+", a path list)")
 }
 
 // AddTokenFlags registers the flag of commands that present a Service
@@ -340,4 +341,18 @@ func withDefaultEnv(key, def string) string {
 	}
 
 	return def
+}
+
+// envPathList returns the non-empty paths of the path list in the
+// environment variable key, split with the OS list separator.
+func envPathList(key string) []string {
+	var paths []string
+
+	for _, p := range filepath.SplitList(os.Getenv(key)) {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+
+	return paths
 }

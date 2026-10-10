@@ -9,6 +9,6 @@ During Onboarding the CLI sends the Provider Credential and the bootstrap secret
 ## Consequences
 
 - TLS must terminate at the Gateway itself. A proxy that terminates TLS in front of the Gateway sees every Provider Credential and the bootstrap secret onboarded through it. The `onboard` help says so.
-- The CLI verifies the Gateway's certificate against the system's CA certificates or a CA file given with `--ca-file`, and offers no way to skip verification.
+- The CLI verifies the Gateway's certificate against the system's CA certificates or the CA files given with `--ca-file`, which can be repeated, and offers no way to skip verification.
 - The credential crosses the wire in plaintext inside TLS only at Onboarding, as before (ADR 0001). Every other request carries it only sealed in a Service Token.
 - Credential encryption can be added later without an API break, as a new field of `OnboardRequest` next to the plaintext `credential`.
