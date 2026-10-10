@@ -10,38 +10,36 @@ import (
 	"github.com/dnsgateway/dnsprovider"
 )
 
-// endedContexts are a canceled context and one past its deadline, with
-// the error each ends with.
-func endedContexts(t *testing.T) map[string]struct {
-	ctx  context.Context
-	want error
-} {
+// endings are the errors a context ends with, by how it ends.
+var endings = map[string]error{"canceled": context.Canceled, "expired": context.DeadlineExceeded}
+
+// endedContext returns a context that ended with want: canceled, or past
+// its deadline.
+func endedContext(t *testing.T, want error) context.Context {
 	t.Helper()
 
-	canceled, cancel := context.WithCancel(t.Context())
-	cancel()
+	if want == context.Canceled {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
 
-	expired, cancelExpired := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-	t.Cleanup(cancelExpired)
-
-	return map[string]struct {
-		ctx  context.Context
-		want error
-	}{
-		"canceled": {canceled, context.Canceled},
-		"expired":  {expired, context.DeadlineExceeded},
+		return ctx
 	}
+
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+
+	return ctx
 }
 
 func TestAReadWhoseContextEndedFailsWithTheContextsError(t *testing.T) {
 	h := newHarness(t)
 	p := h.provider(t, h.root)
 
-	for name, tc := range endedContexts(t) {
+	for name, want := range endings {
 		t.Run(name, func(t *testing.T) {
-			_, err := p.Zones(tc.ctx, dnsprovider.ZoneFilter{})
-			if !errors.Is(err, tc.want) {
-				t.Errorf("Zones = %v, want %v", err, tc.want)
+			_, err := p.Zones(endedContext(t, want), dnsprovider.ZoneFilter{})
+			if !errors.Is(err, want) {
+				t.Errorf("Zones = %v, want %v", err, want)
 			}
 
 			if _, ok := errors.AsType[*dnsprovider.APIError](err); ok {
@@ -58,11 +56,11 @@ func TestAWriteWhoseContextEndedFailsWithTheContextsError(t *testing.T) {
 	p := h.provider(t, h.root)
 	z := zone(t, p)
 
-	for name, tc := range endedContexts(t) {
+	for name, want := range endings {
 		t.Run(name, func(t *testing.T) {
-			_, err := p.CreateRecord(tc.ctx, z, dnsprovider.Record{Type: "A", Name: "www.example.com", Value: "192.0.2.3", TTL: 300})
-			if !errors.Is(err, tc.want) {
-				t.Errorf("CreateRecord = %v, want %v", err, tc.want)
+			_, err := p.CreateRecord(endedContext(t, want), z, dnsprovider.Record{Type: "A", Name: "www.example.com", Value: "192.0.2.3", TTL: 300})
+			if !errors.Is(err, want) {
+				t.Errorf("CreateRecord = %v, want %v", err, want)
 			}
 
 			if _, ok := errors.AsType[*dnsprovider.APIError](err); ok || strings.Contains(err.Error(), "reading the RRset") {
