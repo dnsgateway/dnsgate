@@ -413,6 +413,11 @@ message UpdateRecordRequest {
   // records are the records' values, at least one and each value once,
   // with the Record Extras each sets.
   repeated RecordValue records = 7;
+  // expect is the Expected RRset: the RRset as the client read it. When
+  // given, the update is refused as a conflict, and nothing is written,
+  // unless the RRset still holds it. A zone that no longer holds the
+  // RRset is a conflict too, where without expect it is not found.
+  ExpectedRRset expect = 8;
 }
 
 // UpdateRecordResponse carries the RRset as replaced.
@@ -426,6 +431,8 @@ message UpdateRecordResponse {
 // type. Adding a value the RRset holds changes only its Record Extras, as
 // given, and removing one it does not hold changes nothing. Adding to an
 // RRset the zone lacks creates it; removing its last value deletes it.
+// It takes no Expected RRset: it changes single values, not the RRset
+// whole.
 message PatchRecordRequest {
   // token is the Service Token that authorizes the request.
   string token = 1;
@@ -469,6 +476,11 @@ message DeleteRecordRequest {
   string name = 4;
   // type is the record type, such as "A" or "TXT".
   string type = 5;
+  // expect is the Expected RRset: the RRset as the client read it. When
+  // given, the delete is refused as a conflict, and nothing is deleted,
+  // unless the RRset still holds it. A zone that no longer holds the
+  // RRset is a conflict too, where without expect it is not found.
+  ExpectedRRset expect = 6;
 }
 
 // DeleteRecordResponse confirms the RRset is deleted.
@@ -483,8 +495,22 @@ message RecordSet {
   string type = 2;
   // ttl is the RRset's TTL in seconds: the lowest of its records'.
   uint32 ttl = 3;
-  // records are the RRset's records: each value with its Record Extras.
+  // records are the RRset's records: each value, given once, with its
+  // Record Extras.
   repeated RecordValue records = 4;
+}
+
+// ExpectedRRset is an Expected RRset: the state of an RRset a write was
+// built on. It matches the RRset when it holds the same values, in any
+// order, the RRset's TTL, and for each value the same Record Extras, a
+// Record Extra given as "" or a flag that is off counting as none.
+message ExpectedRRset {
+  // ttl is the RRset's TTL in seconds: the lowest of its records', as a
+  // read returns it.
+  uint32 ttl = 1;
+  // records are the RRset's records: each value, given once, with its
+  // Record Extras.
+  repeated RecordValue records = 2;
 }
 
 // RecordValue is one record of an RRset: its value and its Record Extras.
@@ -542,8 +568,9 @@ message Error {
     // The Gateway failed; the details are in its logs.
     CATEGORY_INTERNAL = 10;
     // The request collides with what the Provider holds, such as an RRset
-    // that already exists, or records that changed at the Provider while
-    // the Gateway changed them.
+    // that already exists, an RRset that no longer matches the request's
+    // Expected RRset, or records that changed at the Provider while the
+    // Gateway changed them.
     CATEGORY_CONFLICT = 11;
   }
 

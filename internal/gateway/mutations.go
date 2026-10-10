@@ -38,7 +38,7 @@ func (g *Gateway) startMutation(r *request, event audit.Name, verb permission.Ve
 // createRecord creates an RRset the zone does not hold yet. The token
 // needs create on records for its zone, name and type.
 func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (*dnsgatev1.Response, error) {
-	set, err := g.setRecord(r, audit.EventRecordsCreate, permission.VerbCreate, req, func(current []dnsprovider.Record) error {
+	set, err := g.setRecord(r, audit.EventRecordsCreate, permission.VerbCreate, req, nil, func(current []dnsprovider.Record) error {
 		if len(current) > 0 {
 			return alreadyExists("the RRset already exists: update or patch it")
 		}
@@ -54,11 +54,12 @@ func (g *Gateway) createRecord(r *request, req *dnsgatev1.CreateRecordRequest) (
 	}}, nil
 }
 
-// updateRecord replaces every record of an RRset the zone holds with the
+// updateRecord replaces every record of an RRset the zone holds, and
+// that matches the request's Expected RRset, if it gives one, with the
 // request's values. The token needs update on records for its zone, name
 // and type.
 func (g *Gateway) updateRecord(r *request, req *dnsgatev1.UpdateRecordRequest) (*dnsgatev1.Response, error) {
-	set, err := g.setRecord(r, audit.EventRecordsUpdate, permission.VerbUpdate, req, func(current []dnsprovider.Record) error {
+	set, err := g.setRecord(r, audit.EventRecordsUpdate, permission.VerbUpdate, req, req.GetExpect(), func(current []dnsprovider.Record) error {
 		if len(current) == 0 {
 			return notFound("no such RRset: create it")
 		}
@@ -84,10 +85,12 @@ type setRecordRequest interface {
 
 // setRecord makes the RRset req names hold one record per value of req,
 // and no other, for verb, and returns it as the Provider holds it after.
-// guard refuses, with the error it returns, the RRset the zone holds
-// before.
+// It refuses as stale an RRset the zone holds before that does not match
+// expect, if given, and guard refuses, with the error it returns, any
+// other.
 func (g *Gateway) setRecord(
-	r *request, event audit.Name, verb permission.Verb, req setRecordRequest, guard func(current []dnsprovider.Record) error,
+	r *request, event audit.Name, verb permission.Verb, req setRecordRequest,
+	expect *dnsgatev1.ExpectedRRset, guard func(current []dnsprovider.Record) error,
 ) (*dnsgatev1.RecordSet, error) {
 	c, err := g.startMutation(r, event, verb, req)
 	if err != nil {
@@ -99,9 +102,17 @@ func (g *Gateway) setRecord(
 		return nil, g.fail(c, err)
 	}
 
+	if err := c.checkExpected(expect); err != nil {
+		return nil, g.fail(c, err)
+	}
+
 	zone, current, err := g.readRRset(c)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := matchExpected(expect, current); err != nil {
+		return nil, g.fail(c, err)
 	}
 
 	if err := guard(current); err != nil {
@@ -189,17 +200,26 @@ func (g *Gateway) patchRecord(r *request, req *dnsgatev1.PatchRecordRequest) (*d
 	}}, nil
 }
 
-// deleteRecord deletes every record of an RRset the zone holds. The token
-// needs delete on records for its zone, name and type.
+// deleteRecord deletes every record of an RRset the zone holds, and that
+// matches the request's Expected RRset, if it gives one. The token needs
+// delete on records for its zone, name and type.
 func (g *Gateway) deleteRecord(r *request, req *dnsgatev1.DeleteRecordRequest) (*dnsgatev1.Response, error) {
 	c, err := g.startMutation(r, audit.EventRecordsDelete, permission.VerbDelete, req)
 	if err != nil {
 		return nil, err
 	}
 
+	if err := c.checkExpected(req.GetExpect()); err != nil {
+		return nil, g.fail(c, err)
+	}
+
 	zone, current, err := g.readRRset(c)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := matchExpected(req.GetExpect(), current); err != nil {
+		return nil, g.fail(c, err)
 	}
 
 	if len(current) == 0 {
@@ -213,6 +233,50 @@ func (g *Gateway) deleteRecord(r *request, req *dnsgatev1.DeleteRecordRequest) (
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_DeleteRecord{
 		DeleteRecord: &dnsgatev1.DeleteRecordResponse{},
 	}}, nil
+}
+
+// checkExpected checks that the Expected RRset expect, if the request
+// gives one, gives each value once and in the form the call's record type
+// takes.
+func (c *dnsCall) checkExpected(expect *dnsgatev1.ExpectedRRset) error {
+	if expect == nil {
+		return nil
+	}
+
+	return c.checkValues(valuesOf(expect.GetRecords()))
+}
+
+// matchExpected checks that the records current of an RRset match the
+// Expected RRset expect, if the request gives one: the same values, in
+// any order, the RRset's TTL, and for each value the same Record Extras,
+// a Record Extra given as "" or a flag that is off counting as none, as
+// sameExtras compares them. Each record matches one value of expect at
+// most. An RRset the zone does not hold, with no records, matches no
+// Expected RRset.
+func matchExpected(expect *dnsgatev1.ExpectedRRset, current []dnsprovider.Record) error {
+	if expect == nil {
+		return nil
+	}
+
+	stale := staleRRset("the RRset no longer matches the expected RRset")
+
+	want := expect.GetRecords()
+	if len(current) == 0 || len(want) != len(current) || expect.GetTtl() != rrsetTTL(current) {
+		return stale
+	}
+
+	used := make([]bool, len(current))
+
+	for _, v := range want {
+		i := indexOfValue(current, v)
+		if i < 0 || used[i] || !sameExtras(current[i].Extras, v.GetExtras()) {
+			return stale
+		}
+
+		used[i] = true
+	}
+
+	return nil
 }
 
 // valuesOf returns the values of records.
@@ -530,7 +594,7 @@ func plan(current, target []dnsprovider.Record, writable func(key string) bool) 
 		after := current[i]
 		after.TTL, after.Extras = t.TTL, mergeExtras(current[i].Extras, t.Extras)
 
-		if current[i].TTL == t.TTL && dnsprovider.SameExtras(setExtras(current[i].Extras), setExtras(after.Extras)) {
+		if current[i].TTL == t.TTL && sameExtras(current[i].Extras, after.Extras) {
 			kept = append(kept, current[i])
 
 			continue
@@ -600,6 +664,13 @@ func clearedExtras(held map[string]string, writable func(key string) bool) map[s
 	}
 
 	return out
+}
+
+// sameExtras reports whether two records' Record Extras are the same, a
+// Record Extra given as "" or a flag that is off counting as none
+// (dnsprovider.SameExtras).
+func sameExtras(a, b map[string]string) bool {
+	return dnsprovider.SameExtras(setExtras(a), setExtras(b))
 }
 
 // setExtras returns the Record Extras of extras that are set, without
