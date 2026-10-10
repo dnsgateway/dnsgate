@@ -57,6 +57,9 @@ type harness struct {
 	// beforeWrite, if set, runs as the Gateway receives a record write,
 	// before it carries it out.
 	beforeWrite func()
+	// extras are Record Extras the fake's Provider type declares beyond
+	// its proxy flag.
+	extras []dnsprovider.ExtraSpec
 }
 
 // recordRequests is a stream interceptor that keeps each Request the
@@ -170,11 +173,12 @@ func wantWrites(t *testing.T, h *harness, want ...string) {
 
 // newHarness serves a Gateway whose fake Provider holds example.com,
 // takes each Changeset whole, as a Batcher, proxies A, AAAA and CNAME
-// Records and reads TTL 1 as automatic, as Cloudflare does.
-func newHarness(t *testing.T) *harness {
+// Records and reads TTL 1 as automatic, as Cloudflare does. Its Provider
+// type declares extras too.
+func newHarness(t *testing.T, extras ...dnsprovider.ExtraSpec) *harness {
 	t.Helper()
 
-	h := &harness{fake: providertest.New()}
+	h := &harness{fake: providertest.New(), extras: extras}
 	h.fake.AddZone(dnsprovider.Zone{ID: "z1", Name: "example.com", State: dnsprovider.HostingActive, Nameservers: []string{"ns1.example.net"}})
 	h.fake.SetBatcher(true)
 	h.fake.SetProxiableTypes("A", "AAAA", "CNAME")
@@ -245,9 +249,13 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
-// registry is the Gateway's Providers: the fake, as "cloudflare".
+// registry is the Gateway's Providers: the fake, as "cloudflare", with
+// the harness's extras.
 func (h *harness) registry() dnsprovider.Registry {
-	return dnsprovider.Registry{"cloudflare": h.fake.Factory()}
+	f := h.fake.Factory()
+	f.Extras = append(f.Extras, h.extras...)
+
+	return dnsprovider.Registry{"cloudflare": f}
 }
 
 // derive issues a Derived Token of the Root Token with perms.
