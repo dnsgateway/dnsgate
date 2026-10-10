@@ -410,6 +410,31 @@ func TestUpdateRecordThatOmitsOnlyAKeptRecordExtraWritesNothing(t *testing.T) {
 	wantWrites(t, h)
 }
 
+func TestApplyChangesetTakesTheLowestTTLGivenWhateverTheOrder(t *testing.T) {
+	for name, ttls := range map[string][2]uint32{
+		"given first": {600, 0},
+		"given last":  {0, 600},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.fake.SetRecords("z1", wwwRecords()...)
+
+			p := h.provider(t, h.root)
+
+			// A TTL of 0 gives none: the RRset takes 600, the only TTL given.
+			_, err := p.(dnsprovider.Batcher).ApplyChangeset(t.Context(), dnsprovider.Changeset{Zone: zone(t, p), Changes: []dnsprovider.Change{
+				{Kind: dnsprovider.ChangeAdd, After: dnsprovider.Record{Type: "A", Name: "www.example.com", Value: "192.0.2.3", TTL: ttls[0]}},
+				{Kind: dnsprovider.ChangeAdd, After: dnsprovider.Record{Type: "A", Name: "www.example.com", Value: "192.0.2.4", TTL: ttls[1]}},
+			}})
+			if err != nil {
+				t.Fatalf("ApplyChangeset: %v", err)
+			}
+
+			wantWrites(t, h, "update www A 600 [192.0.2.1 192.0.2.2 192.0.2.3 192.0.2.4] expect 300 [192.0.2.1{proxied=true} 192.0.2.2{proxied=false}]")
+		})
+	}
+}
+
 func TestUpdateRecordGivingAnAbsentRecordExtraAsEmptyWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.fake.SetRecords("z1", wwwRecords()...)
