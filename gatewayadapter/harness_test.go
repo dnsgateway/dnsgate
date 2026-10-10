@@ -7,10 +7,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net"
 	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +23,7 @@ import (
 	"github.com/dnsgateway/dnsprovider/providertest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate/api/dnsgate/v1"
 	"github.com/dnsgateway/dnsgate/gatewayadapter"
@@ -44,6 +50,122 @@ type harness struct {
 	client *client.Client
 	// root is the Root Token.
 	root string
+
+	mu sync.Mutex
+	// requests are the Requests the Gateway received, in order.
+	requests []*dnsgatev1.Request
+	// beforeWrite, if set, runs as the Gateway receives a record write,
+	// before it carries it out.
+	beforeWrite func()
+}
+
+// recordRequests is a stream interceptor that keeps each Request the
+// Gateway receives.
+func (h *harness) recordRequests(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return handler(srv, &recordingStream{ServerStream: ss, h: h})
+}
+
+type recordingStream struct {
+	grpc.ServerStream
+
+	h *harness
+}
+
+func (s *recordingStream) RecvMsg(m any) error {
+	if err := s.ServerStream.RecvMsg(m); err != nil {
+		return err
+	}
+
+	if req := m.(*dnsgatev1.CallRequest).GetRequest(); req != nil {
+		s.h.mu.Lock()
+		s.h.requests = append(s.h.requests, proto.CloneOf(req))
+		hook := s.h.beforeWrite
+		s.h.mu.Unlock()
+
+		switch req.GetOperation().(type) {
+		case *dnsgatev1.Request_CreateRecord, *dnsgatev1.Request_UpdateRecord, *dnsgatev1.Request_DeleteRecord, *dnsgatev1.Request_PatchRecord:
+			if hook != nil {
+				hook()
+			}
+		}
+	}
+
+	return nil
+}
+
+// writes returns the record writes the Gateway received, one line each:
+// the operation, the RRset's name and type, and for create and update
+// its TTL and values, each with its Record Extras, and for update and
+// delete the Expected RRset, as "expect TTL VALUES".
+func (h *harness) writes() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var out []string
+
+	for _, req := range h.requests {
+		switch op := req.GetOperation().(type) {
+		case *dnsgatev1.Request_CreateRecord:
+			r := op.CreateRecord
+			out = append(out, fmt.Sprintf("create %s %s %d %s", r.GetName(), r.GetType(), r.GetTtl(), formatValues(r.GetRecords())))
+		case *dnsgatev1.Request_UpdateRecord:
+			r := op.UpdateRecord
+			out = append(out, fmt.Sprintf("update %s %s %d %s expect %s", r.GetName(), r.GetType(), r.GetTtl(), formatValues(r.GetRecords()), formatExpect(r.GetExpect())))
+		case *dnsgatev1.Request_DeleteRecord:
+			r := op.DeleteRecord
+			out = append(out, fmt.Sprintf("delete %s %s expect %s", r.GetName(), r.GetType(), formatExpect(r.GetExpect())))
+		case *dnsgatev1.Request_PatchRecord:
+			out = append(out, "patch "+op.PatchRecord.GetName())
+		}
+	}
+
+	return out
+}
+
+func formatExpect(e *dnsgatev1.ExpectedRRset) string {
+	if e == nil {
+		return "none"
+	}
+
+	return fmt.Sprintf("%d %s", e.GetTtl(), formatValues(e.GetRecords()))
+}
+
+// formatValues formats values as "[v1{k=v} v2]", Record Extras sorted by
+// key.
+func formatValues(values []*dnsgatev1.RecordValue) string {
+	parts := make([]string, 0, len(values))
+
+	for _, v := range values {
+		var extras []string
+		for _, k := range slices.Sorted(maps.Keys(v.GetExtras())) {
+			extras = append(extras, k+"="+v.GetExtras()[k])
+		}
+
+		part := v.GetValue()
+		if len(extras) > 0 {
+			part += "{" + strings.Join(extras, ",") + "}"
+		}
+
+		parts = append(parts, part)
+	}
+
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// wantWrites checks that the Gateway received exactly the record writes
+// want since the last call, as writes formats them.
+func wantWrites(t *testing.T, h *harness, want ...string) {
+	t.Helper()
+
+	got := h.writes()
+
+	h.mu.Lock()
+	h.requests = nil
+	h.mu.Unlock()
+
+	if !slices.Equal(got, want) {
+		t.Errorf("writes =\n\t%s\nwant\n\t%s", strings.Join(got, "\n\t"), strings.Join(want, "\n\t"))
+	}
 }
 
 // newHarness serves a Gateway whose fake Provider holds example.com,
@@ -86,14 +208,14 @@ func newHarness(t *testing.T) *harness {
 	cert, roots := selfSigned(t)
 	h.roots = roots
 
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	h.addr = lis.Addr().String()
 
-	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13})))
+	srv := grpc.NewServer(grpc.StreamInterceptor(h.recordRequests), grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13})))
 	dnsgatev1.RegisterGatewayServiceServer(srv, gw)
 
 	go func() { _ = srv.Serve(lis) }()
