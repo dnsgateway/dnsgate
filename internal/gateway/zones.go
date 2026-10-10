@@ -11,7 +11,8 @@ import (
 
 // listZones lists the zones the Provider Credential reaches and the token
 // covers. The token needs list on zones; each zone is then filtered by the
-// token's zones filter.
+// token's zones filter. The list is a Partial View unless the token covers
+// every zone.
 func (g *Gateway) listZones(r *request, req *dnsgatev1.ListZonesRequest) (*dnsgatev1.Response, error) {
 	c, err := g.startDNSCall(r, audit.EventZonesList, req,
 		permission.Request{Verb: permission.VerbList, Resource: permission.ResourceZones}, nil)
@@ -19,15 +20,15 @@ func (g *Gateway) listZones(r *request, req *dnsgatev1.ListZonesRequest) (*dnsga
 		return nil, err
 	}
 
-	zones, err := c.provider.Zones(c.ctx, dnsprovider.ZoneFilter{})
+	zoneSet, err := c.provider.Zones(c.ctx, dnsprovider.ZoneFilter{})
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}
 
-	out := &dnsgatev1.ListZonesResponse{}
+	out := &dnsgatev1.ListZonesResponse{Partial: c.partialView()}
 
 	pr := c.perm
-	for _, z := range zones {
+	for _, z := range zoneSet.Zones {
 		pr.Zone = z.Name
 		if permission.Allows(c.claims.Permissions, pr) {
 			out.Zones = append(out.Zones, zoneToAPI(z))

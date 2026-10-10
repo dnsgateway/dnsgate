@@ -182,6 +182,36 @@ func (g *Gateway) connect(c *dnsCall) error {
 	return nil
 }
 
+// partialView reports whether the call's list is a Partial View: whether
+// the token's Permissions do not cover its verb and resource, in its zone
+// if it names one, through its Egress, for every name and type. It
+// depends on the Permissions alone, never on what the Provider returned.
+// Zones have no names or types, so a zone list ignores the names and
+// types filters, as Allows does for a request without them.
+func (c *dnsCall) partialView() bool {
+	perms := c.claims.Permissions
+	if c.perm.Resource == permission.ResourceZones {
+		perms = make([]token.Permission, len(c.claims.Permissions))
+		for i, p := range c.claims.Permissions {
+			p.Names, p.Types = nil, nil
+			perms[i] = p
+		}
+	}
+
+	full := token.Permission{
+		Verbs:     []string{string(c.perm.Verb)},
+		Resources: []string{string(c.perm.Resource)},
+		Egress:    []string{string(c.perm.Egress)},
+	}
+	if c.perm.Zone != "" {
+		full.Zones = []string{c.perm.Zone}
+	}
+
+	_, covered := permission.Covers(perms, []token.Permission{full})
+
+	return !covered
+}
+
 // providerFailed audits a failed Provider call and returns the Gateway
 // error the client gets. The Provider's own messages go to neither.
 func (g *Gateway) providerFailed(c *dnsCall, err error) error {

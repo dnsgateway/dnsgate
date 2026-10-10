@@ -44,16 +44,25 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 func runClient(t *testing.T, env *servertest.Env, gw *servertest.Gateway, args ...string) (string, error) {
 	t.Helper()
 
-	var out bytes.Buffer
+	out, _, err := runClientStderr(t, env, gw, args...)
+
+	return out, err
+}
+
+// runClientStderr is runClient returning stderr too.
+func runClientStderr(t *testing.T, env *servertest.Env, gw *servertest.Gateway, args ...string) (string, string, error) {
+	t.Helper()
+
+	var out, errOut bytes.Buffer
 
 	cmd := newRootCmd()
 	cmd.SetOut(&out)
-	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetErr(&errOut)
 	cmd.SetArgs(append(args, "--gateway", gw.Addr, "--ca-file", env.CAFile))
 
 	err := cmd.ExecuteContext(t.Context())
 
-	return out.String(), err
+	return out.String(), errOut.String(), err
 }
 
 // writeUnrelatedCAFile writes a self-signed certificate that does not sign

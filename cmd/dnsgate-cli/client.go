@@ -77,3 +77,18 @@ func printJSON(out io.Writer, v any) error {
 
 	return enc.Encode(v)
 }
+
+// printList prints a list as indented JSON on out and, if the Gateway
+// marked it a Partial View, a note on errOut saying the token's
+// Permissions do not cover uncovered, such as "every zone".
+func printList(out, errOut io.Writer, list any, partial bool, uncovered string) error {
+	if err := printJSON(out, list); err != nil {
+		return err
+	}
+
+	if partial {
+		_, _ = fmt.Fprintln(errOut, "note: partial view: the token's Permissions do not cover "+uncovered)
+	}
+
+	return nil
+}

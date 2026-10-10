@@ -15,7 +15,8 @@ import (
 
 // listRecords lists the RRsets of a zone the token covers. The token needs
 // list on records in the zone; each RRset is then filtered by the names
-// and types filters of the rules that allow list there.
+// and types filters of the rules that allow list there. The list is a
+// Partial View unless the token covers every name and type in the zone.
 func (g *Gateway) listRecords(r *request, req *dnsgatev1.ListRecordsRequest) (*dnsgatev1.Response, error) {
 	c, err := g.startDNSCall(r, audit.EventRecordsList, req,
 		permission.Request{Verb: permission.VerbList, Resource: permission.ResourceRecords, Zone: req.GetZone()}, checkZoneOf)
@@ -36,7 +37,7 @@ func (g *Gateway) listRecords(r *request, req *dnsgatev1.ListRecordsRequest) (*d
 	})
 
 	return &dnsgatev1.Response{Result: &dnsgatev1.Response_ListRecords{
-		ListRecords: &dnsgatev1.ListRecordsResponse{RecordSets: sets},
+		ListRecords: &dnsgatev1.ListRecordsResponse{RecordSets: sets, Partial: c.partialView()},
 	}}, nil
 }
 
