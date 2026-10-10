@@ -82,20 +82,7 @@ func NewEnvAt(t *testing.T, listen string) *Env {
 	GenerateKeys(t, env, "e2e")
 	WriteTLSCert(t, env.CAFile, filepath.Join(dir, "tls.key"))
 	WriteFile(t, filepath.Join(dir, "bootstrap-secret"), BootstrapSecret+"\n", 0o600)
-
-	// Relative paths are resolved against the config file's directory.
-	WriteFile(t, env.Config, `
-listen: `+env.Listen+`
-tls:
-  certFile: tls.crt
-  keyFile: tls.key
-keys:
-  signingKeyFile: keys/sig-e2e.pem
-  encryptionKeyFile: keys/enc-e2e.pem
-bootstrapSecretFile: bootstrap-secret
-database:
-  sqliteFile: dnsgate.db
-`, 0o600)
+	env.writeConfig(t, "")
 
 	return env
 }
@@ -115,6 +102,19 @@ func GenerateKeys(t *testing.T, env *Env, suffix string) {
 func (env *Env) WriteDecryptionKeysConfig(t *testing.T, entries string) {
 	t.Helper()
 
+	env.writeConfig(t, entries)
+}
+
+// writeConfig writes env's config file, with decryptionKeys, if any, as
+// its keys.decryptionKeys list.
+func (env *Env) writeConfig(t *testing.T, decryptionKeys string) {
+	t.Helper()
+
+	if decryptionKeys != "" {
+		decryptionKeys = "  decryptionKeys:\n" + decryptionKeys
+	}
+
+	// Relative paths are resolved against the config file's directory.
 	WriteFile(t, env.Config, `
 listen: `+env.Listen+`
 tls:
@@ -123,8 +123,7 @@ tls:
 keys:
   signingKeyFile: keys/sig-e2e.pem
   encryptionKeyFile: keys/enc-e2e.pem
-  decryptionKeys:
-`+entries+`bootstrapSecretFile: bootstrap-secret
+`+decryptionKeys+`bootstrapSecretFile: bootstrap-secret
 database:
   sqliteFile: dnsgate.db
 `, 0o600)
