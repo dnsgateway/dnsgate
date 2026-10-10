@@ -206,32 +206,41 @@ func New(cfg Config, opts ...dnsprovider.Option) (dnsprovider.Provider, error) {
 	}, nil
 }
 
-// connKey names a connection to the Gateway: its address, and the CA
-// certificates its certificate is verified against.
-type connKey struct {
-	addr  string
+// gatewayConn is a connection to the Gateway, and the CA certificates its
+// certificate is verified against: a copy of those it was opened with,
+// nil for the system's.
+type gatewayConn struct {
 	roots *x509.CertPool
+	conn  *grpc.ClientConn
 }
 
-// conns are the connections to the Gateway, one per address and trust,
-// kept for the life of the process: a dnsprovider.Provider is never
-// closed, and every Gateway Adapter of an address shares one.
+// conns are the connections to the Gateway by address, one per address
+// and set of CA certificates, kept for the life of the process: a
+// dnsprovider.Provider is never closed, and every Gateway Adapter of an
+// address shares one.
 var conns = struct {
 	sync.Mutex
 
-	m map[connKey]*grpc.ClientConn
-}{m: map[connKey]*grpc.ClientConn{}}
+	m map[string][]gatewayConn
+}{m: map[string][]gatewayConn{}}
 
 // dial returns the connection to the Gateway at addr, verified against
-// roots, opening it on first use. grpc.NewClient connects lazily, on the
-// first call.
+// roots, opening it on first use. A pool that holds the same CA
+// certificates as one dialed before shares its connection, and a change
+// to roots after dial changes no connection. grpc.NewClient connects
+// lazily, on the first call.
 func dial(addr string, roots *x509.CertPool) (*grpc.ClientConn, error) {
 	conns.Lock()
 	defer conns.Unlock()
 
-	key := connKey{addr: addr, roots: roots}
-	if conn, ok := conns.m[key]; ok {
-		return conn, nil
+	for _, c := range conns.m[addr] {
+		if c.roots.Equal(roots) {
+			return c.conn, nil
+		}
+	}
+
+	if roots != nil {
+		roots = roots.Clone()
 	}
 
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS13})))
@@ -239,7 +248,7 @@ func dial(addr string, roots *x509.CertPool) (*grpc.ClientConn, error) {
 		return nil, fmt.Errorf("gateway adapter: connecting to the Gateway: %w", err)
 	}
 
-	conns.m[key] = conn
+	conns.m[addr] = append(conns.m[addr], gatewayConn{roots: roots, conn: conn})
 
 	return conn, nil
 }
