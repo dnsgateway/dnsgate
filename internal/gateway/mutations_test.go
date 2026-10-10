@@ -1114,3 +1114,201 @@ func TestTheAuditEventShowsOnlyTheRecordExtrasTheProviderTypeNames(t *testing.T)
 		t.Errorf("audited changes =\n%s\nwant\n%s", got, want)
 	}
 }
+
+// expected returns an Expected RRset of ttl and records.
+func expected(ttl uint32, records ...*dnsgatev1.RecordValue) *dnsgatev1.ExpectedRRset {
+	return &dnsgatev1.ExpectedRRset{Ttl: ttl, Records: records}
+}
+
+// heldWeb returns the record 192.0.2.1 of the RRset newProxiedHarness
+// holds, with its Record Extras.
+func heldWeb() *dnsgatev1.RecordValue {
+	return &dnsgatev1.RecordValue{Value: "192.0.2.1", Extras: map[string]string{"comment": "web", "proxied": "true"}}
+}
+
+// withExtras returns v's value with extras in place of its Record Extras.
+func withExtras(v *dnsgatev1.RecordValue, extras map[string]string) *dnsgatev1.RecordValue {
+	return &dnsgatev1.RecordValue{Value: v.GetValue(), Extras: extras}
+}
+
+// heldRRset is the Expected RRset of the RRset newProxiedHarness holds.
+func heldRRset() *dnsgatev1.ExpectedRRset {
+	return expected(300, heldWeb(), &dnsgatev1.RecordValue{Value: "192.0.2.2"})
+}
+
+// heldSet is the RRset newProxiedHarness holds, formatted by sortedSet.
+const heldSet = "www A 300 192.0.2.1{comment=web;proxied=true},192.0.2.2"
+
+// wantStaleRRset checks that err refuses a write of event as built on a
+// stale RRset: a conflict, with no Changeset applied, the RRset www A
+// left as want, and the write audited as failed with category conflict.
+func wantStaleRRset(t *testing.T, h *harness, err error, event, root, want string) {
+	t.Helper()
+
+	wantError(t, err, codes.Aborted, dnsgatev1.Error_CATEGORY_CONFLICT)
+
+	wantChangesets(t, h)
+
+	if got := h.readSet(t, root, "www", "A"); got != want {
+		t.Errorf("RRset = %q, want it untouched: %q", got, want)
+	}
+
+	events := h.auditEvents(t)[1:]
+	if len(events) < 1 || events[0]["event"] != event || events[0]["result"] != "failed" || events[0]["category"] != "conflict" {
+		t.Errorf("audit events = %v, want a failed %s, category conflict", events, event)
+	}
+}
+
+func TestUpdateRecordBuiltOnAnRRsetThatNoLongerMatchesIsAConflict(t *testing.T) {
+	type extras = map[string]string
+
+	plain := &dnsgatev1.RecordValue{Value: "192.0.2.2"}
+
+	for name, expect := range map[string]*dnsgatev1.ExpectedRRset{
+		"a value the RRset does not hold": expected(300, heldWeb(), &dnsgatev1.RecordValue{Value: "192.0.2.3"}),
+		"a value fewer":                   expected(300, heldWeb()),
+		"another TTL":                     expected(600, heldWeb(), plain),
+		"another Record Extra":            expected(300, withExtras(heldWeb(), extras{"comment": "api", "proxied": "true"}), plain),
+		"a Record Extra fewer":            expected(300, withExtras(heldWeb(), extras{"comment": "web"}), plain),
+		"a Record Extra the record lacks": expected(300, heldWeb(), withExtras(plain, extras{"proxied": "true"})),
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newProxiedHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 600, Records: values("192.0.2.9"), Expect: expect,
+			})
+			wantStaleRRset(t, h, err, "records.update", root, heldSet)
+		})
+	}
+}
+
+func TestUpdateRecordBuiltOnTheRRsetTheZoneHoldsIsApplied(t *testing.T) {
+	h := newProxiedHarness(t)
+
+	root := h.onboard(t, onboardRequest())
+
+	// The values in another order, a proxy flag off and a Record Extra
+	// given as "" match the RRset.
+	expect := expected(300,
+		&dnsgatev1.RecordValue{Value: "192.0.2.2", Extras: map[string]string{"proxied": "false", "comment": ""}},
+		heldWeb(),
+	)
+
+	if _, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+		Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: values("192.0.2.1", "192.0.2.3"), Expect: expect,
+	}); err != nil {
+		t.Fatalf("UpdateRecord: %v", err)
+	}
+
+	wantChangesets(t, h, []string{"modify A www.example.com 192.0.2.2 300 -> 192.0.2.3 300"})
+}
+
+func TestDeleteRecordChecksItsExpectedRRset(t *testing.T) {
+	t.Run("one that no longer matches is a conflict", func(t *testing.T) {
+		h := newProxiedHarness(t)
+
+		root := h.onboard(t, onboardRequest())
+
+		_, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+			Token: root, Zone: "example.com", Name: "www", Type: "A", Expect: expected(300, &dnsgatev1.RecordValue{Value: "192.0.2.2"}),
+		})
+		wantStaleRRset(t, h, err, "records.delete", root, heldSet)
+	})
+
+	t.Run("one that matches deletes the RRset", func(t *testing.T) {
+		h := newProxiedHarness(t)
+
+		root := h.onboard(t, onboardRequest())
+
+		if _, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+			Token: root, Zone: "example.com", Name: "www", Type: "A", Expect: heldRRset(),
+		}); err != nil {
+			t.Fatalf("DeleteRecord: %v", err)
+		}
+
+		if got := h.readSet(t, root, "www", "A"); got != "" {
+			t.Errorf("RRset read back = %q, want it gone", got)
+		}
+	})
+}
+
+func TestAWriteWithAnExpectedRRsetTheZoneLacksIsAConflict(t *testing.T) {
+	for name, write := range map[string]struct {
+		event string
+		call  func(h *harness, root string) error
+	}{
+		"update": {"records.update", func(h *harness, root string) error {
+			_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: values("192.0.2.9"), Expect: heldRRset(),
+			})
+
+			return err
+		}},
+		"delete": {"records.delete", func(h *harness, root string) error {
+			_, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Expect: heldRRset(),
+			})
+
+			return err
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newProxiedHarness(t)
+			h.fake.SetRecords("z-com")
+
+			root := h.onboard(t, onboardRequest())
+
+			wantStaleRRset(t, h, write.call(h, root), write.event, root, "")
+		})
+	}
+}
+
+func TestAnExpectedRRsetThatGivesAValueTwiceIsInvalid(t *testing.T) {
+	twice := expected(300, heldWeb(), heldWeb())
+
+	for name, call := range map[string]func(h *harness, root string) error{
+		"update": func(h *harness, root string) error {
+			_, err := h.client.UpdateRecord(t.Context(), &dnsgatev1.UpdateRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Ttl: 300, Records: values("192.0.2.9"), Expect: twice,
+			})
+
+			return err
+		},
+		"delete": func(h *harness, root string) error {
+			_, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+				Token: root, Zone: "example.com", Name: "www", Type: "A", Expect: twice,
+			})
+
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newProxiedHarness(t)
+
+			root := h.onboard(t, onboardRequest())
+
+			wantError(t, call(h, root), codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
+
+			wantChangesets(t, h)
+		})
+	}
+}
+
+func TestAnExpectedRRsetMatchesEachHeldRecordOnce(t *testing.T) {
+	h := newProxiedHarness(t)
+	h.fake.SetRecords("z-com",
+		dnsprovider.Record{ID: "r1", Type: "A", Name: "www.example.com", Value: "192.0.2.1", TTL: 300},
+		dnsprovider.Record{ID: "r2", Type: "A", Name: "www.example.com", Value: "192.0.2.1", TTL: 300},
+	)
+
+	root := h.onboard(t, onboardRequest())
+
+	_, err := h.client.DeleteRecord(t.Context(), &dnsgatev1.DeleteRecordRequest{
+		Token: root, Zone: "example.com", Name: "www", Type: "A",
+		Expect: expected(300, &dnsgatev1.RecordValue{Value: "192.0.2.1"}, &dnsgatev1.RecordValue{Value: "192.0.2.2"}),
+	})
+	wantStaleRRset(t, h, err, "records.delete", root, "www A 300 192.0.2.1,192.0.2.1")
+}

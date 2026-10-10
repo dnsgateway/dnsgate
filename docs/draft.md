@@ -209,6 +209,8 @@ Permissions follow the **Kubernetes RBAC** style.
 
 Each value of an RRset carries its Record Extras, Provider-specific settings such as Cloudflare's proxy flag. Changing a Record Extra needs the same verb as changing the record, `update` or `patch`; there is no verb or filter of its own. A write merges them per key: a key given sets the Record Extra, a key given as `""` clears it, and a key left out keeps the value the record holds. A new value starts with the keys given, plus the Record Extras the Provider keeps on write of a record the Gateway reuses for it, as it modifies a record into the new value rather than deleting one and adding another. The Gateway refuses, as an invalid record, a key the Provider does not read on records of the type, and a key the Provider keeps on write given for a new value, even as `""`, or given for a held value with another value than the record holds.
 
+`update` and `delete` may carry an Expected RRset: the RRset as the client read it, its TTL and each value, given once, with its Record Extras. The Gateway compares it with the RRset it reads just before the write, the same values, in any order, the RRset's TTL, and for each value the same Record Extras, a Record Extra given as `""` or a flag that is off counting as none, and refuses with `CONFLICT`, writing nothing, when they differ, as when the zone no longer holds the RRset: without an Expected RRset, that is `NOT_FOUND`. This keeps a value another client patched in since the read from being overwritten. `create` needs none, as it already refuses an RRset that exists, and `patch` takes none, as it changes single values.
+
 On `tokens`, `create` issues a Derived Token and `delete` revokes a token.
 
 ## Name patterns

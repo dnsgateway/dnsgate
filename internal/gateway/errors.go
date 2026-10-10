@@ -49,6 +49,12 @@ func alreadyExists(msg string) error {
 	return statusError(codes.AlreadyExists, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_CONFLICT}, msg)
 }
 
+// staleRRset is the error of a write whose Expected RRset the RRset no
+// longer matches.
+func staleRRset(msg string) error {
+	return statusError(codes.Aborted, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_CONFLICT}, msg)
+}
+
 func internal() error {
 	return statusError(codes.Internal, &dnsgatev1.Error{Category: dnsgatev1.Error_CATEGORY_INTERNAL}, "internal error")
 }

@@ -99,7 +99,10 @@ Settled in a second pass; they override the matching items below and the
   RRset inside its read-then-apply (values as a set, TTL, and Record Extras
   under dnsprovider's equality rule) and refuses with `CONFLICT`. `create`
   already refuses an existing RRset; `patch` takes no Expected RRset. The
-  dnsgate CLI does not expose it.
+  dnsgate CLI does not expose it. A race remains: `dnsprovider.Apply`
+  re-reads only the records it modifies or deletes, so a value patched in
+  between the Gateway's read and that re-read survives, and the update
+  still reports success.
 - **One TTL per RRset.** Accepted: every Record of an RRset carries the
   RRset's TTL, and a write sets it on all of them.
 - **Account.** `Account()` calls `InspectToken`, and also `ListZones` when the
