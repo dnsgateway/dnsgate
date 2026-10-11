@@ -219,7 +219,7 @@ func TestServerPurgesExpiredEntriesAtStartup(t *testing.T) {
 
 func TestServerTakesListenAddressFromEnv(t *testing.T) {
 	env := servertest.NewEnvAt(t, servertest.FreePort(t))
-	t.Setenv("LISTEN_ADDRESS", env.Listen)
+	t.Setenv("DNSGATE_LISTEN_ADDRESS", env.Listen)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"server", "--config", env.Config})
@@ -238,7 +238,7 @@ func TestServerHelpDocumentsTheListenAddress(t *testing.T) {
 		t.Fatalf("server --help: %v", err)
 	}
 
-	if !strings.Contains(out, "(env LISTEN_ADDRESS)") || !strings.Contains(out, `(default ":8443")`) {
-		t.Errorf("server help does not document --listen, LISTEN_ADDRESS and the default:\n%s", out)
+	if !strings.Contains(out, "(env DNSGATE_LISTEN_ADDRESS)") || !strings.Contains(out, `(default ":8443")`) {
+		t.Errorf("server help does not document --listen, DNSGATE_LISTEN_ADDRESS and the default:\n%s", out)
 	}
 }

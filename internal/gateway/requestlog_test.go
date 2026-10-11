@@ -167,7 +167,7 @@ func TestDeniedAndFailedRequestsAreLoggedWithTheirCode(t *testing.T) {
 	err = h.call(t, reader, &dnsgatev1.ListZonesRequest{})
 	wantError(t, err, codes.PermissionDenied, dnsgatev1.Error_CATEGORY_PERMISSION_DENIED)
 
-	h.fake.Fail(providertest.OpZone, &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 500})
+	h.fake.Fail(providertest.OpGetZone, &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 500})
 
 	err = h.call(t, root, &dnsgatev1.GetZoneRequest{Zone: "example.com"})
 	wantError(t, err, codes.Unavailable, dnsgatev1.Error_CATEGORY_INTERNAL)

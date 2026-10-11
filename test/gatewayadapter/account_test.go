@@ -14,7 +14,7 @@ import (
 
 // zonesListed reports whether the fake Provider was asked for its Zones.
 func zonesListed(h *harness) bool {
-	return slices.ContainsFunc(h.fake.Calls(), func(c providertest.Call) bool { return c.Op == providertest.OpZones })
+	return slices.ContainsFunc(h.fake.Calls(), func(c providertest.Call) bool { return c.Op == providertest.OpListZones })
 }
 
 func TestAccountIsTheTokenAndProvesTheCredentialWhenItMayListZones(t *testing.T) {
@@ -59,7 +59,7 @@ func TestAccountListsNoZonesWithoutListOnZones(t *testing.T) {
 
 func TestAccountFailsWhenTheProviderDeniesTheCredential(t *testing.T) {
 	h := newHarness(t)
-	h.fake.Fail(providertest.OpZones, &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 403})
+	h.fake.Fail(providertest.OpListZones, &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 403})
 
 	_, err := h.provider(t, h.root).Account(t.Context())
 	if !errors.Is(err, dnsprovider.ErrUnauthorized) {

@@ -696,7 +696,7 @@ func TestProviderErrorsReachTheClientAsCategories(t *testing.T) {
 				apiErr.Messages = []string{rawProviderMessage + " (code 10000)"}
 			}
 
-			h.fake.Fail(providertest.OpZone, tc.err)
+			h.fake.Fail(providertest.OpGetZone, tc.err)
 
 			root := h.onboard(t, onboardRequest())
 

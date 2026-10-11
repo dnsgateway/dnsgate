@@ -7,7 +7,7 @@ go 1.27
 
 require (
 	github.com/dnsgateway/dnsgate-go v0.0.0-20261011135924-124ed560a0cf
-	github.com/dnsgateway/dnsprovider v0.0.0-20261011135621-54fa3769bfe3
+	github.com/dnsgateway/dnsprovider v0.0.0-20261011144035-7b19999c7d65
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/spf13/cobra v1.10.2
