@@ -103,13 +103,13 @@ func TestConformanceZoneIDsWorkForEveryCall(t *testing.T) {
 
 	p := h.provider(t, h.root)
 
-	zoneSet, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+	zoneSet, err := p.ListZones(t.Context(), dnsprovider.ZoneFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// A Zone from Zones reads its Records as one from Zone does.
-	set, err := p.Records(t.Context(), zoneSet.Zones[0], dnsprovider.RecordFilter{})
+	set, err := p.ListRecords(t.Context(), zoneSet.Zones[0], dnsprovider.RecordFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}

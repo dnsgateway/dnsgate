@@ -125,7 +125,7 @@ func TestEachEgressIsAskedFor(t *testing.T) {
 			h.requests = nil
 			h.mu.Unlock()
 
-			_, _ = p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+			_, _ = p.ListZones(t.Context(), dnsprovider.ZoneFilter{})
 
 			h.mu.Lock()
 			defer h.mu.Unlock()

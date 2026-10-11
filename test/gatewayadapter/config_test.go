@@ -20,7 +20,7 @@ func TestTrustInTheGatewayIsSetWhenTheGatewayAdapterIsBuilt(t *testing.T) {
 	// Trusting the Gateway's certificate afterwards changes nothing.
 	pool.AddCert(h.cert)
 
-	if _, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{}); err == nil {
+	if _, err := p.ListZones(t.Context(), dnsprovider.ZoneFilter{}); err == nil {
 		t.Error("Zones succeeded, want the Gateway's certificate untrusted")
 	}
 }

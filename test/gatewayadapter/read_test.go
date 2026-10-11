@@ -16,7 +16,7 @@ func TestZonesHaveTheirNameAsIDAndAreFiltered(t *testing.T) {
 
 	p := h.provider(t, h.root)
 
-	zoneSet, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+	zoneSet, err := p.ListZones(t.Context(), dnsprovider.ZoneFilter{})
 	if err != nil {
 		t.Fatalf("Zones: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestZonesHaveTheirNameAsIDAndAreFiltered(t *testing.T) {
 		t.Errorf("Zones = %+v, want %+v", zones, want)
 	}
 
-	zoneSet, err = p.Zones(t.Context(), dnsprovider.ZoneFilter{Contains: ".ORG."})
+	zoneSet, err = p.ListZones(t.Context(), dnsprovider.ZoneFilter{Contains: ".ORG."})
 	if err != nil {
 		t.Fatalf("Zones: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestZoneReadsOneZoneByName(t *testing.T) {
 	h := newHarness(t)
 	p := h.provider(t, h.root)
 
-	z, err := p.Zone(t.Context(), "example.com")
+	z, err := p.GetZone(t.Context(), "example.com")
 	if err != nil {
 		t.Fatalf("Zone: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestZoneReadsOneZoneByName(t *testing.T) {
 		t.Errorf("Zone = %+v, want %+v", z, want)
 	}
 
-	if _, err := p.Zone(t.Context(), "example.net"); !errors.Is(err, dnsprovider.ErrNotFound) {
+	if _, err := p.GetZone(t.Context(), "example.net"); !errors.Is(err, dnsprovider.ErrNotFound) {
 		t.Errorf("Zone of an unknown name = %v, want ErrNotFound", err)
 	}
 }
@@ -69,7 +69,7 @@ func TestZoneIsUnauthorizedWithoutGetOnZones(t *testing.T) {
 	h := newHarness(t)
 	p := h.provider(t, h.derive(t, &dnsgatev1.Permission{Verbs: []string{"get"}}))
 
-	if _, err := p.Zone(t.Context(), "example.com"); !errors.Is(err, dnsprovider.ErrUnauthorized) {
+	if _, err := p.GetZone(t.Context(), "example.com"); !errors.Is(err, dnsprovider.ErrUnauthorized) {
 		t.Errorf("Zone = %v, want ErrUnauthorized", err)
 	}
 }
@@ -92,7 +92,7 @@ func TestRecordsAreOnePerValueWithTheRRsetsTTLAndTheirOwnExtras(t *testing.T) {
 
 	p := h.provider(t, h.root)
 
-	set, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
+	set, err := p.ListRecords(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
 	if err != nil {
 		t.Fatalf("Records: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestRecordsAreOnePerValueWithTheRRsetsTTLAndTheirOwnExtras(t *testing.T) {
 		ids[r.ID] = true
 	}
 
-	again, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
+	again, err := p.ListRecords(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestRecordsAreFiltered(t *testing.T) {
 
 	p := h.provider(t, h.root)
 
-	set, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{Type: "a", Contains: "WWW."})
+	set, err := p.ListRecords(t.Context(), zone(t, p), dnsprovider.RecordFilter{Type: "a", Contains: "WWW."})
 	if err != nil {
 		t.Fatalf("Records: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestZonesAndRecordsCarryThePartialViewTheGatewaySets(t *testing.T) {
 
 			p := h.provider(t, h.derive(t, tc.perm))
 
-			zoneSet, err := p.Zones(t.Context(), dnsprovider.ZoneFilter{})
+			zoneSet, err := p.ListZones(t.Context(), dnsprovider.ZoneFilter{})
 			if err != nil {
 				t.Fatalf("Zones: %v", err)
 			}
@@ -181,7 +181,7 @@ func TestZonesAndRecordsCarryThePartialViewTheGatewaySets(t *testing.T) {
 				t.Errorf("Zones = %+v, want example.com alone with Partial %v", zoneSet, tc.partial)
 			}
 
-			set, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
+			set, err := p.ListRecords(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
 			if err != nil {
 				t.Fatalf("Records: %v", err)
 			}

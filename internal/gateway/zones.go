@@ -20,7 +20,7 @@ func (g *Gateway) listZones(r *request, req *dnsgatev1.ListZonesRequest) (*dnsga
 		return nil, err
 	}
 
-	zoneSet, err := c.provider.Zones(c.ctx, dnsprovider.ZoneFilter{})
+	zoneSet, err := c.provider.ListZones(c.ctx, dnsprovider.ZoneFilter{})
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}
@@ -46,7 +46,7 @@ func (g *Gateway) getZone(r *request, req *dnsgatev1.GetZoneRequest) (*dnsgatev1
 		return nil, err
 	}
 
-	z, err := c.provider.Zone(c.ctx, c.perm.Zone)
+	z, err := c.provider.GetZone(c.ctx, c.perm.Zone)
 	if err != nil {
 		return nil, g.providerFailed(c, err)
 	}

@@ -69,12 +69,12 @@ func (g *Gateway) getRecord(r *request, req *dnsgatev1.GetRecordRequest) (*dnsga
 // readRecords reads the call's zone and its records that match f from its
 // Provider.
 func (g *Gateway) readRecords(c *dnsCall, f dnsprovider.RecordFilter) (dnsprovider.Zone, []dnsprovider.Record, error) {
-	z, err := c.provider.Zone(c.ctx, c.perm.Zone)
+	z, err := c.provider.GetZone(c.ctx, c.perm.Zone)
 	if err != nil {
 		return dnsprovider.Zone{}, nil, g.providerFailed(c, err)
 	}
 
-	set, err := c.provider.Records(c.ctx, z, f)
+	set, err := c.provider.ListRecords(c.ctx, z, f)
 	if err != nil {
 		return dnsprovider.Zone{}, nil, g.providerFailed(c, err)
 	}

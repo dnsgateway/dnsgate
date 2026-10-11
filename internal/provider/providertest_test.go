@@ -22,7 +22,7 @@ func TestFakeProviderRoundTripsARecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	zone, err := p.Zone(ctx, "example.com")
+	zone, err := p.GetZone(ctx, "example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestFakeProviderRoundTripsARecord(t *testing.T) {
 		t.Fatalf("adding the Record failed: %v", err)
 	}
 
-	set, err := p.Records(ctx, zone, dnsprovider.RecordFilter{})
+	set, err := p.ListRecords(ctx, zone, dnsprovider.RecordFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}

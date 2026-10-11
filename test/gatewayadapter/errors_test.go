@@ -37,7 +37,7 @@ func TestAReadWhoseContextEndedFailsWithTheContextsError(t *testing.T) {
 
 	for name, want := range endings {
 		t.Run(name, func(t *testing.T) {
-			_, err := p.Zones(endedContext(t, want), dnsprovider.ZoneFilter{})
+			_, err := p.ListZones(endedContext(t, want), dnsprovider.ZoneFilter{})
 			if !errors.Is(err, want) {
 				t.Errorf("Zones = %v, want %v", err, want)
 			}

@@ -310,7 +310,7 @@ func (h *harness) provider(t *testing.T, tok string) dnsprovider.Provider {
 func zone(t *testing.T, p dnsprovider.Provider) dnsprovider.Zone {
 	t.Helper()
 
-	z, err := p.Zone(t.Context(), "example.com")
+	z, err := p.GetZone(t.Context(), "example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

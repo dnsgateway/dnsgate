@@ -15,7 +15,7 @@ import (
 func readAll(t *testing.T, p dnsprovider.Provider) []dnsprovider.Record {
 	t.Helper()
 
-	set, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
+	set, err := p.ListRecords(t.Context(), zone(t, p), dnsprovider.RecordFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCreateRecordConflictsWithAnIdenticalRecord(t *testing.T) {
 func readWWW(t *testing.T, p dnsprovider.Provider) []dnsprovider.Record {
 	t.Helper()
 
-	set, err := p.Records(t.Context(), zone(t, p), dnsprovider.RecordFilter{Type: "A", Contains: "www."})
+	set, err := p.ListRecords(t.Context(), zone(t, p), dnsprovider.RecordFilter{Type: "A", Contains: "www."})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,86 +188,6 @@ func TestDeleteRecordDeletesTheLastValueAndUpdatesOtherwise(t *testing.T) {
 	if got := readAll(t, p); len(got) != 0 {
 		t.Errorf("Records = %+v, want none", got)
 	}
-}
-
-func TestApplyChangesetWritesEmptiedThenChangedThenNewRRsets(t *testing.T) {
-	h := newHarness(t)
-	h.fake.SetRecords("z1", append(wwwRecords(),
-		dnsprovider.Record{ID: "r3", Type: "TXT", Name: "old.example.com", Value: "bye", TTL: 300},
-	)...)
-
-	p := h.provider(t, h.root)
-	z := zone(t, p)
-	records := readAll(t, p) // old TXT, then the www A values
-
-	add := dnsprovider.Record{Type: "AAAA", Name: "new.example.com", Value: "2001:db8::1", TTL: 300}
-	after := records[1]
-	after.Value = "192.0.2.3"
-
-	cs := dnsprovider.Changeset{Zone: z, Changes: []dnsprovider.Change{
-		{Kind: dnsprovider.ChangeAdd, After: add},
-		{Kind: dnsprovider.ChangeModify, Before: records[1], After: after},
-		{Kind: dnsprovider.ChangeDelete, Before: records[0]},
-	}}
-
-	res, err := p.(dnsprovider.Batcher).ApplyChangeset(t.Context(), cs)
-	if err != nil {
-		t.Fatalf("ApplyChangeset: %v", err)
-	}
-
-	wantWrites(t, h,
-		"delete old TXT expect 300 [bye]",
-		"update www A 300 [192.0.2.2 192.0.2.3{proxied=true}] expect 300 [192.0.2.1{proxied=true} 192.0.2.2{proxied=false}]",
-		"create new AAAA 300 [2001:db8::1]",
-	)
-
-	if len(res.Results) != 3 {
-		t.Fatalf("Results = %+v, want one per change", res.Results)
-	}
-
-	for i, r := range res.Results {
-		if r.Err != nil || r.Change.Kind != cs.Changes[i].Kind {
-			t.Errorf("Results[%d] = %+v, want change %d made", i, r, i)
-		}
-	}
-
-	if !sameContent(res.Results[0].Record, add) || !sameContent(res.Results[1].Record, after) || res.Results[2].Record.Type != "" {
-		t.Errorf("Results = %+v, want the added and modified Records, and none for the deleted", res.Results)
-	}
-}
-
-func TestApplyChangesetStopsAtTheFirstFailedWrite(t *testing.T) {
-	h := newHarness(t)
-	h.fake.SetRecords("z1", dnsprovider.Record{ID: "r1", Type: "TXT", Name: "old.example.com", Value: "bye", TTL: 300})
-	h.fake.FailChanges(func(c dnsprovider.Change) error {
-		if c.Kind == dnsprovider.ChangeDelete {
-			return &dnsprovider.APIError{Provider: "cloudflare", StatusCode: 500}
-		}
-
-		return nil
-	})
-
-	p := h.provider(t, h.root)
-	z := zone(t, p)
-	old := readAll(t, p)[0]
-
-	res, err := p.(dnsprovider.Batcher).ApplyChangeset(t.Context(), dnsprovider.Changeset{Zone: z, Changes: []dnsprovider.Change{
-		{Kind: dnsprovider.ChangeAdd, After: dnsprovider.Record{Type: "TXT", Name: "new.example.com", Value: "hi", TTL: 300}},
-		{Kind: dnsprovider.ChangeDelete, Before: old},
-	}})
-	if err != nil {
-		t.Fatalf("ApplyChangeset: %v", err)
-	}
-
-	if res.Results[1].Err == nil {
-		t.Error("the failed deletion has no error")
-	}
-
-	if res.Results[0].Err == nil || res.Results[0].Record.Type != "" {
-		t.Errorf("Results[0] = %+v, want the addition not made", res.Results[0])
-	}
-
-	wantWrites(t, h, "delete old TXT expect 300 [bye]")
 }
 
 func TestApplyChangesetReportsAMoveWrittenOnlyInPart(t *testing.T) {
@@ -407,31 +327,6 @@ func TestUpdateRecordThatOmitsOnlyAKeptRecordExtraWritesNothing(t *testing.T) {
 	}
 
 	wantWrites(t, h)
-}
-
-func TestApplyChangesetTakesTheLowestTTLGivenWhateverTheOrder(t *testing.T) {
-	for name, ttls := range map[string][2]uint32{
-		"given first": {600, 0},
-		"given last":  {0, 600},
-	} {
-		t.Run(name, func(t *testing.T) {
-			h := newHarness(t)
-			h.fake.SetRecords("z1", wwwRecords()...)
-
-			p := h.provider(t, h.root)
-
-			// A TTL of 0 gives none: the RRset takes 600, the only TTL given.
-			_, err := p.(dnsprovider.Batcher).ApplyChangeset(t.Context(), dnsprovider.Changeset{Zone: zone(t, p), Changes: []dnsprovider.Change{
-				{Kind: dnsprovider.ChangeAdd, After: dnsprovider.Record{Type: "A", Name: "www.example.com", Value: "192.0.2.3", TTL: ttls[0]}},
-				{Kind: dnsprovider.ChangeAdd, After: dnsprovider.Record{Type: "A", Name: "www.example.com", Value: "192.0.2.4", TTL: ttls[1]}},
-			}})
-			if err != nil {
-				t.Fatalf("ApplyChangeset: %v", err)
-			}
-
-			wantWrites(t, h, "update www A 600 [192.0.2.1 192.0.2.2 192.0.2.3 192.0.2.4] expect 300 [192.0.2.1{proxied=true} 192.0.2.2{proxied=false}]")
-		})
-	}
 }
 
 func TestAWriteToAZoneTheProviderDoesNotHoldIsNotFound(t *testing.T) {

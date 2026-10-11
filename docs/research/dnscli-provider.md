@@ -89,11 +89,6 @@ Settled in a second pass; they override the matching items below and the
 - **Name and place.** The adapter is the **Gateway Adapter** (`GLOSSARY.md`).
   It lives in `github.com/dnsgateway/dnsgate/gatewayadapter` and exports only
   `Factory`, `New`, `Config` and the field names (ADR 0008).
-- **Whole-RRset writes.** The Gateway Adapter's `ApplyChangeset` groups the
-  changes by RRset and writes each RRset's target with `create`, `update` or
-  `delete`; it never uses `patch`. RRsets that end empty go first, then the
-  changed ones, then the new ones (`dnsprovider.ApplyOrder` at RRset level).
-  It stops at the first failure.
 - **Expected RRset.** `UpdateRecord` and `DeleteRecord` take an optional
   `ExpectedRRset{ttl, records}`. The Gateway compares it with the current
   RRset inside its read-then-apply (values as a set, TTL, and Record Extras
@@ -177,7 +172,7 @@ The contract notes that matter for a dnsgate adapter:
   `ErrNotFound` when it is gone (`provider.go:25-29`).
 
 Optional interfaces, detected by type assertion (`dnsprovider/provider.go:35-211`):
-`Batcher` (`ApplyChangeset`), `ZoneStatusReader`, `ZoneCreator`, `ZoneUpdater`,
+`ZoneStatusReader`, `ZoneCreator`, `ZoneUpdater`,
 `ZoneDeleter`, `TenantLister`, `TTLLimits`, `AutoTTL`, `ProxyFlag`.
 
 Construction goes through `Factory` (`dnsprovider/config.go:79-91`):
@@ -396,7 +391,6 @@ own IP with no extra code. That is a real feature for dnscli users.
 | `UpdateRecord` TTL-only | `UpdateRecord` with the full value list | Patch cannot change the TTL of a held value. The adapter must `GetRecord`, then `UpdateRecord` with every value. Mixed TTLs collapse to one (the RRset TTL is the min, `records.go:112`). |
 | `UpdateRecord` name/type change | patch-remove at old + patch-add at new | Two calls, not atomic. Same as Gandi's cross-RRset move (`gandi/write.go:61-64`). |
 | `DeleteRecord(r)` | `PatchRecord{remove:[v]}` | Removing the last value deletes the RRset (`gateway.proto:428`). |
-| `Batcher.ApplyChangeset` | one `UpdateRecord`/`CreateRecord`/`DeleteRecord` per touched RRset | Group by (name, type), compute each RRset's target from a fresh `GetRecord`, then send one call per RRset. That is one Gateway Changeset per RRset; there is no cross-RRset atomicity. |
 | `Extras` (`proxied`, comments, …) | `RecordValue.extras` (to add) | Dropped today on read (`records.go:107`) and never sent (`mutations.go:262-273`). Decided: carry per value, see §3a. |
 | `TTLLimits`, `AutoTTL` | `InspectToken.provider` | Decided: derive from the token's Provider type (see Decisions). The Gateway still enforces the range (`mutations.go:251-257`). |
 | `ZoneCreator/Updater/Deleter`, `ZoneStatusReader`, `TenantLister` | — | No such operations (`gateway.proto:106-122`). Leave unimplemented; dnscli checks with the `Can*` helpers (`dnsprovider/provider.go:82-153`). |
