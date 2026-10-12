@@ -16,10 +16,11 @@ import (
 	"github.com/dnsgateway/dnsgate/internal/server/servertest"
 )
 
-// serverCmd runs "dnsgate server --config --listen" with args.
+// serverCmd runs "dnsgate server --config --listen" with the TLS
+// certificate next to config and args.
 func serverCmd(config, listen string, args []string) servertest.RunFunc {
 	cmd := newRootCmd()
-	cmd.SetArgs(append([]string{"server", "--config", config, "--listen", listen}, args...))
+	cmd.SetArgs(append(append([]string{"server", "--config", config, "--listen", listen}, tlsArgs(config)...), args...))
 
 	return func(ctx context.Context, audit, logs io.Writer) error {
 		cmd.SetOut(audit)
@@ -27,6 +28,13 @@ func serverCmd(config, listen string, args []string) servertest.RunFunc {
 
 		return cmd.ExecuteContext(ctx)
 	}
+}
+
+// tlsArgs returns the TLS flags of the certificate next to config.
+func tlsArgs(config string) []string {
+	certFile, keyFile := servertest.TLSFiles(config)
+
+	return []string{"--tls-cert-file", certFile, "--tls-key-file", keyFile}
 }
 
 // startServer runs "dnsgate server --config" on an ephemeral port with args

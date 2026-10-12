@@ -1,0 +1,32 @@
+image:
+  pullPolicy: Always
+  tag: edge-arm64
+
+tls:
+  type: "helm"
+
+dnsgate:
+  secrets:
+    sig: |
+      -----BEGIN PRIVATE KEY-----
+      MC4CAQAwBQYDK2VwBCIEIBmpZcf5XU8l00ZqRpXlqH0xKzimWKGa97AipDzpvhRm
+      -----END PRIVATE KEY-----
+    enc: |
+      -----BEGIN PRIVATE KEY-----
+      MC4CAQAwBQYDK2VuBCIEINTaT7UK15P6CXPpoYMD1tMR0BJnHgyAnNLsZAyw3fmd
+      -----END PRIVATE KEY-----
+    bootstrap: "567e2d3c60859f54701a49b27134b93a"
+
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+
+priorityClassName: system-cluster-critical
+
+podAntiAffinityPreset: hard
+podAntiAffinityPresetKey: kubernetes.io/hostname
+
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    effect: NoSchedule

@@ -242,8 +242,8 @@ func WithDecryptionKey(path string, retireAt time.Time) Option {
 // LoadFiles reads the signing (Ed25519) and encryption (X25519) private
 // keys written by Generate, and the decryption keys given as options. A
 // key's kid is its file name without ".pem" and must follow KeyIDFormat,
-// every encryption kid must be distinct, and no file may be readable or
-// writable by group or others.
+// every encryption kid must be distinct, and no file may give others any
+// access or group more than read (600, 640, 400 or 440).
 func LoadFiles(signingFile, encryptionFile string, opts ...Option) (*Files, error) {
 	var o loadOptions
 
@@ -318,8 +318,10 @@ func readPrivateKey[K any](path, prefix, algo string) (namedKey[K], error) {
 		return namedKey[K]{}, fmt.Errorf("reading key file: %w", err)
 	}
 
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return namedKey[K]{}, fmt.Errorf("key file %s has mode %o, want no group or other access (600)", path, perm)
+	// Group read is allowed so a key mounted from a Kubernetes Secret
+	// with an fsGroup (mode 0440 or 0640) loads.
+	if perm := info.Mode().Perm(); perm&0o037 != 0 {
+		return namedKey[K]{}, fmt.Errorf("key file %s has mode %o, want at most group read and no other access (640)", path, perm)
 	}
 
 	data, err := io.ReadAll(f)

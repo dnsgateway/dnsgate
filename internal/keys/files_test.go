@@ -281,12 +281,24 @@ func TestLoadFilesRejectsLooseOrSwappedKeys(t *testing.T) {
 		t.Error("LoadFiles with a missing key file succeeded, want an error")
 	}
 
-	if err := os.Chmod(sig, 0o644); err != nil {
-		t.Fatal(err)
+	for _, mode := range []os.FileMode{0o400, 0o440, 0o640} {
+		if err := os.Chmod(sig, mode); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := keys.LoadFiles(sig, enc); err != nil {
+			t.Errorf("LoadFiles with a mode %o signing key: %v", mode, err)
+		}
 	}
 
-	if _, err := keys.LoadFiles(sig, enc); err == nil {
-		t.Error("LoadFiles with a group/world-readable signing key succeeded, want an error")
+	for _, mode := range []os.FileMode{0o644, 0o604, 0o660} {
+		if err := os.Chmod(sig, mode); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := keys.LoadFiles(sig, enc); err == nil {
+			t.Errorf("LoadFiles with a mode %o signing key succeeded, want an error", mode)
+		}
 	}
 }
 
@@ -359,11 +371,11 @@ func TestLoadFilesRejectsBadDecryptionKeys(t *testing.T) {
 		t.Error("LoadFiles with the same decryption key twice succeeded, want an error")
 	}
 
-	if err := os.Chmod(old, 0o640); err != nil {
+	if err := os.Chmod(old, 0o660); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := keys.LoadFiles(sig, enc, keys.WithDecryptionKey(old, retireAt)); err == nil {
-		t.Error("LoadFiles with a group-readable decryption key succeeded, want an error")
+		t.Error("LoadFiles with a group-writable decryption key succeeded, want an error")
 	}
 }

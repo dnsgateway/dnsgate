@@ -42,9 +42,6 @@ func rotatedConfig(t *testing.T, env *servertest.Env, name string, retireAt time
 	path := filepath.Join(env.Dir, name)
 
 	servertest.WriteFile(t, path, `
-tls:
-  certFile: tls.crt
-  keyFile: tls.key
 keys:
   signingKeyFile: keys/sig-e2e.pem
   encryptionKeyFile: keys/enc-next.pem

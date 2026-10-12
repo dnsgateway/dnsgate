@@ -35,6 +35,25 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 			},
 			want: "listen",
 		},
+		"tls setting": {
+			edit: func(t *testing.T, env *servertest.Env) {
+				config, err := os.ReadFile(env.Config)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				servertest.WriteFile(t, env.Config, "tls:\n  certFile: tls.crt\n  keyFile: tls.key\n"+string(config), 0o600)
+			},
+			want: "tls",
+		},
+		"missing TLS certificate": {
+			edit: func(t *testing.T, env *servertest.Env) {
+				if err := os.Remove(env.CAFile); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "loading TLS certificate",
+		},
 		"missing setting": {
 			edit: func(t *testing.T, env *servertest.Env) {
 				servertest.WriteFile(t, env.Config, "", 0o600)
@@ -137,7 +156,7 @@ func TestServerRefusesToStartWithBadConfig(t *testing.T) {
 			env := servertest.NewEnv(t)
 			tc.edit(t, env)
 
-			out, err := runCLI(t, "server", "--config", env.Config, "--listen", env.Listen)
+			out, err := runCLI(t, append([]string{"server", "--config", env.Config, "--listen", env.Listen}, tlsArgs(env.Config)...)...)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("server error = %v, want one containing %q\n%s", err, tc.want, out)
 			}

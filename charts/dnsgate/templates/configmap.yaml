@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dnsgate.fullname" . }}
+  labels:
+    {{- include "dnsgate.labels" . | nindent 4 }}
+data:
+  dnsgate.yaml: |
+    keys:
+      signingKeyFile: /etc/dnsgate-secrets/sig-2026-10.pem
+      encryptionKeyFile: /etc/dnsgate-secrets/enc-2026-10.pem
+      decryptionKeys: []
+    bootstrapSecretFile: /etc/dnsgate-secrets/bootstrap-secret
+    database:
+      sqliteFile: /dnsgate/dnsgate.db

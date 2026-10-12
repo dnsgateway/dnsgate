@@ -1,0 +1,57 @@
+{{- if eq .Values.tls.type "cert-manager" }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "dnsgate.fullname" . }}
+  labels:
+    {{- include "dnsgate.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "dnsgate.fullname" . }}-ca
+  labels:
+    {{- include "dnsgate.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "dnsgate.fullname" . }}-ca
+  duration: 87600h # 10y
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ include "dnsgate.fullname" . }}
+  commonName: ca.webhook.gate
+  isCA: true
+  usages:
+    - digital signature
+    - key encipherment
+    - cert sign
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "dnsgate.fullname" . }}-tls
+  labels:
+    {{- include "dnsgate.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "dnsgate.fullname" . }}-tls
+  duration: 8760h # 1y
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ include "dnsgate.fullname" . }}
+  commonName: {{ include "dnsgate.fullname" . }}
+  dnsNames:
+    - {{ include "dnsgate.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "dnsgate.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "dnsgate.fullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.tls.clusterDomain }}
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+{{- end }}

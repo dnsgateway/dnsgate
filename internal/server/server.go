@@ -38,6 +38,10 @@ type Options struct {
 	// Listen is the TCP address the gRPC API is served on; empty means
 	// DefaultListen.
 	Listen string
+	// TLSCertFile and TLSKeyFile are the PEM files of the server
+	// certificate and its private key.
+	TLSCertFile string
+	TLSKeyFile  string
 	// LogLevel is the lowest level of the logs written.
 	LogLevel slog.Level
 	// Audit receives the audit events, as JSON lines.
@@ -70,7 +74,7 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 
-	cert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	cert, err := tls.LoadX509KeyPair(o.TLSCertFile, o.TLSKeyFile)
 	if err != nil {
 		return fmt.Errorf("loading TLS certificate: %w", err)
 	}

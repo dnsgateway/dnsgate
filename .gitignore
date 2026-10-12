@@ -18,7 +18,7 @@ dnsgate.yaml
 dnsgate.db
 dnsgate.db-*
 bootstrap-secret
-keys/
+/keys/
 bin/
 dist/
 bundle/

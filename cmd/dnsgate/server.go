@@ -20,14 +20,12 @@ func newServerCmd(flags *Flags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Run the Gateway",
-		Long: "Run the Gateway: serve its gRPC API over TLS on --" + flagListen + ", configured by a YAML file.\n\n" +
+		Long: "Run the Gateway: serve its gRPC API on --" + flagListen + " over TLS with the certificate in --" + flagTLSCertFile +
+			" and --" + flagTLSKeyFile + ", configured by a YAML file.\n\n" +
 			"Audit events are written to stdout and logs to stderr, both as JSON lines. " +
 			"Logs below --" + flagLogLevel + " are dropped; audit events are always written. " +
 			"At debug, each request is logged when it ends, with its gRPC method, operation, request ID, peer address, duration and gRPC code.\n\n" +
 			"Configuration file, with paths relative to its directory:\n\n" +
-			"  tls:\n" +
-			"    certFile: tls.crt\n" +
-			"    keyFile: tls.key\n" +
 			"  keys:\n" +
 			"    signingKeyFile: keys/sig-2026-10.pem\n" +
 			"    encryptionKeyFile: keys/enc-2026-11.pem\n" +
@@ -70,6 +68,8 @@ func runServer(ctx context.Context, auditOut, logOut io.Writer, f *Flags) error 
 	return server.Run(ctx, server.Options{
 		ConfigFile:    f.Config,
 		Listen:        f.Listen,
+		TLSCertFile:   f.TLSCertFile,
+		TLSKeyFile:    f.TLSKeyFile,
 		LogLevel:      level,
 		Audit:         auditOut,
 		Log:           logOut,

@@ -1,0 +1,28 @@
+{{- $current := dict }}
+{{- $crts := dict }}
+
+{{- if eq .Values.tls.type "helm" }}
+{{- $current = lookup "v1" "Secret" .Release.Namespace (printf "%s-tls" (include "dnsgate.fullname" .)) }}
+{{- $cn := include "dnsgate.fullname" . }}
+{{- $altNames := list }}
+{{- $altNames = append $altNames (printf "%s.%s" $cn .Release.Namespace) }}
+{{- $altNames = append $altNames (printf "%s.%s.svc" $cn .Release.Namespace) }}
+{{- $altNames = append $altNames (printf "%s.%s.svc.%s" $cn .Release.Namespace .Values.tls.clusterDomain) }}
+{{- $crts = genSelfSignedCert $cn nil $altNames 3650 }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "dnsgate.fullname" . }}-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dnsgate.labels" . | nindent 4 }}
+type: Opaque
+data:
+  {{- if $current }}
+  tls.crt: {{ index $current.data "tls.crt" }}
+  tls.key: {{ index $current.data "tls.key" }}
+  {{- else }}
+  tls.crt: {{ $crts.Cert| b64enc | quote }}
+  tls.key: {{ $crts.Key | b64enc | quote }}
+  {{- end }}
+{{- end }}

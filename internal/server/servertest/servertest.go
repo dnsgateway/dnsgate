@@ -59,8 +59,19 @@ func (b *SyncBuffer) String() string {
 type Env struct {
 	Dir    string
 	Config string
-	CAFile string
-	Listen string
+	// CAFile is the Gateway's self-signed certificate, which clients
+	// trust, and TLSKeyFile its private key.
+	CAFile     string
+	TLSKeyFile string
+	Listen     string
+}
+
+// TLSFiles returns the TLS certificate and key files NewEnv writes next
+// to config.
+func TLSFiles(config string) (certFile, keyFile string) {
+	dir := filepath.Dir(config)
+
+	return filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
 }
 
 // NewEnv configures a Gateway that listens on an ephemeral port, which it
@@ -77,10 +88,11 @@ func NewEnvAt(t *testing.T, listen string) *Env {
 	t.Helper()
 
 	dir := t.TempDir()
-	env := &Env{Dir: dir, Config: filepath.Join(dir, "dnsgate.yaml"), CAFile: filepath.Join(dir, "tls.crt"), Listen: listen}
+	env := &Env{Dir: dir, Config: filepath.Join(dir, "dnsgate.yaml"), Listen: listen}
+	env.CAFile, env.TLSKeyFile = TLSFiles(env.Config)
 
 	GenerateKeys(t, env, "e2e")
-	WriteTLSCert(t, env.CAFile, filepath.Join(dir, "tls.key"))
+	WriteTLSCert(t, env.CAFile, env.TLSKeyFile)
 	WriteFile(t, filepath.Join(dir, "bootstrap-secret"), BootstrapSecret+"\n", 0o600)
 	env.writeConfig(t, "")
 
@@ -116,9 +128,6 @@ func (env *Env) writeConfig(t *testing.T, decryptionKeys string) {
 
 	// Relative paths are resolved against the config file's directory.
 	WriteFile(t, env.Config, `
-tls:
-  certFile: tls.crt
-  keyFile: tls.key
 keys:
   signingKeyFile: keys/sig-e2e.pem
   encryptionKeyFile: keys/enc-e2e.pem
@@ -184,20 +193,24 @@ type Gateway struct {
 // logs until ctx is done.
 type RunFunc func(ctx context.Context, audit, logs io.Writer) error
 
-// Start runs the Gateway configured by config on an ephemeral port,
-// logging at info and calling providers, until the test ends, and waits
-// for it to serve.
+// Start runs the Gateway configured by config on an ephemeral port, with
+// the TLS certificate next to config, logging at info and calling
+// providers, until the test ends, and waits for it to serve.
 func Start(t *testing.T, config string, providers dnsprovider.Registry) *Gateway {
 	t.Helper()
 
+	certFile, keyFile := TLSFiles(config)
+
 	return Launch(t, func(ctx context.Context, audit, logs io.Writer) error {
 		return server.Run(ctx, server.Options{
-			ConfigFile: config,
-			Listen:     "127.0.0.1:0",
-			LogLevel:   slog.LevelInfo,
-			Audit:      audit,
-			Log:        logs,
-			Providers:  providers,
+			ConfigFile:  config,
+			Listen:      "127.0.0.1:0",
+			TLSCertFile: certFile,
+			TLSKeyFile:  keyFile,
+			LogLevel:    slog.LevelInfo,
+			Audit:       audit,
+			Log:         logs,
+			Providers:   providers,
 		})
 	})
 }

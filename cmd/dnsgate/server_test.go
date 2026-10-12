@@ -78,7 +78,7 @@ func TestServerRefusesToStartWithAnUnknownLogLevel(t *testing.T) {
 
 	env := servertest.NewEnvAt(t, held.Addr().String())
 
-	out, err := runCLI(t, "server", "--config", env.Config, "--listen", env.Listen, "--log-level", "verbose")
+	out, err := runCLI(t, append(append([]string{"server", "--config", env.Config, "--listen", env.Listen}, tlsArgs(env.Config)...), "--log-level", "verbose")...)
 	if err == nil || !strings.Contains(err.Error(), `"verbose"`) || !strings.Contains(err.Error(), "error, warn, info, debug") {
 		t.Errorf("server error = %v, want one naming the level and the accepted levels before it listens\n%s", err, out)
 	}
@@ -222,7 +222,7 @@ func TestServerTakesListenAddressFromEnv(t *testing.T) {
 	t.Setenv("DNSGATE_LISTEN_ADDRESS", env.Listen)
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"server", "--config", env.Config})
+	cmd.SetArgs(append([]string{"server", "--config", env.Config}, tlsArgs(env.Config)...))
 
 	servertest.LaunchAt(t, env.Listen, func(ctx context.Context, audit, logs io.Writer) error {
 		cmd.SetOut(audit)
@@ -240,5 +240,34 @@ func TestServerHelpDocumentsTheListenAddress(t *testing.T) {
 
 	if !strings.Contains(out, "(env DNSGATE_LISTEN_ADDRESS)") || !strings.Contains(out, `(default ":8443")`) {
 		t.Errorf("server help does not document --listen, DNSGATE_LISTEN_ADDRESS and the default:\n%s", out)
+	}
+}
+
+func TestServerTakesTLSFilesFromEnv(t *testing.T) {
+	env := servertest.NewEnvAt(t, servertest.FreePort(t))
+	t.Setenv("DNSGATE_TLS_CERT_FILE", env.CAFile)
+	t.Setenv("DNSGATE_TLS_KEY_FILE", env.TLSKeyFile)
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"server", "--config", env.Config, "--listen", env.Listen})
+
+	servertest.LaunchAt(t, env.Listen, func(ctx context.Context, audit, logs io.Writer) error {
+		cmd.SetOut(audit)
+		cmd.SetErr(logs)
+
+		return cmd.ExecuteContext(ctx)
+	})
+}
+
+func TestServerHelpDocumentsTheTLSFiles(t *testing.T) {
+	out, err := runCLI(t, "server", "--help")
+	if err != nil {
+		t.Fatalf("server --help: %v", err)
+	}
+
+	for _, want := range []string{"(env DNSGATE_TLS_CERT_FILE)", `(default "tls.crt")`, "(env DNSGATE_TLS_KEY_FILE)", `(default "tls.key")`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("server help does not document --tls-cert-file and --tls-key-file: no %s\n%s", want, out)
+		}
 	}
 }

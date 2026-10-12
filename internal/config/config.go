@@ -22,10 +22,9 @@ const minBootstrapSecret = 16
 // Relative file paths are resolved against the configuration file's
 // directory.
 type File struct {
-	TLS  TLS  `json:"tls"`
 	Keys Keys `json:"keys"`
 	// BootstrapSecretFile holds the secret that authorizes Onboarding. It
-	// must not be readable or writable by group or others.
+	// must give others no access and group at most read.
 	BootstrapSecretFile string   `json:"bootstrapSecretFile"`
 	Database            Database `json:"database"`
 	Tokens              Tokens   `json:"tokens"`
@@ -46,12 +45,6 @@ type Tokens struct {
 	// MaxAncestors is the most ancestors a Derived Token may have, the
 	// depth of a token chain below its Root Token. Unset or 0 means 8.
 	MaxAncestors int `json:"maxAncestors"`
-}
-
-// TLS is the Gateway's server certificate.
-type TLS struct {
-	CertFile string `json:"certFile"`
-	KeyFile  string `json:"keyFile"`
 }
 
 // Keys are the Gateway's signing and encryption key files, as written by
@@ -96,8 +89,6 @@ func Load(path string) (*File, error) {
 	base := filepath.Dir(path)
 
 	files := map[string]*string{
-		"tls.certFile":           &cfg.TLS.CertFile,
-		"tls.keyFile":            &cfg.TLS.KeyFile,
 		"keys.signingKeyFile":    &cfg.Keys.SigningKeyFile,
 		"keys.encryptionKeyFile": &cfg.Keys.EncryptionKeyFile,
 		"bootstrapSecretFile":    &cfg.BootstrapSecretFile,
@@ -138,9 +129,9 @@ func (k Keys) Load() (*keys.Files, error) {
 }
 
 // BootstrapSecret reads the bootstrap secret, without surrounding
-// whitespace, from BootstrapSecretFile. The file must give group and
-// others no access, and the secret must be at least minBootstrapSecret
-// bytes long.
+// whitespace, from BootstrapSecretFile. The file must give others no
+// access and group at most read (600, 640, 400 or 440), and the secret
+// must be at least minBootstrapSecret bytes long.
 func (c *File) BootstrapSecret() (token.Secret, error) {
 	path := c.BootstrapSecretFile
 
@@ -156,8 +147,10 @@ func (c *File) BootstrapSecret() (token.Secret, error) {
 		return token.Secret{}, fmt.Errorf("reading bootstrap secret: %w", err)
 	}
 
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return token.Secret{}, fmt.Errorf("bootstrap secret file %s has mode %o, want no group or other access (600)", path, perm)
+	// Group read is allowed so a secret mounted from a Kubernetes Secret
+	// with an fsGroup (mode 0440 or 0640) loads.
+	if perm := info.Mode().Perm(); perm&0o037 != 0 {
+		return token.Secret{}, fmt.Errorf("bootstrap secret file %s has mode %o, want at most group read and no other access (640)", path, perm)
 	}
 
 	data, err := io.ReadAll(f)

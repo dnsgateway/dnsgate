@@ -16,12 +16,16 @@ const (
 	flagKeyIDSuffix = "key-id-suffix"
 	flagConfig      = "config"
 	flagListen      = "listen"
+	flagTLSCertFile = "tls-cert-file"
+	flagTLSKeyFile  = "tls-key-file"
 	flagLogLevel    = "log-level"
 
 	envKeyDir      = "DNSGATE_KEY_DIR"
 	envKeyIDSuffix = "DNSGATE_KEY_ID_SUFFIX"
 	envConfig      = "DNSGATE_CONFIG"
 	envListen      = "DNSGATE_LISTEN_ADDRESS"
+	envTLSCertFile = "DNSGATE_TLS_CERT_FILE"
+	envTLSKeyFile  = "DNSGATE_TLS_KEY_FILE"
 	envLogLevel    = "DNSGATE_LOG_LEVEL"
 )
 
@@ -30,6 +34,8 @@ const (
 	defaultKeyIDSuffix = ""
 	defaultConfig      = "dnsgate.yaml"
 	defaultListen      = server.DefaultListen
+	defaultTLSCertFile = "tls.crt"
+	defaultTLSKeyFile  = "tls.key"
 	defaultLogLevel    = "info"
 )
 
@@ -39,9 +45,11 @@ type Flags struct {
 	KeyDir      string
 	KeyIDSuffix string
 
-	Config   string
-	Listen   string
-	LogLevel string
+	Config      string
+	Listen      string
+	TLSCertFile string
+	TLSKeyFile  string
+	LogLevel    string
 }
 
 // DefaultFlags returns the flags resolved from the environment and
@@ -52,6 +60,8 @@ func DefaultFlags() *Flags {
 		KeyIDSuffix: withDefaultEnv(envKeyIDSuffix, defaultKeyIDSuffix),
 		Config:      withDefaultEnv(envConfig, defaultConfig),
 		Listen:      withDefaultEnv(envListen, defaultListen),
+		TLSCertFile: withDefaultEnv(envTLSCertFile, defaultTLSCertFile),
+		TLSKeyFile:  withDefaultEnv(envTLSKeyFile, defaultTLSKeyFile),
 		LogLevel:    withDefaultEnv(envLogLevel, defaultLogLevel),
 	}
 }
@@ -70,6 +80,10 @@ func (f *Flags) AddServerFlags(flags *pflag.FlagSet) {
 		"Gateway configuration file (env "+envConfig+")")
 	flags.StringVarP(&f.Listen, flagListen, "", f.Listen,
 		"TCP address the gRPC API is served on (env "+envListen+")")
+	flags.StringVarP(&f.TLSCertFile, flagTLSCertFile, "", f.TLSCertFile,
+		"PEM file of the server certificate, with any intermediates after it (env "+envTLSCertFile+")")
+	flags.StringVarP(&f.TLSKeyFile, flagTLSKeyFile, "", f.TLSKeyFile,
+		"PEM file of the server certificate's private key (env "+envTLSKeyFile+")")
 	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
 		"lowest level of the logs written: "+logLevelNames()+" (env "+envLogLevel+")")
 }
