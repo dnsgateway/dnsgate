@@ -80,7 +80,9 @@ podAntiAffinity:
   preferredDuringSchedulingIgnoredDuringExecution:
     - podAffinityTerm:
         labelSelector:
-          matchLabels: {{- (include "gate.selectorLabels" .) | nindent 12 }}
+          matchLabels:
+            {{- (include "gate.selectorLabels" .) | nindent 12 }}
+            app.kubernetes.io/component: dnsgate
         namespaces:
           - {{ .Release.Namespace | quote }}
         topologyKey: kubernetes.io/hostname
@@ -94,7 +96,52 @@ Return a hard podAntiAffinity definition
 podAntiAffinity:
   requiredDuringSchedulingIgnoredDuringExecution:
     - labelSelector:
-        matchLabels: {{- (include "gate.selectorLabels" .) | nindent 10 }}
+        matchLabels:
+          {{- (include "gate.selectorLabels" .) | nindent 10 }}
+          app.kubernetes.io/component: dnsgate
+      namespaces:
+        - {{ .Release.Namespace | quote }}
+      topologyKey: kubernetes.io/hostname
+{{- end -}}
+
+{{/*
+Return a podAffinity/podAntiAffinity definition
+*/}}
+{{- define "affinities-acme.pods" -}}
+  {{- if eq .Values.podAntiAffinityPreset "soft" }}
+    {{- include "affinities-acme.pods.soft" . -}}
+  {{- else if eq .Values.podAntiAffinityPreset "hard" }}
+    {{- include "affinities-acme.pods.hard" . -}}
+  {{- end -}}
+{{- end -}}
+
+{{/*
+Return a soft podAntiAffinity definition
+*/}}
+{{- define "affinities-acme.pods.soft" -}}
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+    - podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            {{- (include "gate.selectorLabels" .) | nindent 12 }}
+            app.kubernetes.io/component: acme
+        namespaces:
+          - {{ .Release.Namespace | quote }}
+        topologyKey: kubernetes.io/hostname
+      weight: 1
+{{- end -}}
+
+{{/*
+Return a hard podAntiAffinity definition
+*/}}
+{{- define "affinities-acme.pods.hard" -}}
+podAntiAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          {{- (include "gate.selectorLabels" .) | nindent 10 }}
+          app.kubernetes.io/component: acme
       namespaces:
         - {{ .Release.Namespace | quote }}
       topologyKey: kubernetes.io/hostname

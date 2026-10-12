@@ -58,6 +58,7 @@ const (
 	reasonUnmappedSubdomain  = "subdomain not in the Challenge Map"
 	reasonNoAPIKey           = "no X-Api-Key"
 	reasonAPIUserMismatch    = "X-Api-User is not the token's jti"
+	reasonNoZone             = "the token's Permissions name no zone holding the name"
 	reasonTokenRefused       = "the Gateway refused the token"
 	reasonPermissionRefused  = "the Gateway refused the Permission or the Egress"
 	reasonConfigurationError = "configuration error: the Gateway refused the request; check --ttl against the Provider's TTL range"
@@ -188,6 +189,15 @@ func (u *updater) update(r *http.Request, o *outcome) reply {
 
 		return forbidden
 	}
+
+	target, ok = target.resolve(info.GetPermissions())
+	if !ok {
+		o.reason = reasonNoZone
+
+		return forbidden
+	}
+
+	o.target = target
 
 	_, err = u.gateway.PatchRecord(ctx, &dnsgatev1.PatchRecordRequest{
 		Token:  key,

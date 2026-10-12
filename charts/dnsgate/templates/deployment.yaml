@@ -4,6 +4,7 @@ metadata:
   name: {{ include "dnsgate.fullname" . }}
   labels:
     {{- include "dnsgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dnsgate
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -15,6 +16,7 @@ spec:
   selector:
     matchLabels:
       {{- include "gate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dnsgate
   template:
     metadata:
       annotations:
@@ -24,6 +26,7 @@ spec:
       {{- end }}
       labels:
         {{- include "dnsgate.labels" . | nindent 8 }}
+        app.kubernetes.io/component: dnsgate
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -55,6 +58,7 @@ spec:
             - --tls-cert-file=/var/run/certs/tls.crt
             - --tls-key-file=/var/run/certs/tls.key
             - --config=/etc/dnsgate/dnsgate.yaml
+            - --log-level=debug
           {{- with .Values.args }}
             {{- . | toYaml | nindent 12 }}
           {{- end }}

@@ -27,9 +27,9 @@ func TestDaemonRefusesAChallengeMapWithAnInvalidEntry(t *testing.T) {
 			content: strings.Repeat("a", 64) + ":\n  zone: example.com\n  name: _acme-challenge\n",
 			want:    []string{strings.Repeat("a", 64), "DNS label"},
 		},
-		"no zone": {
-			content: "examplecom:\n  name: _acme-challenge\n",
-			want:    []string{`"examplecom"`, "zone"},
+		"no zone and the apex": {
+			content: "examplecom:\n  name: \"@\"\n",
+			want:    []string{`"examplecom"`, "absolute"},
 		},
 		"no name": {
 			content: "examplecom:\n  zone: example.com\n",

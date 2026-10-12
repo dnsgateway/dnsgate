@@ -63,7 +63,7 @@ Each flag falls back to an environment variable, then to a default. The three Ga
 The daemon stops at startup, with a clear error, when:
 
 - `--egress` is neither `gateway` nor `agent`;
-- the Challenge Map file can't be read or has an invalid entry (a key that isn't a single DNS label, or an entry without a zone or a name);
+- the Challenge Map file can't be read or has an invalid entry (a key that isn't a single DNS label, an entry without a name, or an entry without a zone whose name is `@`);
 - only one of `--tls-cert-file` and `--tls-key-file` is given. A half-configured TLS setup never falls back to HTTP.
 
 TTL isn't a security boundary, so it lives in configuration and not in the token. The Gateway refuses a TTL below the Provider's minimum, so set `--ttl` to at least that.
@@ -84,12 +84,15 @@ wwwexample:
 delegated:
   zone: example.net
   name: challenge-123.acme
+anyzone:
+  name: _acme-challenge.example.org
 ```
 
 ## Rules
 
 - Each key is an acme-dns **subdomain**: a single DNS label (`[A-Za-z0-9-]`, at most 63 characters, not starting or ending with `-`).
-- Each value names a Challenge Target by zone and zone-relative name. Both are required.
+- Each value names a Challenge Target by zone and zone-relative name. The name is required; the zone is optional.
+- Without a zone, the name is absolute (`_acme-challenge.example.org`), and the zone is taken from the token on each `/update`: the longest zone named in the token's Permissions that holds the name and allows `patch` on TXT there. Such an entry accepts any domain a token reaches. A token whose Permissions name no such zone (a `*` zones entry names none) is refused with 401 `forbidden`, without a call to the Provider.
 - The file is read and checked once, at startup.
 - **The map grants nothing.** A subdomain in the map is writable only with a token whose Permissions allow `patch` on TXT at its Challenge Target. The Gateway checks that on every write.
 - One map serves every token and every certificate domain sent to that ACME Endpoint. Run one ACME Endpoint for many clients.

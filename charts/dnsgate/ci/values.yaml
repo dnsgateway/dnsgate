@@ -17,6 +17,13 @@ dnsgate:
       -----END PRIVATE KEY-----
     bootstrap: "567e2d3c60859f54701a49b27134b93a"
 
+acme:
+  enabled: true
+
+  image:
+    pullPolicy: Always
+    tag: edge-arm64
+
 podAnnotations:
   cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
 

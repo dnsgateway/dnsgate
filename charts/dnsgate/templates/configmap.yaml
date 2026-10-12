@@ -13,3 +13,8 @@ data:
     bootstrapSecretFile: /etc/dnsgate-secrets/bootstrap-secret
     database:
       sqliteFile: /dnsgate/dnsgate.db
+  {{- if .Values.acme.enabled }}
+  acme-challenge.yaml: |
+    default:
+      name: _acme-challenge
+  {{- end }}

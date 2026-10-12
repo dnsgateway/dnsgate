@@ -53,6 +53,27 @@ func TestUpdateWritesACNAMEDelegatedTargetInAnotherZone(t *testing.T) {
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
 }
 
+// An entry without a zone names its target by absolute name; the zone
+// comes from the token's Permissions, so one entry serves any zone.
+func TestUpdateTakesTheZoneOfAnEntryWithoutOneFromTheToken(t *testing.T) {
+	e := newE2E(t)
+	d := e.acme(t, daemonConfig{Egress: "gateway", Map: `
+anycom:
+  name: _acme-challenge.example.com.
+anynet:
+  name: Challenge-123.ACME.example.net
+`})
+
+	d.wantUpdated(t, e.token(t, patchTXT("example.com", []string{"_acme-challenge"})), "anycom", challenge(1))
+	d.wantUpdated(t, e.token(t,
+		patchTXT("example.com", []string{"_acme-challenge"}),
+		patchTXT("example.net", []string{"challenge-123.acme"}),
+	), "anynet", challenge(2))
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com", `60 "`+challenge(1)+`"`)
+	e.wantTXT(t, zoneNetID, zoneNet, "challenge-123.acme.example.net", `60 "`+challenge(2)+`"`)
+}
+
 func TestUpdateWritesWithTheConfiguredTTL(t *testing.T) {
 	t.Run("flag", func(t *testing.T) {
 		e := newE2E(t)

@@ -181,6 +181,31 @@ func TestUpdateRefusesAWriteTheTokensPermissionsDoNotAllow(t *testing.T) {
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
 }
 
+// An entry without a zone is refused, never sent to the Gateway, when the
+// token's Permissions name no zone holding its name where they allow it.
+func TestUpdateRefusesAnEntryWithoutAZoneTheTokenDoesNotName(t *testing.T) {
+	e := newE2E(t)
+	d := e.acme(t, daemonConfig{Egress: "gateway", Map: "anycom:\n  name: _acme-challenge.example.com\n"})
+
+	for name, perm := range map[string]*dnsgatev1.Permission{
+		"another zone": patchTXT("example.net", []string{"_acme-challenge"}),
+		"another name": patchTXT("example.com", []string{"_acme-challenge.www"}),
+		"any zone":     patchTXT("*", []string{"_acme-challenge"}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			tok := e.token(t, perm)
+
+			d.wantReply(t, tok, updateBody("anycom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+		})
+	}
+
+	if logs := d.Logs.String(); !strings.Contains(logs, "name no zone") {
+		t.Errorf("the logs do not give the reason:\n%s", logs)
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
 func TestUpdateAnswersProviderErrorWhenTheProviderFails(t *testing.T) {
 	for name, err := range map[string]error{
 		"server error": &dnsprovider.APIError{StatusCode: http.StatusBadGateway},

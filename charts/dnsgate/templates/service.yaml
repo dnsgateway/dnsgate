@@ -4,6 +4,7 @@ metadata:
   name: {{ include "dnsgate.fullname" . }}
   labels:
     {{- include "dnsgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dnsgate
 spec:
   type: {{ .Values.service.type }}
   {{- with .Values.service.ipFamilies }}
@@ -18,3 +19,4 @@ spec:
       name: https
   selector:
     {{- include "gate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dnsgate
