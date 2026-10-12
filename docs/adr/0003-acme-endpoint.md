@@ -1,5 +1,7 @@
 # The ACME Endpoint is a separate binary that reads tokens and never cleans up
 
+Superseded by [ADR 0011](0011-acme-endpoint-is-a-gateway-client.md).
+
 To support existing ACME clients (acme.sh, lego, cert-manager, certbot, Caddy, Proxmox), we add an ACME Endpoint that speaks the acme-dns HTTPS API. It is a separate binary so it can scale on its own, but it does not forward requests to the Gateway. It holds the encryption private key and the signing public key, decrypts and authorizes Service Tokens itself, and calls the Provider directly. It does not hold the signing private key, so it can read tokens but never mint them. ACME needs no new kind of authority. Each acme-dns `/update` becomes a `patch` on a TXT record, authorized by the token's ordinary Permissions. A Challenge Map in the token picks the Challenge Target for each subdomain.
 
 ## Considered Options

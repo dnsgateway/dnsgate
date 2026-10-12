@@ -1,0 +1,333 @@
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
+	"github.com/dnsgateway/dnsprovider"
+	"github.com/dnsgateway/dnsprovider/providertest"
+
+	"github.com/dnsgateway/dnsgate/internal/server/servertest"
+)
+
+// The acme-dns error replies.
+const (
+	replyForbidden     = `{"error":"forbidden"}`
+	replyBadSubdomain  = `{"error":"bad_subdomain"}`
+	replyBadTXT        = `{"error":"bad_txt"}`
+	replyProviderError = `{"error":"provider_error"}`
+)
+
+// wantReply sends body with tok and checks that it answers exactly code
+// with the JSON reply want.
+func (d *acmeDaemon) wantReply(t *testing.T, tok acmeToken, body string, code int, want string) {
+	t.Helper()
+
+	gotCode, got := d.update(t, tok, body)
+	if gotCode != code || !jsonEqual(got, want) {
+		t.Errorf("POST /update %s = %d %s, want %d %s\nlogs:\n%s", body, gotCode, got, code, want, d.Logs)
+	}
+}
+
+// gatewayUntouched checks that what call does reaches neither the
+// Gateway, whose audit stream it leaves as it was, nor the Provider.
+func (e *e2e) gatewayUntouched(t *testing.T, call func()) {
+	t.Helper()
+
+	audit, providerCalls := len(e.Gateway.Audit.String()), len(e.Fake.Calls())
+
+	call()
+
+	if got := e.Gateway.Audit.String()[audit:]; got != "" {
+		t.Errorf("the Gateway was called:\n%s", got)
+	}
+
+	if got := e.Fake.Calls()[providerCalls:]; len(got) != 0 {
+		t.Errorf("the Provider was called: %v", got)
+	}
+}
+
+func TestUpdateRefusesASubdomainThatIsNotADNSLabel(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	for name, sub := range map[string]string{
+		"empty":           "",
+		"dot":             "example.com",
+		"underscore":      "_acme",
+		"leading hyphen":  "-examplecom",
+		"trailing hyphen": "examplecom-",
+		"64 characters":   strings.Repeat("a", 64),
+		"space":           "example com",
+		"non-ASCII":       "exämple",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e.gatewayUntouched(t, func() {
+				d.wantReply(t, tok, updateBody(sub, challenge(1)), http.StatusBadRequest, replyBadSubdomain)
+			})
+		})
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+func TestUpdateRefusesMalformedJSONAsForbidden(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	valid := updateBody("examplecom", challenge(1))
+
+	for name, body := range map[string]string{
+		"empty":            "",
+		"not JSON":         "subdomain=examplecom",
+		"truncated":        valid[:len(valid)-1],
+		"array":            "[" + valid + "]",
+		"number subdomain": `{"subdomain": 1, "txt": "` + challenge(1) + `"}`,
+		"trailing data":    valid + "{}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e.gatewayUntouched(t, func() {
+				d.wantReply(t, tok, body, http.StatusUnauthorized, replyForbidden)
+			})
+		})
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+func TestUpdateRefusesASubdomainNotInTheChallengeMap(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	e.gatewayUntouched(t, func() {
+		d.wantReply(t, tok, updateBody("unknown", challenge(1)), http.StatusUnauthorized, replyForbidden)
+	})
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+func TestUpdateRefusesARequestWithoutAToken(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	e.gatewayUntouched(t, func() {
+		d.wantReply(t, acmeToken{User: tok.User}, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+	})
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+func TestUpdateRefusesATokenTheGatewayDoesNotAccept(t *testing.T) {
+	e := newE2E(t)
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+	acmePerm := patchTXT("example.com", []string{"_acme-challenge"})
+
+	revoked := e.token(t, acmePerm)
+	if _, err := e.Client.RevokeToken(t.Context(), &dnsgatev1.RevokeTokenRequest{
+		Token:  e.Root,
+		Target: &dnsgatev1.RevokeTokenRequest_TokenId{TokenId: revoked.User},
+	}); err != nil {
+		t.Fatalf("RevokeToken: %v", err)
+	}
+
+	expired := e.tokenExpiring(t, time.Second, acmePerm)
+	time.Sleep(2 * time.Second)
+
+	for name, tok := range map[string]acmeToken{
+		"garbage": {Key: "not-a-token", User: "tok_01JACME"},
+		"revoked": revoked,
+		"expired": expired,
+	} {
+		t.Run(name, func(t *testing.T) {
+			d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+		})
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+func TestUpdateRefusesAWriteTheTokensPermissionsDoNotAllow(t *testing.T) {
+	e := newE2E(t)
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	onlyCreate := patchTXT("example.com", []string{"_acme-challenge"})
+	onlyCreate.Verbs = []string{"create", "update"}
+
+	onlyA := patchTXT("example.com", []string{"_acme-challenge"})
+	onlyA.Types = []string{"A"}
+
+	for name, perm := range map[string]*dnsgatev1.Permission{
+		"another zone": patchTXT("example.net", []string{"_acme-challenge"}),
+		"another name": patchTXT("example.com", []string{"_acme-challenge.www"}),
+		"another type": onlyA,
+		"no patch":     onlyCreate,
+		"agent egress": patchTXT("example.com", []string{"_acme-challenge"}, "agent"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			tok := e.token(t, perm)
+
+			d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+		})
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+func TestUpdateAnswersProviderErrorWhenTheProviderFails(t *testing.T) {
+	for name, err := range map[string]error{
+		"server error": &dnsprovider.APIError{StatusCode: http.StatusBadGateway},
+		// The Provider refusing the Provider Credential is not the
+		// caller's fault: the Gateway's PermissionDenied for it is still a
+		// provider error.
+		"credential refused": dnsprovider.ErrUnauthorized,
+		"rate limited":       dnsprovider.ErrRateLimited,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newE2E(t)
+			tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+			d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+			e.Fake.Fail(providertest.OpCreateRecord, err)
+
+			d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
+
+			e.Fake.Fail(providertest.OpCreateRecord, nil)
+			e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+		})
+	}
+}
+
+func TestUpdateAnswersProviderErrorWhenTheGatewayIsUnreachable(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway", Args: []string{"--gateway", servertest.FreePort(t)}})
+
+	d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
+}
+
+func TestUpdateAnswersProviderErrorWhenTheGatewayRefusesTheTTL(t *testing.T) {
+	fake := providertest.New().
+		AddZone(dnsprovider.Zone{ID: zoneComID, Name: zoneCom, State: dnsprovider.HostingActive})
+	fake.SetTTLRange(120, 86400)
+
+	e := newE2EWith(t, fake, dnsprovider.Registry{"cloudflare": fake.Factory()})
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway", Args: []string{"--ttl", "60"}})
+
+	d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
+
+	if logs := d.Logs.String(); !strings.Contains(logs, "--ttl") {
+		t.Errorf("the logs do not point at --ttl:\n%s", logs)
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+// updateLogs returns the log lines of the /updates in logs.
+func updateLogs(t *testing.T, logs string) []map[string]any {
+	t.Helper()
+
+	var out []map[string]any
+
+	for line := range strings.Lines(logs) {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("log line %q is not JSON: %v", line, err)
+		}
+
+		if entry["msg"] == "update" {
+			out = append(out, entry)
+		}
+	}
+
+	return out
+}
+
+func TestUpdateLogsEachRequestWithoutTheTokenOrTheTXTValue(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	refused := e.token(t, patchTXT("example.com", []string{"_acme-challenge.www"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	d.wantUpdated(t, tok, "examplecom", challenge(1))
+	d.wantReply(t, refused, updateBody("examplecom", challenge(2)), http.StatusUnauthorized, replyForbidden)
+
+	e.Fake.Fail(providertest.OpCreateRecord, dnsprovider.ErrUnauthorized)
+	d.wantReply(t, tok, updateBody("examplecom", challenge(3)), http.StatusInternalServerError, replyProviderError)
+
+	logs := d.Logs.String()
+
+	for name, secret := range map[string]string{
+		"token of the update added and of the provider failure": tok.Key,
+		"token of the update refused":                           refused.Key,
+		"TXT value of the update added":                         challenge(1),
+		"TXT value of the update refused":                       challenge(2),
+		"TXT value of the provider failure":                     challenge(3),
+	} {
+		if strings.Contains(logs, secret) {
+			t.Errorf("the logs hold the %s:\n%s", name, logs)
+		}
+	}
+
+	entries := updateLogs(t, logs)
+	if len(entries) != 3 {
+		t.Fatalf("logged %d updates, want 3:\n%s", len(entries), logs)
+	}
+
+	ids := map[any]bool{}
+
+	for i, result := range []string{"ok", "forbidden", "provider_error"} {
+		got := entries[i]
+		for field, want := range map[string]any{
+			"subdomain": "examplecom", "zone": "example.com", "name": "_acme-challenge", "result": result,
+		} {
+			if got[field] != want {
+				t.Errorf("update %d logged %s = %v, want %v", i, field, got[field], want)
+			}
+		}
+
+		if _, ok := got["duration_ms"].(float64); !ok {
+			t.Errorf("update %d logged no duration_ms: %v", i, got)
+		}
+
+		id, _ := got["request_id"].(string)
+		if !strings.HasPrefix(id, "req_") || ids[id] {
+			t.Errorf("update %d logged request_id %q, want a new req_ ID", i, id)
+		}
+
+		ids[id] = true
+	}
+}
+
+func TestUpdateRefusesATXTValueThatIsNotAChallengeValue(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	for name, txt := range map[string]string{
+		"empty":           "",
+		"42 characters":   challenge(1)[:42],
+		"44 characters":   challenge(1) + "A",
+		"base64 padding":  challenge(1)[:42] + "=",
+		"standard base64": challenge(1)[:41] + "+/",
+		"space":           challenge(1)[:42] + " ",
+		"quote":           challenge(1)[:42] + `"`,
+		"SPF record":      "v=spf1 include:_spf.example.com ~all",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e.gatewayUntouched(t, func() {
+				d.wantReply(t, tok, updateBody("examplecom", txt), http.StatusBadRequest, replyBadTXT)
+			})
+		})
+	}
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
