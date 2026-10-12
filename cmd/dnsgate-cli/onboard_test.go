@@ -213,3 +213,78 @@ func TestOnboardRefusesACAFileWithNoCertificate(t *testing.T) {
 		t.Errorf("onboard error = %v, want one naming %s", err, empty)
 	}
 }
+
+func TestOnboardTakesEveryProviderFieldFromFlagsAndEnv(t *testing.T) {
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config, provider.Registry())
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_APPLICATION_KEY", "ovh-app-key")
+	t.Setenv("DNSGATE_PROVIDER_CONSUMER_KEY", "ovh-consumer-key")
+
+	out, err := runClient(t, env, gw, "onboard", "--provider", "ovhcloud",
+		"--provider-field", "application_secret=ovh-app-secret", "--provider-field", "endpoint=ovh-eu")
+	if err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+
+	root := strings.TrimSpace(out)
+
+	out, err = runClient(t, env, gw, "token", "inspect", "--token", root)
+	if err != nil {
+		t.Fatalf("token inspect: %v", err)
+	}
+
+	if !strings.Contains(out, `"provider": "ovhcloud"`) && !strings.Contains(out, `"provider":"ovhcloud"`) {
+		t.Errorf("inspected token is not for ovhcloud:\n%s", out)
+	}
+
+	for _, secret := range []string{"ovh-app-key", "ovh-app-secret", "ovh-consumer-key"} {
+		if strings.Contains(out, secret) || strings.Contains(gw.Logs.String(), secret) || strings.Contains(gw.Audit.String(), secret) {
+			t.Errorf("output shows the secret %q", secret)
+		}
+	}
+}
+
+func TestOnboardRefusesBadProviderFields(t *testing.T) {
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config, provider.Registry())
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"unsupported provider":   {[]string{"--provider", "route53", "--provider-credential", "x"}, "unsupported provider"},
+		"unknown field":          {[]string{"--provider", "godaddy", "--provider-field", "kye=k"}, "takes no field kye"},
+		"malformed field":        {[]string{"--provider", "godaddy", "--provider-field", "key"}, "NAME=VALUE"},
+		"no field":               {[]string{"--provider", "vultr"}, "no Provider Credential"},
+		"credential, two secret": {[]string{"--provider", "godaddy", "--provider-credential", "x"}, "several secret fields"},
+		"missing required field": {[]string{"--provider", "godaddy", "--provider-field", "key=k"}, "refuses the credential"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := runClient(t, env, gw, append([]string{"onboard"}, tc.args...)...)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("onboard error = %v, want one containing %q", err, tc.want)
+			}
+
+			if out != "" {
+				t.Errorf("onboard printed %q, want nothing", out)
+			}
+		})
+	}
+}
+
+func TestOnboardProviderFieldWinsOverTheCredential(t *testing.T) {
+	env := servertest.NewEnv(t)
+	gw := startServer(t, env.Config, provider.Registry())
+
+	t.Setenv("DNSGATE_BOOTSTRAP_SECRET", testBootstrapSecret)
+	t.Setenv("DNSGATE_PROVIDER_CREDENTIAL", testCFToken)
+
+	if _, err := runClient(t, env, gw, "onboard", "--provider", "scaleway",
+		"--provider-field", "secret_key=SCWXXXXXXXXXXXXXXXXX", "--provider-field", "project_id=11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+}

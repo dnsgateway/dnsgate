@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,20 +52,25 @@ func (e *e2e) gatewayUntouched(t *testing.T, call func()) {
 	}
 }
 
-func TestUpdateRefusesASubdomainThatIsNotADNSLabel(t *testing.T) {
+func TestUpdateRefusesASubdomainThatIsNotADNSLabelOrDomain(t *testing.T) {
 	e := newE2E(t)
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
 	d := e.acme(t, daemonConfig{Egress: "gateway"})
 
 	for name, sub := range map[string]string{
-		"empty":           "",
-		"dot":             "example.com",
-		"underscore":      "_acme",
-		"leading hyphen":  "-examplecom",
-		"trailing hyphen": "examplecom-",
-		"64 characters":   strings.Repeat("a", 64),
-		"space":           "example com",
-		"non-ASCII":       "exämple",
+		"empty":            "",
+		"underscore":       "_acme",
+		"empty label":      "example..com",
+		"only a dot":       ".",
+		"star alone":       "*.",
+		"star inside":      "www.*.example.com",
+		"underscore label": "www._acme.example.com",
+		"255 characters":   strings.Repeat("a.", 127) + "a",
+		"leading hyphen":   "-examplecom",
+		"trailing hyphen":  "examplecom-",
+		"64 characters":    strings.Repeat("a", 64),
+		"space":            "example com",
+		"non-ASCII":        "exämple",
 	} {
 		t.Run(name, func(t *testing.T) {
 			e.gatewayUntouched(t, func() {
@@ -101,16 +107,17 @@ func TestUpdateRefusesMalformedJSONAsForbidden(t *testing.T) {
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
 }
 
-func TestUpdateRefusesASubdomainNotInTheChallengeMap(t *testing.T) {
+// A domain not in the Challenge Map is refused when no zone of the token
+// holds its Challenge Target, and nothing is written.
+func TestUpdateRefusesAnUnmappedDomainInNoZoneOfTheToken(t *testing.T) {
 	e := newE2E(t)
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
 	d := e.acme(t, daemonConfig{Egress: "gateway"})
 
-	e.gatewayUntouched(t, func() {
-		d.wantReply(t, tok, updateBody("unknown", challenge(1)), http.StatusUnauthorized, replyForbidden)
-	})
+	d.wantReply(t, tok, updateBody("example.net", challenge(1)), http.StatusUnauthorized, replyForbidden)
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+	e.wantTXT(t, zoneNetID, zoneNet, "_acme-challenge.example.net")
 }
 
 func TestUpdateRefusesARequestWithoutAToken(t *testing.T) {
@@ -355,4 +362,37 @@ func TestUpdateRefusesATXTValueThatIsNotAChallengeValue(t *testing.T) {
 	}
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+// At the debug level each update also logs its request headers, with the
+// Service Token in X-Api-Key replaced by its length.
+func TestUpdateLogsTheHeadersWithoutTheTokenAtDebugLevel(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway", Args: []string{"--log-level", "debug"}})
+
+	d.wantUpdated(t, tok, "examplecom", challenge(1))
+
+	logs := d.Logs.String()
+	if strings.Contains(logs, tok.Key) {
+		t.Errorf("the logs hold the token:\n%s", logs)
+	}
+
+	for _, want := range []string{`"msg":"update headers"`, tok.User, `[redacted, ` + strconv.Itoa(len(tok.Key)) + ` bytes]`} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("the logs lack %s:\n%s", want, logs)
+		}
+	}
+}
+
+func TestUpdateLogsNoHeadersAtInfoLevel(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	d.wantUpdated(t, tok, "examplecom", challenge(1))
+
+	if logs := d.Logs.String(); strings.Contains(logs, "update headers") {
+		t.Errorf("the headers are logged at info level:\n%s", logs)
+	}
 }

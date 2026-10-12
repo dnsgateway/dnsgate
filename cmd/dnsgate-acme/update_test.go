@@ -74,6 +74,40 @@ anynet:
 	e.wantTXT(t, zoneNetID, zoneNet, "challenge-123.acme.example.net", `60 "`+challenge(2)+`"`)
 }
 
+// An entry without a zone may name its target relative to the zone the
+// token allows, so one entry serves every token with a single zone.
+func TestUpdateTakesTheZoneOfARelativeNameFromTheToken(t *testing.T) {
+	e := newE2E(t)
+	d := e.acme(t, daemonConfig{Egress: "gateway", Map: `
+default:
+  name: _acme-challenge
+`})
+
+	d.wantUpdated(t, e.token(t, patchTXT("example.com", []string{"_acme-challenge"})), "default", challenge(1))
+	d.wantUpdated(t, e.token(t, patchTXT("example.net", []string{"_acme-challenge"})), "default", challenge(2))
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com", `60 "`+challenge(1)+`"`)
+	e.wantTXT(t, zoneNetID, zoneNet, "_acme-challenge.example.net", `60 "`+challenge(2)+`"`)
+}
+
+// A subdomain not in the Challenge Map is taken as the certificate
+// domain: the target is _acme-challenge in front of it, in the zone of the
+// token that holds it. A single label names _acme-challenge in the one
+// zone the token allows.
+func TestUpdateTakesAnUnmappedSubdomainAsTheCertificateDomain(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge", "_acme-challenge.**"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	d.wantUpdated(t, tok, "www.example.com", challenge(1))
+	d.wantUpdated(t, tok, "*.Example.com.", challenge(2))
+	d.wantUpdated(t, tok, "unknown", challenge(3))
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.www.example.com", `60 "`+challenge(1)+`"`)
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com",
+		`60 "`+challenge(2)+`"`, `60 "`+challenge(3)+`"`)
+}
+
 func TestUpdateWritesWithTheConfiguredTTL(t *testing.T) {
 	t.Run("flag", func(t *testing.T) {
 		e := newE2E(t)

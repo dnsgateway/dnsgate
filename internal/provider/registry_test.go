@@ -5,46 +5,40 @@ import (
 	"testing"
 
 	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsgate/internal/provider/catalog"
 )
 
-func TestRegistryOffersCloudflareOnly(t *testing.T) {
-	types := provider.Registry().Types()
-
-	if want := []string{provider.Cloudflare}; !slices.Equal(types, want) {
-		t.Errorf("Registry offers %v, want %v", types, want)
-	}
-
-	if names := provider.Names(); !slices.Equal(types, names) {
+func TestRegistryOffersEveryCatalogProvider(t *testing.T) {
+	if types, names := provider.Registry().Types(), provider.Names(); !slices.Equal(types, names) {
 		t.Errorf("Registry offers %v, but Names() = %v", types, names)
 	}
+}
 
-	for _, absent := range []string{"godaddy", "namecheap"} {
-		if slices.Contains(types, absent) {
-			t.Errorf("Registry offers %q, want it left out", absent)
+func TestCatalogFieldsMatchTheFactories(t *testing.T) {
+	for name, f := range provider.Registry() {
+		fs, _ := catalog.Fields(name)
+
+		if len(fs) != len(f.Fields) {
+			t.Errorf("%s: catalog fields %+v, Factory fields %+v", name, fs, f.Fields)
+
+			continue
+		}
+
+		for i, want := range f.Fields {
+			if got := fs[i]; got.Name != want.Name || got.Label != want.Label || got.Secret != want.Secret {
+				t.Errorf("%s: catalog field %+v, Factory field %+v", name, got, want)
+			}
 		}
 	}
 }
 
-func TestEveryProviderHasACredentialType(t *testing.T) {
-	for _, name := range provider.Names() {
-		if _, ok := provider.CredentialType(name); !ok {
-			t.Errorf("Provider %q has no credential type", name)
-		}
+func TestCloudflareBuildsFromALegacyAPIToken(t *testing.T) {
+	fields, err := provider.CredentialFields(provider.Cloudflare, catalog.TypeAPIToken, "credential")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if got, _ := provider.CredentialType(provider.Cloudflare); got != "api-token" {
-		t.Errorf("Cloudflare credential type = %q, want api-token", got)
-	}
-
-	if _, ok := provider.CredentialType("godaddy"); ok {
-		t.Error("an unsupported Provider has a credential type")
-	}
-}
-
-func TestEveryProviderBuildsFromItsCredentialFields(t *testing.T) {
-	for _, name := range provider.Names() {
-		if _, err := provider.Registry().New(name, provider.CredentialFields(name, "credential")); err != nil {
-			t.Errorf("Provider %q does not build from its credential fields: %v", name, err)
-		}
+	if _, err := provider.Registry().New(provider.Cloudflare, fields); err != nil {
+		t.Errorf("Cloudflare does not build from an api-token credential: %v", err)
 	}
 }

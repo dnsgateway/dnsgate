@@ -134,6 +134,10 @@ _Avoid_: batch, transaction, diff, patch
 The TXT record name where an ACME DNS-01 challenge value is written.
 _Avoid_: update target, validation name, challenge record
 
+**Certificate Domain**:
+The domain an ACME client asks a certificate for.
+_Avoid_: cert name, issued domain
+
 **Challenge Map**:
 The mapping, in the ACME Endpoint's configuration, from acme-dns subdomain to Challenge Target. It grants nothing on its own: a write to a Challenge Target succeeds only if the token's Permissions cover it.
 _Avoid_: ACME accounts, subdomain list

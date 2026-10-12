@@ -744,9 +744,13 @@ func TestAProviderThatCannotBeBuiltIsLoggedWithoutItsError(t *testing.T) {
 	// A Provider's build error may quote what it was built from.
 	h.fake.Fail(providertest.OpNew, fmt.Errorf("%s: credential %q rejected", rawProviderMessage, cfToken))
 
-	root := h.onboard(t, onboardRequest())
+	// Onboarding refuses a credential that does not build, so the token is
+	// minted as one onboarded before the Provider started refusing it.
+	tok := h.mint(t, nil, token.Permission{
+		Verbs: []string{"list"}, Resources: []string{"zones"}, Zones: []string{"*"}, Egress: []string{"gateway"},
+	})
 
-	_, err := h.client.ListZones(t.Context(), &dnsgatev1.ListZonesRequest{Token: root})
+	_, err := h.client.ListZones(t.Context(), &dnsgatev1.ListZonesRequest{Token: tok})
 	wantError(t, err, codes.Internal, dnsgatev1.Error_CATEGORY_INTERNAL)
 
 	logs := h.logs.String()

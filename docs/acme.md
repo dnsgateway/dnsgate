@@ -86,15 +86,22 @@ delegated:
   name: challenge-123.acme
 anyzone:
   name: _acme-challenge.example.org
+tokenzone:
+  name: _acme-challenge
 ```
 
 ## Rules
 
 - Each key is an acme-dns **subdomain**: a single DNS label (`[A-Za-z0-9-]`, at most 63 characters, not starting or ending with `-`).
 - Each value names a Challenge Target by zone and zone-relative name. The name is required; the zone is optional.
-- Without a zone, the name is absolute (`_acme-challenge.example.org`), and the zone is taken from the token on each `/update`: the longest zone named in the token's Permissions that holds the name and allows `patch` on TXT there. Such an entry accepts any domain a token reaches. A token whose Permissions name no such zone (a `*` zones entry names none) is refused with 401 `forbidden`, without a call to the Provider.
+- Without a zone, the zone is taken from the token on each `/update`, so such an entry accepts any domain a token reaches:
+  - as an absolute name (`_acme-challenge.example.org`), the longest zone named in the token's Permissions that holds the name and allows `patch` on TXT there;
+  - failing that, if the name is a single label (`_acme-challenge`), as a name in any zone: the one zone named in the token's Permissions that allows `patch` on TXT at that name. A token whose Permissions allow it in more than one zone is refused, since the request does not say which. A name with a dot is always absolute, so it never lands in a zone that does not hold it.
+
+  A token whose Permissions name no such zone (a `*` zones entry names none) is refused with 401 `forbidden`, without a call to the Provider. The name cannot be `@`.
 - The file is read and checked once, at startup.
-- **The map grants nothing.** A subdomain in the map is writable only with a token whose Permissions allow `patch` on TXT at its Challenge Target. The Gateway checks that on every write.
+- A **subdomain not in the map** is taken as the Certificate Domain, so a client may send the domain itself (`www.example.com`, `*.example.com`) as its subdomain ([ADR 0012](adr/0012-unmapped-subdomain-is-the-certificate-domain.md)). Its Challenge Target is `_acme-challenge` in front of the domain, without a zone, resolved as above: the longest zone of the token that holds it. Case, a trailing dot, and a leading `*.` or `_acme-challenge` label are ignored. An unmapped single label names `_acme-challenge` in the one zone the token allows. Grant such tokens `names: ["_acme-challenge", "_acme-challenge.**"]` to cover subdomains of the zone.
+- **The map grants nothing, and does not limit the targets.** A subdomain, in the map or not, is writable only with a token whose Permissions allow `patch` on TXT at its Challenge Target. The Gateway checks that on every write, so the token's Permissions, not the map, are what bound an ACME token.
 - One map serves every token and every certificate domain sent to that ACME Endpoint. Run one ACME Endpoint for many clients.
 
 ## Direct and delegated challenges
@@ -167,7 +174,7 @@ Content-Type: application/json
 
 - **`X-Api-Key`** carries the full Service Token. Clients don't limit its length (checked in acme.sh, lego/goacmedns, cert-manager, certbot-dns-acmedns, Caddy and Proxmox).
 - **`X-Api-User`** must equal the token's `jti`. A mismatch returns 401.
-- **`subdomain`** must be a key in the Challenge Map.
+- **`subdomain`** is a single DNS label or a domain name. A key in the Challenge Map names its Challenge Target; anything else is taken as the Certificate Domain.
 - **`txt`** must be exactly 43 characters of `[A-Za-z0-9_-]` (unpadded base64url of a SHA-256 digest). Anything else is rejected, so an ACME token sent through the ACME Endpoint can't write arbitrary TXT values.
 
 The request body is capped at a few KiB.
@@ -178,9 +185,9 @@ First, checks done locally, before any Gateway call:
 
 ```text
 parse the JSON body                         → 401 forbidden if malformed
-subdomain is a valid DNS label?             → 400 bad_subdomain
+subdomain a DNS label or a domain name?     → 400 bad_subdomain
 txt is 43 chars of [A-Za-z0-9_-]?           → 400 bad_txt
-Challenge Map[subdomain] → Challenge Target → 401 forbidden if absent
+Challenge Map[subdomain] → Challenge Target, else _acme-challenge.<subdomain>
 X-Api-Key present?                          → 401 forbidden if empty
 ```
 
@@ -226,8 +233,8 @@ Clients depend on these exact status codes and bodies:
 | Case | Status | Body |
 |---|---|---|
 | Success, including a value that already exists | **200** (exactly; certbot and Caddy require it) | `{"txt": "<value>"}`. acme.sh looks for the value in the body. |
-| Any authentication or authorization failure: missing, bad, expired or revoked token, `X-Api-User` mismatch, subdomain not in the map, Permission missing, egress not allowed, Bound Token, malformed JSON | 401 | `{"error": "forbidden"}` |
-| `subdomain` is not a valid DNS label | 400 | `{"error": "bad_subdomain"}` |
+| Any authentication or authorization failure: missing, bad, expired or revoked token, `X-Api-User` mismatch, no zone of the token for the Challenge Target, Permission missing, egress not allowed, Bound Token, malformed JSON | 401 | `{"error": "forbidden"}` |
+| `subdomain` is neither a DNS label nor a domain name | 400 | `{"error": "bad_subdomain"}` |
 | `txt` has the wrong shape | 400 | `{"error": "bad_txt"}` |
 | Provider failure, including the Provider refusing the Provider Credential (a permission denied that is not a 401), TTL refused, Gateway unreachable | 500 | `{"error": "provider_error"}` (details go to the log only) |
 
@@ -283,7 +290,7 @@ The account fields map the same way for every client:
 ```text
 username   = token jti
 password   = Service Token
-subdomain  = a key in the ACME Endpoint's Challenge Map
+subdomain  = a key in the ACME Endpoint's Challenge Map, or the Certificate Domain
 fulldomain = the Challenge Target (used by the client only to print the CNAME to create)
 ```
 
@@ -293,7 +300,7 @@ fulldomain = the Challenge Target (used by the client only to print the CNAME to
 
 - **An ACME token presented straight to the Gateway skips the TXT shape check.** The 43-character check runs only in the ACME Endpoint. Anyone holding an ACME token can call `PatchRecord` on the Gateway directly and add any TXT value its Permissions allow, such as an SPF record or a domain verification string. Keep ACME tokens narrow: `patch` on TXT at the Challenge Targets only, no `tokens` resource, and a mandatory expiry.
 - **Expect ACME tokens to leak into logs.** Some clients print `X-Api-Key` when an update fails.
-- **The certificate domain is never sent** by any client, only the subdomain and the value. Authorization is therefore by Challenge Target, and the certificate domain cannot be checked on the server.
+- **The certificate domain is not sent as such**, only the subdomain and the value. A client may put the domain in the subdomain field, and the ACME Endpoint then writes at `_acme-challenge` in front of it, but nothing proves that is the domain of the certificate being issued. Authorization is therefore by Challenge Target only.
 - **Checking the value's shape** stops the token, when used through the ACME Endpoint, from writing arbitrary TXT values. It doesn't prove the caller holds a real ACME authorization.
 - **The ACME Endpoint holds no keys.** Compromising it exposes the tokens presented to it while compromised, and lets it rewrite the Challenge Map, but not the Gateway's keys, so it cannot open or mint tokens, and the Gateway still limits every write by the token's Permissions.
 
@@ -301,7 +308,9 @@ fulldomain = the Challenge Target (used by the client only to print the CNAME to
 
 # Logging
 
-The ACME Endpoint logs each `/update` (successful or refused) as a structured event, `"msg": "update"`, with `request_id` (`req_` and a ULID), `subdomain`, the Challenge Target (`zone` and `name`), `result` (`ok` or the error, such as `forbidden`), `duration_ms`, and for a refusal or failure a `reason` and the Gateway's `error`. Successes and refusals are logged at info, failures (500) at error. A subdomain that isn't a valid DNS label is left out, since it may hold anything.
+The ACME Endpoint logs each `/update` (successful or refused) as a structured event, `"msg": "update"`, with `request_id` (`req_` and a ULID), `subdomain`, the Challenge Target (`zone` and `name`), `result` (`ok` or the error, such as `forbidden`), `duration_ms`, and for a refusal or failure a `reason` and the Gateway's `error`. Successes and refusals are logged at info, failures (500) at error. A subdomain that is neither a DNS label nor a domain name is left out, since it may hold anything.
+
+At the `debug` log level, each `/update` also logs its request headers, `"msg": "update headers"`, with the same `request_id`. The values of `X-Api-Key`, `Authorization`, `Proxy-Authorization` and `Cookie` are replaced by their length.
 
 Never logged: the Service Token, `X-Api-Key`, the TXT value.
 

@@ -29,7 +29,7 @@ func TestDaemonRefusesAChallengeMapWithAnInvalidEntry(t *testing.T) {
 		},
 		"no zone and the apex": {
 			content: "examplecom:\n  name: \"@\"\n",
-			want:    []string{`"examplecom"`, "absolute"},
+			want:    []string{`"examplecom"`, `"@"`},
 		},
 		"no name": {
 			content: "examplecom:\n  zone: example.com\n",

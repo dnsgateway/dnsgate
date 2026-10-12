@@ -164,8 +164,13 @@ func (g *Gateway) connect(c *dnsCall) error {
 
 	name := c.claims.Provider
 
-	p, err := g.providers.New(name, provider.CredentialFields(name, c.claims.Credential.Value.Reveal()),
-		dnsprovider.WithHTTPClient(&http.Client{Transport: transport}))
+	fields, err := provider.CredentialFields(name, c.claims.Credential.Type, c.claims.Credential.Value.Reveal())
+
+	var p dnsprovider.Provider
+	if err == nil {
+		p, err = g.providers.New(name, fields, dnsprovider.WithHTTPClient(&http.Client{Transport: transport}))
+	}
+
 	if err != nil {
 		reason := "provider_rejected_credential"
 		if _, ok := g.providers[name]; !ok {

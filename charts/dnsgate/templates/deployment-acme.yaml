@@ -56,8 +56,9 @@ spec:
           args:
             - --listen=:8080
             - --ca-file=/var/run/certs/tls.crt
-            - --gateway={{ include "dnsgate.fullname" . }}.svc.{{ .Release.Namespace }}
+            - --gateway={{ include "dnsgate.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
             - --challenge-map=/etc/dnsgate-acme/acme-challenge.yaml
+            - --ttl=600
             - --log-level=debug
           {{- with .Values.args }}
             {{- . | toYaml | nindent 12 }}

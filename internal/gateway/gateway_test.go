@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -248,6 +249,36 @@ func onboardRequest() *dnsgatev1.OnboardRequest {
 		BootstrapSecret: bootstrapSecret,
 		Provider:        "cloudflare",
 		Credential:      &dnsgatev1.Credential{Type: "api-token", Value: cfToken},
+	}
+}
+
+// fieldsCredential is a fields Provider Credential of value.
+func fieldsCredential(value string) *dnsgatev1.Credential {
+	return &dnsgatev1.Credential{Type: "fields", Value: value}
+}
+
+func TestOnboardTakesFields(t *testing.T) {
+	h := newHarness(t)
+
+	req := onboardRequest()
+	req.Credential = fieldsCredential(`{"token":"` + cfToken + `"}`)
+
+	if root := h.onboard(t, req); root == "" {
+		t.Fatal("Onboard returned no Root Token")
+	}
+}
+
+func TestOnboardRefusesACredentialTheProviderDoesNotBuildFrom(t *testing.T) {
+	h := newHarness(t)
+
+	// A Provider's build error may quote what it was built from.
+	h.fake.Fail(providertest.OpNew, fmt.Errorf("credential %q rejected", cfToken))
+
+	_, err := h.client.Onboard(t.Context(), onboardRequest())
+	wantError(t, err, codes.InvalidArgument, dnsgatev1.Error_CATEGORY_INVALID_REQUEST)
+
+	if strings.Contains(err.Error(), cfToken) {
+		t.Errorf("error quotes the credential: %v", err)
 	}
 }
 
@@ -627,6 +658,9 @@ func TestOnboardRejectsUnsupportedProviderOrCredential(t *testing.T) {
 		"unknown credential type": func(r *dnsgatev1.OnboardRequest) { r.Credential.Type = "global-api-key" },
 		"empty credential":        func(r *dnsgatev1.OnboardRequest) { r.Credential.Value = "" },
 		"missing credential":      func(r *dnsgatev1.OnboardRequest) { r.Credential = nil },
+		"fields not an object":    func(r *dnsgatev1.OnboardRequest) { r.Credential = fieldsCredential(cfToken) },
+		"unknown field":           func(r *dnsgatev1.OnboardRequest) { r.Credential = fieldsCredential(`{"tokn":"x"}`) },
+		"no field set":            func(r *dnsgatev1.OnboardRequest) { r.Credential = fieldsCredential(`{"token":""}`) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t)

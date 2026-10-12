@@ -430,7 +430,7 @@ Never logged: the Provider Credential, the Service Token itself, Identity Tokens
 The CLI comes as two binaries, both built by `make build`. `dnsgate` runs the Gateway and manages its keys: `dnsgate server`, `dnsgate keys generate` and `dnsgate version`. `dnsgate-cli` holds every command that calls the Gateway:
 
 ```text
-dnsgate-cli onboard --provider cloudflare [--expires DURATION]   # needs the bootstrap secret → Root Token
+dnsgate-cli onboard --provider NAME [--provider-field NAME=VALUE ...] [--expires DURATION]   # needs the bootstrap secret → Root Token
 dnsgate-cli token create --sub NAME --permissions FILE [--expires DURATION] [--bind-k8s|--bind-github|--bind-gitlab ...]   # binding: v2, see oidc.md
 dnsgate-cli token revoke TOKEN_ID|TOKEN|-                         # a token, or - for stdin, lets the entry be purged at its exp
 dnsgate-cli token reseal TOKEN

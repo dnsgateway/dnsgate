@@ -21,6 +21,7 @@ const (
 	flagToken           = "token"
 	flagBootstrapSecret = "bootstrap-secret"
 	flagCredential      = "provider-credential"
+	flagProviderField   = "provider-field"
 	flagProvider        = "provider"
 	flagExpires         = "expires"
 	flagZone            = "zone"
@@ -37,8 +38,11 @@ const (
 	envToken           = "DNSGATE_TOKEN"
 	envBootstrapSecret = "DNSGATE_BOOTSTRAP_SECRET"
 	envCredential      = "DNSGATE_PROVIDER_CREDENTIAL"
-	envZone            = "DNSGATE_ZONE"
-	envEgress          = gatewayconn.EnvEgress
+	// envProviderFieldPrefix, followed by a Provider field name in upper
+	// case, such as DNSGATE_PROVIDER_API_KEY, sets that field.
+	envProviderFieldPrefix = "DNSGATE_PROVIDER_"
+	envZone                = "DNSGATE_ZONE"
+	envEgress              = gatewayconn.EnvEgress
 )
 
 const defaultGateway = gatewayconn.DefaultGateway
@@ -57,6 +61,7 @@ type Flags struct {
 
 	BootstrapSecret string
 	Credential      string
+	ProviderFields  []string
 	Provider        string
 	Expires         time.Duration
 
@@ -225,7 +230,9 @@ func (f *Flags) AddOnboardFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Provider, flagProvider, "", f.Provider,
 		"Provider the credential authenticates to: "+strings.Join(catalog.Names(), ", "))
 	flags.StringVarP(&f.Credential, flagCredential, "", f.Credential,
-		"Provider Credential, such as a Cloudflare API token (env "+envCredential+secretHelp+")")
+		"Provider Credential of a Provider with one secret field, such as a Cloudflare API token (env "+envCredential+secretHelp+")")
+	flags.StringArrayVarP(&f.ProviderFields, flagProviderField, "", f.ProviderFields,
+		"Provider field NAME=VALUE, see the command help; repeat it to set several (env "+envProviderFieldPrefix+"<NAME>"+secretHelp+")")
 	flags.StringVarP(&f.BootstrapSecret, flagBootstrapSecret, "", f.BootstrapSecret,
 		"bootstrap secret configured on the Gateway (env "+envBootstrapSecret+secretHelp+")")
 	flags.DurationVarP(&f.Expires, flagExpires, "", f.Expires,

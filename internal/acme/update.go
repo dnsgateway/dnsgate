@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
@@ -55,10 +56,9 @@ var (
 // part of the log format, so they stay stable.
 const (
 	reasonMalformedJSON      = "malformed JSON"
-	reasonUnmappedSubdomain  = "subdomain not in the Challenge Map"
 	reasonNoAPIKey           = "no X-Api-Key"
 	reasonAPIUserMismatch    = "X-Api-User is not the token's jti"
-	reasonNoZone             = "the token's Permissions name no zone holding the name"
+	reasonNoZone             = "the token's Permissions name no zone, or more than one, for the name"
 	reasonTokenRefused       = "the Gateway refused the token"
 	reasonPermissionRefused  = "the Gateway refused the Permission or the Egress"
 	reasonConfigurationError = "configuration error: the Gateway refused the request; check --ttl against the Provider's TTL range"
@@ -93,6 +93,11 @@ func (u *updater) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	id := requestIDPrefix + ulid.Make().String()
 
+	if u.log.Enabled(r.Context(), slog.LevelDebug) {
+		u.log.LogAttrs(r.Context(), slog.LevelDebug, "update headers",
+			slog.String("request_id", id), slog.Any("headers", redactedHeaders(r.Header)))
+	}
+
 	var o outcome
 
 	rep := u.update(r, &o)
@@ -102,6 +107,25 @@ func (u *updater) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(rep.body)
 
 	u.logUpdate(r.Context(), id, rep, o, time.Since(start))
+}
+
+// secretHeaders are the request headers that may carry a secret: the
+// Service Token in X-Api-Key, and the usual credentials a proxy or client
+// may add.
+var secretHeaders = []string{"X-Api-Key", "Authorization", "Proxy-Authorization", "Cookie"}
+
+// redactedHeaders returns a copy of h with the value of each of
+// secretHeaders replaced by its length.
+func redactedHeaders(h http.Header) http.Header {
+	c := h.Clone()
+
+	for _, k := range secretHeaders {
+		for i, v := range c[k] {
+			c[k][i] = "[redacted, " + strconv.Itoa(len(v)) + " bytes]"
+		}
+	}
+
+	return c
 }
 
 // logUpdate logs the /update with request ID id, its reply rep and
@@ -148,9 +172,16 @@ func (u *updater) update(r *http.Request, o *outcome) reply {
 		return forbidden
 	}
 
-	// An invalid subdomain is left out of the log: it may be anything,
-	// a secret pasted in the wrong field included.
-	if !isLabel(req.Subdomain) {
+	// A subdomain not in the Challenge Map is taken as the certificate
+	// domain. One that is neither a DNS label nor a domain name is left out
+	// of the log: it may be anything, a secret pasted in the wrong field
+	// included.
+	target, ok := u.targets[req.Subdomain]
+	if !ok {
+		target, ok = domainTarget(req.Subdomain)
+	}
+
+	if !ok {
 		return badSubdomain
 	}
 
@@ -158,13 +189,6 @@ func (u *updater) update(r *http.Request, o *outcome) reply {
 
 	if !isChallengeValue(req.TXT) {
 		return badTXT
-	}
-
-	target, ok := u.targets[req.Subdomain]
-	if !ok {
-		o.reason = reasonUnmappedSubdomain
-
-		return forbidden
 	}
 
 	o.target = target

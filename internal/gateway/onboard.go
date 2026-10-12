@@ -8,6 +8,7 @@ import (
 
 	"github.com/dnsgateway/dnsgate/internal/audit"
 	"github.com/dnsgateway/dnsgate/internal/provider"
+	"github.com/dnsgateway/dnsgate/internal/provider/catalog"
 	"github.com/dnsgateway/dnsgate/internal/token"
 )
 
@@ -33,7 +34,7 @@ func (g *Gateway) onboard(r *request, req *dnsgatev1.OnboardRequest) (*dnsgatev1
 		return nil, g.deny(r, audit.Event{Event: audit.EventOnboard}, unauthenticated("wrong or missing bootstrap secret"))
 	}
 
-	if err := checkOnboardRequest(req); err != nil {
+	if err := g.checkOnboardRequest(req); err != nil {
 		return nil, g.deny(r, audit.Event{Event: audit.EventOnboard}, err)
 	}
 
@@ -80,20 +81,32 @@ func (g *Gateway) onboard(r *request, req *dnsgatev1.OnboardRequest) (*dnsgatev1
 	}}, nil
 }
 
-// checkOnboardRequest checks that req names a supported Provider and
-// credential type and a usable expiry.
-func checkOnboardRequest(req *dnsgatev1.OnboardRequest) error {
-	credType, ok := provider.CredentialType(req.GetProvider())
+// checkOnboardRequest checks that req names a supported Provider, a
+// Provider Credential of a type it takes that builds it, and a usable
+// expiry. Building it makes no network call. The Provider's error is not
+// passed on: it may quote the credential.
+func (g *Gateway) checkOnboardRequest(req *dnsgatev1.OnboardRequest) error {
+	name, cred := req.GetProvider(), req.GetCredential()
+	_, known := g.providers[name]
 
 	switch {
-	case !ok:
+	case !known:
 		return invalidRequest("unsupported provider")
-	case req.GetCredential().GetType() != credType:
+	case !catalog.Accepts(name, cred.GetType()):
 		return invalidRequest("unsupported credential type for the provider")
-	case req.GetCredential().GetValue() == "":
+	case cred.GetValue() == "":
 		return invalidRequest("missing credential")
 	case req.Expires != nil && req.GetExpires().AsDuration() < time.Second:
 		return invalidRequest("expires must be at least one second")
+	}
+
+	fields, err := provider.CredentialFields(name, cred.GetType(), cred.GetValue())
+	if err != nil {
+		return invalidRequest("malformed credential: " + err.Error())
+	}
+
+	if _, err := g.providers.New(name, fields); err != nil {
+		return invalidRequest("the provider refuses the credential: a required field is missing or malformed")
 	}
 
 	return nil
