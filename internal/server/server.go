@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
@@ -50,6 +51,10 @@ type Options struct {
 	Log io.Writer
 	// Providers are the Providers the Gateway calls.
 	Providers dnsprovider.Registry
+	// ProviderRootCAs are the CA certificates the Gateway verifies a
+	// Provider's certificate against, through either Egress; nil means
+	// the system's. Tests set it to trust a fake Provider API.
+	ProviderRootCAs *x509.CertPool
 	// PurgeInterval is how often the entries of revoked tokens that have
 	// expired are purged; zero means DefaultPurgeInterval.
 	PurgeInterval time.Duration
@@ -115,6 +120,7 @@ func Run(ctx context.Context, o Options) error {
 		BootstrapSecret: secret,
 		Audit:           audit.New(o.Audit),
 		Providers:       o.Providers,
+		ProviderRootCAs: o.ProviderRootCAs,
 		MaxAncestors:    cfg.Tokens.MaxAncestors,
 		RevokedIDs:      revokedIDs,
 		Logger:          log,

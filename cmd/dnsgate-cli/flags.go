@@ -11,20 +11,20 @@ import (
 	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
 	"github.com/spf13/pflag"
 
-	"github.com/dnsgateway/dnsgate/internal/permission"
+	"github.com/dnsgateway/dnsgate/internal/gatewayconn"
 	"github.com/dnsgateway/dnsgate/internal/provider/catalog"
 )
 
 const (
-	flagGateway         = "gateway"
-	flagCAFile          = "ca-file"
+	flagGateway         = gatewayconn.FlagGateway
+	flagCAFile          = gatewayconn.FlagCAFile
 	flagToken           = "token"
 	flagBootstrapSecret = "bootstrap-secret"
 	flagCredential      = "provider-credential"
 	flagProvider        = "provider"
 	flagExpires         = "expires"
 	flagZone            = "zone"
-	flagEgress          = "egress"
+	flagEgress          = gatewayconn.FlagEgress
 	flagSub             = "sub"
 	flagPermissions     = "permissions"
 	flagTTL             = "ttl"
@@ -32,16 +32,16 @@ const (
 	flagRemove          = "remove"
 	flagExtra           = "extra"
 
-	envGateway         = "DNSGATE_GATEWAY"
-	envCAFile          = "DNSGATE_CA_FILE"
+	envGateway         = gatewayconn.EnvGateway
+	envCAFile          = gatewayconn.EnvCAFile
 	envToken           = "DNSGATE_TOKEN"
 	envBootstrapSecret = "DNSGATE_BOOTSTRAP_SECRET"
 	envCredential      = "DNSGATE_PROVIDER_CREDENTIAL"
 	envZone            = "DNSGATE_ZONE"
-	envEgress          = "DNSGATE_EGRESS"
+	envEgress          = gatewayconn.EnvEgress
 )
 
-const defaultGateway = "localhost:8443"
+const defaultGateway = gatewayconn.DefaultGateway
 
 // secretHelp is appended to the help of flags that take a secret.
 const secretHelp = "; prefer the environment variable, a flag value shows in process listings"
@@ -114,12 +114,12 @@ func (f *Flags) AddReadFlags(flags *pflag.FlagSet) {
 // checkReadFlags checks the flags every zone and record command takes and
 // returns the Egress asked for.
 func checkReadFlags(f *Flags) (dnsgatev1.Egress, error) {
-	egress, ok := permission.Egress(f.Egress).API()
+	egress, err := gatewayconn.ParseEgress(f.Egress)
+	if err != nil {
+		return 0, err
+	}
 
-	switch {
-	case !ok:
-		return 0, errors.New(`unknown egress "` + f.Egress + `": use gateway or agent`)
-	case f.Token == "":
+	if f.Token == "" {
 		return 0, errors.New("no Service Token: set " + envToken + " or --" + flagToken)
 	}
 

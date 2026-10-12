@@ -273,13 +273,13 @@ Not in v1: minimum and maximum TTL, maximum records per request, source CIDRs, r
 
 Not stored anywhere: Provider Credentials, Permissions, Service Accounts, issued-token records.
 
-v1 runs **a single Gateway instance**. Storage sits behind an interface so that replicas sharing PostgreSQL are possible later. Deployments that include the v2 ACME Endpoint **require PostgreSQL**, because it shares the revoked-ID list with the Gateway.
+v1 runs **a single Gateway instance**. Storage sits behind an interface so that replicas sharing PostgreSQL are possible later.
 
 ---
 
 # API and Transport
 
-Clients talk to the Gateway over **gRPC**, with **one bidirectional stream per request**. The only exception is the v2 ACME Endpoint, which speaks the acme-dns HTTPS API (see below). For Agent Egress, the relay to the Provider runs inside that same stream, so the relay always belongs to the connection that presented the token.
+Clients talk to the Gateway over **gRPC**, with **one bidirectional stream per request**. ACME clients reach it through the v2 ACME Endpoint, a Gateway client that speaks the acme-dns HTTPS API to them (see below). For Agent Egress, the relay to the Provider runs inside that same stream, so the relay always belongs to the connection that presented the token.
 
 Conceptual request:
 
@@ -493,14 +493,13 @@ Build a prototype of the Agent Egress transport early (gRPC stream relay, `DialC
 
 # v2: ACME Endpoint
 
-Existing ACME clients (acme.sh, lego, cert-manager, certbot, Caddy, Proxmox) are supported through an **ACME Endpoint** that speaks the acme-dns HTTPS API. Full design: [acme.md](acme.md) and [ADR 0003](adr/0003-acme-endpoint.md).
+Existing ACME clients (acme.sh, lego, cert-manager, certbot, Caddy, Proxmox) are supported through an **ACME Endpoint** that speaks the acme-dns HTTPS API. Full design: [acme.md](acme.md) and [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md).
 
-- A separate binary with the Gateway's authorization logic. It holds the encryption private key and the signing public key: it reads tokens but never mints them.
-- `POST /update` becomes `patch` (add one value) on a TXT record, authorized by ordinary Permissions. There is no ACME-specific authority.
-- A **Challenge Map** in the token maps each acme-dns subdomain to a Challenge Target. Every target must be covered by the token's Permissions.
+- A separate daemon, `dnsgate-acme`, that is a client of the Gateway API. It holds no keys and no database, and forwards the caller's token to the Gateway, which does all the authorization.
+- `POST /update` becomes `InspectToken` plus `PatchRecord` (add one value) on a TXT record, authorized by ordinary Permissions. There is no ACME-specific authority.
+- A **Challenge Map** in the ACME Endpoint's configuration maps each acme-dns subdomain to a Challenge Target. It grants nothing: the Gateway writes only where the token's Permissions allow.
 - `X-Api-User` is the token's `jti`, and `X-Api-Key` is the Service Token. Challenge values must have the DNS-01 shape.
-- Gateway Egress only. No `/register`, no cleanup (a per-target value limit applies instead), and no DNS discovery.
-- Requires PostgreSQL for the shared revoked-ID list.
+- Gateway Egress or Agent Egress, chosen with `--egress`. No `/register`, no cleanup, no per-target value limit, and no DNS discovery.
 
 # v2: Workload Identity
 
@@ -514,7 +513,7 @@ A Service Token can be bound to a workload's OIDC identity: Kubernetes ServiceAc
 
 # Later
 
-- PostgreSQL and multiple Gateway replicas (PostgreSQL arrives with the v2 ACME Endpoint)
+- PostgreSQL and multiple Gateway replicas
 - KMS for Gateway keys
 - Token registry and `token list`
 - Client-side hostname allowlist for Agent Egress

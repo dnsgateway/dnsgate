@@ -19,9 +19,10 @@ const (
 // fields: the Codec seals them as Issuer and Audience and checks them on
 // Open.
 //
-// The claim names identity (an Identity Binding) and acme (a Challenge
-// Map) are reserved for v2. They are not produced, and a token carrying
-// them, or any other unknown claim, does not open.
+// The claim name identity (an Identity Binding) is reserved for v2, and
+// acme is reserved and unused: the Challenge Map lives in the ACME
+// Endpoint's configuration (ADR 0011). Neither is produced, and a token
+// carrying them, or any other unknown claim, does not open.
 type Claims struct {
 	// Subject is the Service Account the token was issued for.
 	Subject string `json:"sub"`

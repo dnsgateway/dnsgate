@@ -11,7 +11,7 @@ The service that authorizes DNS requests and executes them against DNS providers
 _Avoid_: Router, DNS Router, proxy
 
 **ACME Endpoint**:
-The part of the Gateway that speaks the acme-dns HTTPS API, so existing ACME clients can write DNS-01 challenge values.
+A client of the Gateway that speaks the acme-dns HTTPS API, so existing ACME clients can write DNS-01 challenge values through the Gateway. It is not part of the Gateway and cannot read Service Tokens.
 _Avoid_: acme-dns server, ACME handler, compatibility API
 
 **Egress Agent**:
@@ -135,7 +135,7 @@ The TXT record name where an ACME DNS-01 challenge value is written.
 _Avoid_: update target, validation name, challenge record
 
 **Challenge Map**:
-The mapping inside a Service Token from acme-dns subdomain to Challenge Target. It grants nothing on its own: every Challenge Target must also be covered by the token's Permissions.
+The mapping, in the ACME Endpoint's configuration, from acme-dns subdomain to Challenge Target. It grants nothing on its own: a write to a Challenge Target succeeds only if the token's Permissions cover it.
 _Avoid_: ACME accounts, subdomain list
 
 ### Egress
@@ -145,7 +145,7 @@ The point from which the TCP connection to a DNS provider leaves, as seen by the
 _Avoid_: direct, proxy, mode
 
 **Gateway Egress**:
-Egress from the Gateway's own infrastructure, including the ACME Endpoint; the provider sees the Gateway's source IP.
+Egress from the Gateway's own infrastructure; the provider sees the Gateway's source IP.
 _Avoid_: router egress, direct
 
 **Agent Egress**:
