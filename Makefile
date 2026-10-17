@@ -1,6 +1,7 @@
 REGISTRY ?= ghcr.io
 USERNAME ?= dnsgate
 OCIREPO ?= $(REGISTRY)/$(USERNAME)
+HELMREPO ?= $(REGISTRY)/$(USERNAME)/charts
 PLATFORM ?= linux/arm64,linux/amd64
 PUSH ?= false
 
@@ -84,3 +85,21 @@ licenses:
 .PHONY: conformance
 conformance: ## Conformance
 	docker run --rm -it -v $(PWD):/src -w /src ghcr.io/siderolabs/conform:v0.1.0-alpha.31 enforce
+
+############
+
+.PHONY: helm-unit
+helm-unit: ## Helm Unit Tests
+	@helm lint charts/dnsgate
+	@helm template -f charts/dnsgate/ci/values.yaml dnsgate charts/dnsgate >/dev/null
+
+.PHONY: helm-login
+helm-login: ## Helm Login
+	@echo "${HELM_TOKEN}" | helm registry login $(REGISTRY) --username $(USERNAME) --password-stdin
+
+.PHONY: helm-release
+helm-release: ## Helm Release
+	@rm -rf dist/
+	@helm package charts/dnsgate -d dist
+	@helm push dist/dnsgate-*.tgz oci://$(HELMREPO) 2>&1 | tee dist/.digest
+	@cosign sign --yes $(COSING_ARGS) $(HELMREPO)/dnsgate@$$(cat dist/.digest | awk -F "[, ]+" '/Digest/{print $$NF}')
