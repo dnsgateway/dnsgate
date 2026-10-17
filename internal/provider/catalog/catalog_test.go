@@ -36,14 +36,14 @@ func TestAnAPITokenFillsTheCloudflareToken(t *testing.T) {
 }
 
 func TestFieldsRoundTrip(t *testing.T) {
-	in := map[string]string{"key": "k", "secret": "s"}
+	in := map[string]string{"key": "k", "password": "p"}
 
-	value, err := catalog.EncodeFields(catalog.GoDaddy, in)
+	value, err := catalog.EncodeFields(catalog.InternetBS, in)
 	if err != nil {
 		t.Fatalf("EncodeFields: %v", err)
 	}
 
-	out, err := catalog.DecodeCredential(catalog.GoDaddy, catalog.TypeFields, value)
+	out, err := catalog.DecodeCredential(catalog.InternetBS, catalog.TypeFields, value)
 	if err != nil || !maps.Equal(in, out) {
 		t.Errorf("DecodeCredential = %v, %v, want %v", out, err, in)
 	}
@@ -74,7 +74,8 @@ func TestSoleSecret(t *testing.T) {
 		catalog.Cloudflare: "token",
 		catalog.Scaleway:   "secret_key",
 		catalog.Vultr:      "api_key",
-		catalog.GoDaddy:    "",
+		catalog.GoDaddy:    "token",
+		catalog.InternetBS: "",
 		catalog.ClouDNS:    "",
 		"route53":          "",
 	} {

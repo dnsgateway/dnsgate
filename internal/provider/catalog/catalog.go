@@ -68,11 +68,8 @@ var fields = map[string][]Field{
 		{Name: "token", Label: "API token", Secret: true},
 		{Name: "account_id", Label: "Account ID"},
 	},
-	Gandi: {{Name: "token", Label: "Personal access token", Secret: true}},
-	GoDaddy: {
-		{Name: "key", Label: "API key", Secret: true},
-		{Name: "secret", Label: "API secret", Secret: true},
-	},
+	Gandi:   {{Name: "token", Label: "Personal access token", Secret: true}},
+	GoDaddy: {{Name: "token", Label: "Personal access token", Secret: true}},
 	Hetzner: {{Name: "token", Label: "Project API token", Secret: true}},
 	InternetBS: {
 		{Name: "key", Label: "API key", Secret: true},

@@ -39,3 +39,4 @@ go.work.sum
 
 # env file
 .env
+/charts/dnsgate/ci/values.test.yaml

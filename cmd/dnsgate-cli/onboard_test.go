@@ -257,11 +257,11 @@ func TestOnboardRefusesBadProviderFields(t *testing.T) {
 		want string
 	}{
 		"unsupported provider":   {[]string{"--provider", "route53", "--provider-credential", "x"}, "unsupported provider"},
-		"unknown field":          {[]string{"--provider", "godaddy", "--provider-field", "kye=k"}, "takes no field kye"},
-		"malformed field":        {[]string{"--provider", "godaddy", "--provider-field", "key"}, "NAME=VALUE"},
+		"unknown field":          {[]string{"--provider", "internetbs", "--provider-field", "kye=k"}, "takes no field kye"},
+		"malformed field":        {[]string{"--provider", "internetbs", "--provider-field", "key"}, "NAME=VALUE"},
 		"no field":               {[]string{"--provider", "vultr"}, "no Provider Credential"},
-		"credential, two secret": {[]string{"--provider", "godaddy", "--provider-credential", "x"}, "several secret fields"},
-		"missing required field": {[]string{"--provider", "godaddy", "--provider-field", "key=k"}, "refuses the credential"},
+		"credential, two secret": {[]string{"--provider", "internetbs", "--provider-credential", "x"}, "several secret fields"},
+		"missing required field": {[]string{"--provider", "internetbs", "--provider-field", "key=k"}, "refuses the credential"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			out, err := runClient(t, env, gw, append([]string{"onboard"}, tc.args...)...)

@@ -6,8 +6,8 @@ go 1.27
 // replace github.com/dnsgateway/dnsprovider => ../dnsprovider
 
 require (
-	github.com/dnsgateway/dnsgate-go v0.0.0-20261011135924-124ed560a0cf
-	github.com/dnsgateway/dnsprovider v0.0.0-20261011144035-7b19999c7d65
+	github.com/dnsgateway/dnsgate-go v0.1.0
+	github.com/dnsgateway/dnsprovider v0.1.0
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/spf13/cobra v1.10.2
@@ -31,9 +31,9 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 	modernc.org/libc v1.77.1 // indirect
