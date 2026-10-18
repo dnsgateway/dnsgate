@@ -101,14 +101,14 @@ dockers_v2:
     annotations:
       org.opencontainers.image.name: "{{ .ProjectName }}"
       org.opencontainers.image.description: "DNSGate is a DNS gateway service"
-      org.opencontainers.image.licenses: "Apache-2.0"
+      org.opencontainers.image.licenses: "MPL-2.0"
       org.opencontainers.image.source: "https://github.com/dnsgateway/{{ .ProjectName }}"
       org.opencontainers.image.url: "{{ .GitURL }}"
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/dnsgateway/{{ .ProjectName }}/main/README.md"
-      io.artifacthub.package.license: "Apache-2.0"
+      io.artifacthub.package.license: "MPL-2.0"
 
   - id: docker-acme
     ids:
@@ -125,14 +125,14 @@ dockers_v2:
     annotations:
       org.opencontainers.image.name: "{{ .ProjectName }}-acme"
       org.opencontainers.image.description: "DNSGate ACME Endpoint serves the acme-dns API through the DNS gateway"
-      org.opencontainers.image.licenses: "Apache-2.0"
+      org.opencontainers.image.licenses: "MPL-2.0"
       org.opencontainers.image.source: "https://github.com/dnsgateway/{{ .ProjectName }}"
       org.opencontainers.image.url: "{{ .GitURL }}"
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/dnsgateway/{{ .ProjectName }}/main/README.md"
-      io.artifacthub.package.license: "Apache-2.0"
+      io.artifacthub.package.license: "MPL-2.0"
 
 docker_signs:
   - id: docker
@@ -157,3 +157,31 @@ signs:
       - "--bundle=${signature}"
       - "${artifact}"
     output: true
+
+homebrew_casks:
+  - name: dnsgate-cli
+    ids:
+      - dnsgate-cli
+    directory: Casks
+    homepage: https://github.com/dnsgateway/dnsgate
+    description: "DNSGate CLI tool"
+    license: "MPL-2.0"
+
+    commit_author:
+      name: dnsgateway
+      email: dnsgateway@dnsgate.link
+    repository:
+      owner: dnsgateway
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TOKEN }}"
+
+    custom_block: |
+      arch arm: "arm64", intel: "amd64"
+
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dnsgate-cli_darwin_#{arch}"]
+          end
