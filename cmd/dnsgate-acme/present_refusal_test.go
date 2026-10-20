@@ -22,10 +22,10 @@ const (
 	replyBadValue   = `{"error":"bad_value"}`
 )
 
-// wantLastPresentLog checks that the last acmeproxy call d served is
-// logged as a present and that the logs hold neither the token nor any of
-// secrets, and returns its log line.
-func (d *acmeDaemon) wantLastPresentLog(t *testing.T, tok acmeToken, secrets ...string) map[string]any {
+// wantLastAcmeproxyLog checks that the last acmeproxy call d served is
+// logged with action, present or cleanup, and that the logs hold neither
+// the token nor any of secrets, and returns its log line.
+func (d *acmeDaemon) wantLastAcmeproxyLog(t *testing.T, action string, tok acmeToken, secrets ...string) map[string]any {
 	t.Helper()
 
 	logs := d.Logs.String()
@@ -42,8 +42,8 @@ func (d *acmeDaemon) wantLastPresentLog(t *testing.T, tok acmeToken, secrets ...
 	}
 
 	got := entries[len(entries)-1]
-	if got["action"] != "present" {
-		t.Errorf("logged action = %v, want present", got["action"])
+	if got["action"] != action {
+		t.Errorf("logged action = %v, want %s", got["action"], action)
 	}
 
 	return got
@@ -104,7 +104,7 @@ func TestPresentRefusesAnFQDNThatIsNotADomainName(t *testing.T) {
 				d.wantReply(t, "/present", tok, acmeproxyBody(fqdn, challenge(1)), http.StatusBadRequest, replyBadFQDN)
 			})
 
-			wantLogged(t, d.wantLastPresentLog(t, tok, challenge(1)),
+			wantLogged(t, d.wantLastAcmeproxyLog(t, "present", tok, challenge(1)),
 				map[string]any{"result": "bad_fqdn", "level": "INFO"}, "fqdn", "reason", "error")
 		})
 	}
@@ -150,7 +150,7 @@ func TestPresentRefusesAValueThatIsNotAChallengeValue(t *testing.T) {
 				d.wantReply(t, "/present", tok, acmeproxyBody(fqdn, value), http.StatusBadRequest, replyBadValue)
 			})
 
-			wantLogged(t, d.wantLastPresentLog(t, tok, value),
+			wantLogged(t, d.wantLastAcmeproxyLog(t, "present", tok, value),
 				map[string]any{"result": "bad_value", "level": "INFO", "fqdn": fqdn}, "reason", "error")
 		})
 	}
@@ -182,7 +182,7 @@ func TestPresentRefusesAMalformedBodyAsABadRequest(t *testing.T) {
 				d.wantReply(t, "/present", tok, body, http.StatusBadRequest, replyBadRequest)
 			})
 
-			wantLogged(t, d.wantLastPresentLog(t, tok, challenge(1)),
+			wantLogged(t, d.wantLastAcmeproxyLog(t, "present", tok, challenge(1)),
 				map[string]any{"result": "bad_request", "level": "INFO", "reason": "malformed JSON"}, "fqdn", "error")
 		})
 	}
@@ -190,40 +190,43 @@ func TestPresentRefusesAMalformedBodyAsABadRequest(t *testing.T) {
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
 }
 
-// wantPresentForbidden sends a /present of a challenge value at fqdn with
-// tok and checks that it answers 401 forbidden without reaching the
-// Provider, logged with reason and no Gateway error: the request was
-// refused before any Gateway call, or after the token was inspected.
-func (e *e2e) wantPresentForbidden(t *testing.T, d *acmeDaemon, tok acmeToken, fqdn, reason string) {
+// wantAcmeproxyForbidden sends POST path, /present or /cleanup, of a
+// challenge value at fqdn with tok and checks that it answers 401
+// forbidden without reaching the Provider, logged with reason and no
+// Gateway error: the request was refused before any Gateway call, or after
+// the token was inspected.
+func (e *e2e) wantAcmeproxyForbidden(t *testing.T, d *acmeDaemon, path string, tok acmeToken, fqdn, reason string) {
 	t.Helper()
 
-	entry := e.wantPresentForbiddenLogged(t, d, tok, fqdn, reason)
+	entry := e.wantAcmeproxyForbiddenLogged(t, d, path, tok, fqdn, reason)
 	if err, ok := entry["error"]; ok {
 		t.Errorf("logged a Gateway error %v, want none: no Gateway call was refused", err)
 	}
 }
 
-// wantPresentForbiddenByGateway is wantPresentForbidden for a write the
-// Gateway refused: the log line also holds the Gateway's error.
-func (e *e2e) wantPresentForbiddenByGateway(t *testing.T, d *acmeDaemon, tok acmeToken, fqdn, reason string) {
+// wantAcmeproxyForbiddenByGateway is wantAcmeproxyForbidden for a write
+// the Gateway refused: the log line also holds the Gateway's error.
+func (e *e2e) wantAcmeproxyForbiddenByGateway(t *testing.T, d *acmeDaemon, path string, tok acmeToken, fqdn, reason string) {
 	t.Helper()
 
-	entry := e.wantPresentForbiddenLogged(t, d, tok, fqdn, reason)
+	entry := e.wantAcmeproxyForbiddenLogged(t, d, path, tok, fqdn, reason)
 	if _, ok := entry["error"]; !ok {
 		t.Errorf("logged no Gateway error, want the one the Gateway refused the call with\nline: %v", entry)
 	}
 }
 
-// wantPresentForbiddenLogged is what wantPresentForbidden and
-// wantPresentForbiddenByGateway share; it returns the log line.
-func (e *e2e) wantPresentForbiddenLogged(t *testing.T, d *acmeDaemon, tok acmeToken, fqdn, reason string) map[string]any {
+// wantAcmeproxyForbiddenLogged is what wantAcmeproxyForbidden and
+// wantAcmeproxyForbiddenByGateway share; it returns the log line.
+func (e *e2e) wantAcmeproxyForbiddenLogged(
+	t *testing.T, d *acmeDaemon, path string, tok acmeToken, fqdn, reason string,
+) map[string]any {
 	t.Helper()
 
 	e.providerUntouched(t, func() {
-		d.wantReply(t, "/present", tok, acmeproxyBody(fqdn, challenge(1)), http.StatusUnauthorized, replyForbidden)
+		d.wantReply(t, path, tok, acmeproxyBody(fqdn, challenge(1)), http.StatusUnauthorized, replyForbidden)
 	})
 
-	entry := d.wantLastPresentLog(t, tok, challenge(1))
+	entry := d.wantLastAcmeproxyLog(t, strings.TrimPrefix(path, "/"), tok, challenge(1))
 	wantLogged(t, entry, map[string]any{"result": "forbidden", "level": "INFO", "fqdn": fqdn, "reason": reason})
 
 	return entry
@@ -242,7 +245,7 @@ func TestPresentRefusesARequestWithoutBasicAuth(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e.gatewayUntouched(t, func() {
-				entry := e.wantPresentForbiddenLogged(t, d, cred, "_acme-challenge.example.com.", "no Basic auth")
+				entry := e.wantAcmeproxyForbiddenLogged(t, d, "/present", cred, "_acme-challenge.example.com.", "no Basic auth")
 				wantLogged(t, entry, map[string]any{"name": "_acme-challenge.example.com."}, "error")
 			})
 		})
@@ -265,7 +268,7 @@ func TestPresentRefusesAUsernameOtherThanTheTokenID(t *testing.T) {
 		"empty":               "",
 	} {
 		t.Run(name, func(t *testing.T) {
-			e.wantPresentForbidden(t, d, acmeToken{Key: tok.Key, User: user}, "_acme-challenge.example.com.",
+			e.wantAcmeproxyForbidden(t, d, "/present", acmeToken{Key: tok.Key, User: user}, "_acme-challenge.example.com.",
 				"X-Api-User is not the token's jti")
 		})
 	}
@@ -295,7 +298,7 @@ func TestPresentRefusesATokenTheGatewayDoesNotAccept(t *testing.T) {
 		"expired": expired,
 	} {
 		t.Run(name, func(t *testing.T) {
-			e.wantPresentForbiddenByGateway(t, d, tok, "_acme-challenge.example.com.", "the Gateway refused the token")
+			e.wantAcmeproxyForbiddenByGateway(t, d, "/present", tok, "_acme-challenge.example.com.", "the Gateway refused the token")
 		})
 	}
 
@@ -320,7 +323,7 @@ func TestPresentRefusesAWriteTheTokensPermissionsDoNotAllow(t *testing.T) {
 		"no patch":     onlyCreate,
 	} {
 		t.Run(name, func(t *testing.T) {
-			e.wantPresentForbidden(t, d, e.token(t, perm), "_acme-challenge.example.com.",
+			e.wantAcmeproxyForbidden(t, d, "/present", e.token(t, perm), "_acme-challenge.example.com.",
 				"the token's Permissions name no zone, or more than one, for the name")
 		})
 	}
@@ -335,7 +338,7 @@ func TestPresentRefusesAWriteTheTokensEgressDoesNotAllow(t *testing.T) {
 	d := e.acme(t, daemonConfig{Egress: "gateway"})
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}, "agent"))
 
-	e.wantPresentForbiddenByGateway(t, d, tok, "_acme-challenge.example.com.",
+	e.wantAcmeproxyForbiddenByGateway(t, d, "/present", tok, "_acme-challenge.example.com.",
 		"the Gateway refused the Permission or the Egress")
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
@@ -354,11 +357,11 @@ func TestPresentRefusesAnFQDNInNoZoneOfTheToken(t *testing.T) {
 		"zone suffix":         "_acme-challenge.notexample.com.",
 	} {
 		t.Run(name, func(t *testing.T) {
-			e.wantPresentForbidden(t, d, tok, fqdn,
+			e.wantAcmeproxyForbidden(t, d, "/present", tok, fqdn,
 				"the token's Permissions name no zone, or more than one, for the name")
 
 			// No zone is resolved: the zone is logged, and empty.
-			wantLogged(t, d.wantLastPresentLog(t, tok), map[string]any{"zone": ""})
+			wantLogged(t, d.wantLastAcmeproxyLog(t, "present", tok), map[string]any{"zone": ""})
 		})
 	}
 
@@ -376,7 +379,7 @@ func (d *acmeDaemon) wantPresentFailed(t *testing.T, tok acmeToken, reason strin
 
 	d.wantReply(t, "/present", tok, acmeproxyBody(fqdn, challenge(1)), http.StatusInternalServerError, replyProviderError)
 
-	entry := d.wantLastPresentLog(t, tok, challenge(1))
+	entry := d.wantLastAcmeproxyLog(t, "present", tok, challenge(1))
 	wantLogged(t, entry, map[string]any{"result": "provider_error", "level": "ERROR", "fqdn": fqdn, "reason": reason})
 
 	if _, ok := entry["error"]; !ok {

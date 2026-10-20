@@ -387,10 +387,26 @@ func acmeproxyBody(fqdn, value string) string {
 func (d *acmeDaemon) wantPresented(t *testing.T, tok acmeToken, fqdn, value string) {
 	t.Helper()
 
+	d.wantEchoed(t, "/present", tok, fqdn, value)
+}
+
+// wantCleanedUp sends a /cleanup of value at fqdn with tok and checks
+// that it answers exactly 200 with the request echoed.
+func (d *acmeDaemon) wantCleanedUp(t *testing.T, tok acmeToken, fqdn, value string) {
+	t.Helper()
+
+	d.wantEchoed(t, "/cleanup", tok, fqdn, value)
+}
+
+// wantEchoed sends POST path, /present or /cleanup, of value at fqdn with
+// tok and checks that it answers exactly 200 with the request echoed.
+func (d *acmeDaemon) wantEchoed(t *testing.T, path string, tok acmeToken, fqdn, value string) {
+	t.Helper()
+
 	body := acmeproxyBody(fqdn, value)
 
-	code, got := d.present(t, tok, body)
+	code, got := d.acmeproxy(t, path, tok, body)
 	if code != http.StatusOK || !jsonEqual(got, body) {
-		t.Fatalf("POST /present = %d %s, want 200 %s\nlogs:\n%s", code, got, body, d.Logs)
+		t.Fatalf("POST %s = %d %s, want 200 %s\nlogs:\n%s", path, code, got, body, d.Logs)
 	}
 }

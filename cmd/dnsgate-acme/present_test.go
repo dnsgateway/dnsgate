@@ -155,12 +155,21 @@ func TestPresentIsAuditedAsAPatchByTheTokensServiceAccount(t *testing.T) {
 		t.Fatalf("audited %d records.patch events, want 1:\n%s", len(events), e.Gateway.Audit)
 	}
 
+	wantAuditedAsPatch(t, events[0])
+}
+
+// wantAuditedAsPatch checks that the audit event is a patch on TXT at
+// _acme-challenge.example.com done by the Service Account of the ACME
+// tokens.
+func wantAuditedAsPatch(t *testing.T, event map[string]any) {
+	t.Helper()
+
 	for field, want := range map[string]any{
 		"service_account": "acme-client", "verb": "patch", "result": "ok",
 		"zone": "example.com", "record_name": "_acme-challenge", "record_type": "TXT",
 	} {
-		if events[0][field] != want {
-			t.Errorf("records.patch %s = %v, want %v", field, events[0][field], want)
+		if event[field] != want {
+			t.Errorf("records.patch %s = %v, want %v", field, event[field], want)
 		}
 	}
 }
@@ -219,6 +228,16 @@ func TestPresentLogsEachRequestWithoutTheTokenOrTheValue(t *testing.T) {
 		}
 	}
 
+	wantAcmeproxyCallsLogged(t, logs, "present", fqdn)
+}
+
+// wantAcmeproxyCallsLogged checks that logs hold three acmeproxy calls
+// with action at fqdn, in _acme-challenge.example.com, each on one line
+// with its own request ID: one done, one the Gateway refused for the
+// Egress, and one the Provider failed.
+func wantAcmeproxyCallsLogged(t *testing.T, logs, action, fqdn string) {
+	t.Helper()
+
 	entries := acmeproxyLogs(t, logs)
 	if len(entries) != 3 {
 		t.Fatalf("logged %d acmeproxy calls, want 3:\n%s", len(entries), logs)
@@ -233,29 +252,29 @@ func TestPresentLogsEachRequestWithoutTheTokenOrTheValue(t *testing.T) {
 	} {
 		got := entries[i]
 		for field, w := range map[string]any{
-			"action": "present", "fqdn": fqdn, "zone": "example.com", "name": "_acme-challenge",
+			"action": action, "fqdn": fqdn, "zone": "example.com", "name": "_acme-challenge",
 			"result": want.result, "level": want.level,
 		} {
 			if got[field] != w {
-				t.Errorf("present %d logged %s = %v, want %v", i, field, got[field], w)
+				t.Errorf("%s %d logged %s = %v, want %v", action, i, field, got[field], w)
 			}
 		}
 
 		if reason, _ := got["reason"].(string); reason != want.reason {
-			t.Errorf("present %d logged reason %q, want %q", i, reason, want.reason)
+			t.Errorf("%s %d logged reason %q, want %q", action, i, reason, want.reason)
 		}
 
 		if _, hasErr := got["error"]; hasErr != (want.reason != "") {
-			t.Errorf("present %d logged error = %v, want one only when refused by the Gateway or failed", i, got["error"])
+			t.Errorf("%s %d logged error = %v, want one only when refused by the Gateway or failed", action, i, got["error"])
 		}
 
 		if _, ok := got["duration_ms"].(float64); !ok {
-			t.Errorf("present %d logged no duration_ms: %v", i, got)
+			t.Errorf("%s %d logged no duration_ms: %v", action, i, got)
 		}
 
 		id, _ := got["request_id"].(string)
 		if !strings.HasPrefix(id, "req_") || ids[id] {
-			t.Errorf("present %d logged request_id %q, want a new req_ ID", i, id)
+			t.Errorf("%s %d logged request_id %q, want a new req_ ID", action, i, id)
 		}
 
 		ids[id] = true
