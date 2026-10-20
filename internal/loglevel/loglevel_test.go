@@ -56,3 +56,24 @@ func TestValueIsAStringFlag(t *testing.T) {
 		t.Errorf("usage = %q", usage)
 	}
 }
+
+func TestParseResolvesEachNameToItsLevel(t *testing.T) {
+	for name, want := range map[string]slog.Level{
+		"error": slog.LevelError,
+		"warn":  slog.LevelWarn,
+		"info":  slog.LevelInfo,
+		"debug": slog.LevelDebug,
+	} {
+		if level, err := loglevel.Parse(name); err != nil || level != want {
+			t.Errorf("Parse(%q) = %v, %v; want %v", name, level, err, want)
+		}
+	}
+}
+
+// Parse's error names the value refused, as a caller without a flag needs.
+func TestParseRefusesAnUnknownName(t *testing.T) {
+	_, err := loglevel.Parse("verbose")
+	if err == nil || err.Error() != `unknown log level "verbose": use error, warn, info, debug` {
+		t.Errorf("Parse(verbose) error = %v", err)
+	}
+}

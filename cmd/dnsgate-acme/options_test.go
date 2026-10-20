@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
-	"github.com/spf13/pflag"
+	"github.com/spf13/cobra"
 
 	"github.com/dnsgateway/dnsgate/internal/acme"
 )
@@ -16,16 +16,16 @@ import (
 // configure parses args as the daemon does, with env as the environment,
 // and returns the ACME Endpoint's options they give.
 func configure(args []string, env map[string]string) (acme.Options, error) {
-	flags := pflag.NewFlagSet(bin, pflag.ContinueOnError)
-	flags.SetOutput(io.Discard)
+	cmd := &cobra.Command{Use: bin}
+	cmd.SetErr(io.Discard)
 
-	options := daemonFlags(flags)
+	flags := bindDaemonFlags(cmd)
 
-	if err := flags.Parse(args); err != nil {
-		return acme.Options{}, flagError(err)
+	if err := cmd.ParseFlags(args); err != nil {
+		return acme.Options{}, cmd.FlagErrorFunc()(cmd, err)
 	}
 
-	return options(func(key string) (string, bool) {
+	return flags.options(func(key string) (string, bool) {
 		v, ok := env[key]
 
 		return v, ok

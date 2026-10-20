@@ -80,6 +80,13 @@ func (v *EgressValue) Type() string {
 	return "string"
 }
 
+// ErrorNamesValue reports that an error of Set is a complete message
+// that names the value refused, the one dnsgate-cli gives, so a caller
+// gives it alone.
+func (v *EgressValue) ErrorNamesValue() bool {
+	return true
+}
+
 // Dial connects to the Gateway at gateway, a host:port, over TLS,
 // verifying it against the certificates of every file in caFiles or,
 // without one, the system's CA certificates. The client takes opts.
