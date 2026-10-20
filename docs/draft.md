@@ -493,13 +493,13 @@ Build a prototype of the Agent Egress transport early (gRPC stream relay, `DialC
 
 # v2: ACME Endpoint
 
-Existing ACME clients (acme.sh, lego, cert-manager, certbot, Caddy, Proxmox) are supported through an **ACME Endpoint** that speaks the acme-dns and acmeproxy HTTPS APIs (lego `httpreq` and Traefik, acme.sh `dns_acmeproxy`, Caddy `acmeproxy`). Full design: [acme.md](acme.md), [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md) and [ADR 0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md).
+Existing ACME clients (acme.sh, lego, cert-manager, certbot, Caddy, Proxmox) are supported through an **ACME Endpoint** that speaks the acme-dns and acmeproxy HTTPS APIs (lego `httpreq` and Traefik, acme.sh `dns_acmeproxy`, Caddy `acmeproxy`). Full design: [acme.md](acme.md), [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md) and [ADR 0013](adr/0013-acme-endpoint-speaks-acmeproxy-and-cleans-up-on-request.md).
 
 - A separate daemon, `dnsgate-acme`, that is a client of the Gateway API. It holds no keys and no database, and forwards the caller's token to the Gateway, which does all the authorization.
 - `POST /update` becomes `InspectToken` plus `PatchRecord` (add one value) on a TXT record, authorized by ordinary Permissions. There is no ACME-specific authority.
 - A **Challenge Map** in the ACME Endpoint's configuration maps each acme-dns subdomain to a Challenge Target. It grants nothing: the Gateway writes only where the token's Permissions allow.
 - `X-Api-User` is the token's `jti`, and `X-Api-Key` is the Service Token. Challenge values must have the DNS-01 shape.
-- acmeproxy `POST /present` and `POST /cleanup` add and remove one value at the `fqdn` the client names, with Basic auth (username = `jti`, password = Service Token). The Challenge Map is not consulted.
+- acmeproxy `POST /present` and `POST /cleanup` add and remove one value at the `fqdn` the client names, with Basic auth ([acme.md](acme.md#post-present-and-post-cleanup)). The Challenge Map is not consulted.
 - Gateway Egress or Agent Egress, chosen with `--egress`. No `/register`, no cleanup except an acmeproxy `/cleanup`, no per-target value limit, and no DNS discovery.
 
 # v2: Workload Identity

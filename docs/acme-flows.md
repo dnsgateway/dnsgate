@@ -1,8 +1,8 @@
 # DNS Gateway — ACME Flows (v2)
 
-This document shows how an existing ACME client gets a DNS-01 challenge value written, and with the acmeproxy API removed again, through the ACME Endpoint, `dnsgate-acme`, and the Gateway. It covers who holds which key, and what each party can read.
+This document shows how an existing ACME client gets a DNS-01 challenge value written through the ACME Endpoint, `dnsgate-acme`, and the Gateway. With the acmeproxy API, the client also gets the value removed again the same way. It covers who holds which key, and what each party can read.
 
-Background: [acme.md](acme.md) (design), [flows.md](flows.md) (core flows), [ADR 0001](adr/0001-self-contained-service-tokens.md), [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md), [ADR 0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md). Terms: [GLOSSARY.md](../GLOSSARY.md). Claim names and key IDs are examples.
+Background: [acme.md](acme.md) (design), [flows.md](flows.md) (core flows), [ADR 0001](adr/0001-self-contained-service-tokens.md), [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md), [ADR 0013](adr/0013-acme-endpoint-speaks-acmeproxy-and-cleans-up-on-request.md). Terms: [GLOSSARY.md](../GLOSSARY.md). Claim names and key IDs are examples.
 
 ## Keys and who holds them
 
@@ -235,7 +235,7 @@ sequenceDiagram
 
 ## 5. The acmeproxy API (`POST /present`, `POST /cleanup`)
 
-Example: Traefik (lego `httpreq`) renews `example.com`, with `HTTPREQ_USERNAME` set to the `jti` and `HTTPREQ_PASSWORD` to the Service Token. The client names the Challenge Target itself, so the Challenge Map is not consulted: the zone is the longest zone of the token's Permissions that holds the `fqdn` and allows `patch` on TXT there. After validation, the client removes its value with `/cleanup` ([ADR 0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md)).
+Example: Traefik (lego `httpreq`) renews `example.com`, configured as in [acme.md](acme.md#traefik). The client names the Challenge Target itself, so the Challenge Map is not consulted: the zone is the longest zone of the token's Permissions that holds the `fqdn` and allows `patch` on TXT there. After validation, the client removes its value with `/cleanup` ([ADR 0013](adr/0013-acme-endpoint-speaks-acmeproxy-and-cleans-up-on-request.md)).
 
 ```mermaid
 sequenceDiagram
@@ -273,7 +273,7 @@ sequenceDiagram
     Note over AC,CF: Other values at the Challenge Target stay,<br/>so a concurrent validation is not broken.
 ```
 
-lego follows a CNAME at `_acme-challenge.example.com` by default and sends the delegated target, such as `challenge-123.acme.example.net.`, as the `fqdn`. That works when the token's Permissions allow `patch` on TXT at that name.
+A client that follows CNAMEs sends the delegated target as the `fqdn` instead; see [`fqdn`](acme.md#post-present-and-post-cleanup).
 
 ---
 
@@ -285,7 +285,7 @@ Every authorization failure returns the same answer, so the ACME Endpoint never 
 
 | Situation | Decided by | Reply |
 |---|---|---|
-| Malformed JSON | ACME Endpoint | 401 `{"error":"forbidden"}` |
+| Malformed JSON, or a body over 4 KiB | ACME Endpoint | 401 `{"error":"forbidden"}` |
 | `subdomain` is neither a DNS label nor a domain name | ACME Endpoint | 400 `{"error":"bad_subdomain"}` |
 | `txt` has the wrong shape | ACME Endpoint | 400 `{"error":"bad_txt"}` |
 | No zone of the token's Permissions holds the Challenge Target (a map entry without a zone, or an unmapped subdomain taken as the Certificate Domain) | ACME Endpoint | 401 `{"error":"forbidden"}` |
@@ -296,22 +296,12 @@ Every authorization failure returns the same answer, so the ACME Endpoint never 
 | Permissions don't cover the target, or the token doesn't allow the configured egress | Gateway (PatchRecord) | 401 `{"error":"forbidden"}` |
 | Bound Token (no Identity Token can be presented) | Gateway | 401 `{"error":"forbidden"}` |
 | TTL below the Provider's minimum | Gateway | 500 `{"error":"provider_error"}` (logged as a configuration error) |
-| Cloudflare error | Gateway | 500 `{"error":"provider_error"}` (details in the logs only) |
-| Cloudflare refuses the Provider Credential | Gateway | 500 `{"error":"provider_error"}` (details in the logs only) |
+| Cloudflare error | Gateway | 500 `{"error":"provider_error"}` (details in the log only) |
+| Cloudflare refuses the Provider Credential | Gateway | 500 `{"error":"provider_error"}` (details in the log only) |
 | Gateway unreachable or timed out | ACME Endpoint | 500 `{"error":"provider_error"}` (details in the log only) |
 
 A `subdomain` not in the Challenge Map is not refused: it is taken as the Certificate Domain ([ADR 0012](adr/0012-unmapped-subdomain-is-the-certificate-domain.md)), and the Gateway decides whether the token may write at `_acme-challenge` in front of it.
 
 ### acmeproxy (`POST /present`, `POST /cleanup`)
 
-| Situation | Decided by | Reply |
-|---|---|---|
-| Malformed JSON, or data after the JSON object | ACME Endpoint | 400 `{"error":"bad_request"}` |
-| `fqdn` is not a valid name (single label, too long, bad label) | ACME Endpoint | 400 `{"error":"bad_fqdn"}` |
-| `value` has the wrong shape | ACME Endpoint | 400 `{"error":"bad_value"}` |
-| No Basic auth, or an empty password | ACME Endpoint | 401 `{"error":"forbidden"}` |
-| Token refused (undecryptable, bad signature, expired, revoked, Bound Token) | Gateway (InspectToken) | 401 `{"error":"forbidden"}` |
-| Basic auth username is not the `jti` | ACME Endpoint | 401 `{"error":"forbidden"}` |
-| `fqdn` in no zone of the token's Permissions | ACME Endpoint | 401 `{"error":"forbidden"}` |
-| Permissions don't cover the target, or the token doesn't allow the configured egress | Gateway (PatchRecord) | 401 `{"error":"forbidden"}` |
-| TTL below the Provider's minimum, Cloudflare error, Cloudflare refuses the Provider Credential, Gateway unreachable or timed out | Gateway or ACME Endpoint | 500 `{"error":"provider_error"}` (details in the log only) |
+The refusals and their replies are those of the acmeproxy [Response contract](acme.md#response-contract-1).
