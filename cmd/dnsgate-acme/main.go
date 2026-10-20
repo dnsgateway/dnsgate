@@ -45,8 +45,10 @@ func newRootCmd(clientOpts ...client.Option) *cobra.Command {
 		Use:   bin,
 		Short: "ACME Endpoint",
 		Long: "dnsgate-acme runs the ACME Endpoint: it serves the acme-dns API to ACME clients on --" + flagListen + ".\n\n" +
-			"POST /update adds the challenge value at the Challenge Target that --" + flagChallengeMap +
-			" names for the subdomain, through the Gateway at --" + flagGateway + ", presenting the X-Api-Key Service Token. " +
+			"POST /update adds the challenge value at the Challenge Target of the subdomain, through the Gateway at --" + flagGateway +
+			", presenting the X-Api-Key Service Token. The optional --" + flagChallengeMap + " names the Challenge Target of a subdomain; " +
+			"a subdomain it does not map, or every subdomain without it, is taken as the Certificate Domain and written at " +
+			"_acme-challenge in front of it, in the longest zone of the token that holds that name. " +
 			"The Gateway does all the authorization.\n\n" +
 			"GET /health answers 200 with an empty body. POST /register is not supported (404): " +
 			"an Administrator provisions the tokens.\n\n" +

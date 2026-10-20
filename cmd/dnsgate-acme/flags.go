@@ -99,7 +99,8 @@ func (f *Flags) AddDaemonFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.TLSKeyFile, flagTLSKeyFile, "", f.TLSKeyFile,
 		"PEM private key of --"+flagTLSCertFile+" (env "+envTLSKeyFile+")")
 	flags.StringVarP(&f.ChallengeMap, flagChallengeMap, "", f.ChallengeMap,
-		"Challenge Map file, YAML or JSON, mapping each acme-dns subdomain to a zone and a name in it, or, with no zone, to a name in any zone the token allows; required (env "+envChallengeMap+")")
+		"Challenge Map file, YAML or JSON, mapping each acme-dns subdomain to a zone and a name in it, "+
+			"or, with no zone, to a name in any zone the token allows; without it, every subdomain is unmapped (env "+envChallengeMap+")")
 	flags.Uint32VarP(&f.TTL, flagTTL, "", f.TTL,
 		"TTL in seconds of the challenge values added (env "+envTTL+")")
 	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
@@ -149,10 +150,6 @@ func checkDaemonFlags(f *Flags, flags *pflag.FlagSet) (acme.Options, error) {
 
 	if f.envTTLErr != nil && !flags.Changed(flagTTL) {
 		return acme.Options{}, f.envTTLErr
-	}
-
-	if f.ChallengeMap == "" {
-		return acme.Options{}, errors.New("no Challenge Map: set --" + flagChallengeMap + " or " + envChallengeMap)
 	}
 
 	egress, err := gatewayconn.ParseEgress(f.Egress)

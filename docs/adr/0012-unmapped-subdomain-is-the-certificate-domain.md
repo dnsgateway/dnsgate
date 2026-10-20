@@ -14,3 +14,4 @@ The ACME Endpoint no longer refuses an acme-dns subdomain that is not a key in t
 - The Challenge Map no longer limits which Challenge Targets a token reaches through the ACME Endpoint; the token's Permissions do. Keep ACME tokens to `patch` on TXT at `_acme-challenge` names (`names: ["_acme-challenge", "_acme-challenge.**"]`).
 - The subdomain field now takes a domain name as well as a single DNS label, so ADR 0011's "the certificate domain never reaches the server" holds only in that nothing proves the domain sent is the one being certified. Authorization stays by Challenge Target.
 - A Challenge Map entry without a zone reads its name as relative only when it is a single label, so an absolute name in no zone of the token is refused rather than written into another zone.
+- The Challenge Map is optional; without one every subdomain is unmapped.

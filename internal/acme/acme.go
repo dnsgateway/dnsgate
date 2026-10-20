@@ -60,7 +60,8 @@ type Options struct {
 	// Egress is the Egress every write asks for; unspecified lets the
 	// Gateway choose.
 	Egress dnsgatev1.Egress
-	// ChallengeMapFile is the Challenge Map file, YAML or JSON.
+	// ChallengeMapFile is the Challenge Map file, YAML or JSON; empty means
+	// no Challenge Map, so every subdomain is unmapped.
 	ChallengeMapFile string
 	// TTL is the TTL of the challenge values added.
 	TTL uint32
@@ -109,17 +110,20 @@ func NewHandler(c Config) http.Handler {
 
 // Run serves the ACME Endpoint until ctx is done, then stops gracefully.
 // A TLS certificate without its key, or the reverse, files that do not
-// load, or a Challenge Map that does not, stop it before it listens. It
-// connects to the Gateway lazily, on the first /update.
+// load, or a given Challenge Map file that does not, stop it before it
+// listens. It connects to the Gateway lazily, on the first /update.
 func Run(ctx context.Context, o Options) error {
 	tlsConfig, err := loadTLS(o.CertFile, o.KeyFile)
 	if err != nil {
 		return err
 	}
 
-	targets, err := LoadChallengeMap(o.ChallengeMapFile)
-	if err != nil {
-		return err
+	var targets ChallengeMap
+	if o.ChallengeMapFile != "" {
+		targets, err = LoadChallengeMap(o.ChallengeMapFile)
+		if err != nil {
+			return err
+		}
 	}
 
 	gateway, closeConn, err := gatewayconn.Dial(o.Gateway, o.CAFiles, o.ClientOptions...)
