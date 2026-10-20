@@ -45,6 +45,41 @@ func ParseEgress(value string) (dnsgatev1.Egress, error) {
 	return egress, nil
 }
 
+// EgressValue is an --egress flag: a pflag.Value that takes what
+// ParseEgress does and sets the Egress it points at.
+type EgressValue struct {
+	egress *dnsgatev1.Egress
+	name   string
+}
+
+// NewEgressValue returns the EgressValue that sets egress, with no
+// default: the Gateway chooses.
+func NewEgressValue(egress *dnsgatev1.Egress) *EgressValue {
+	return &EgressValue{egress: egress}
+}
+
+// Set sets the Egress that value names, as ParseEgress parses it.
+func (v *EgressValue) Set(value string) error {
+	egress, err := ParseEgress(value)
+	if err != nil {
+		return err
+	}
+
+	*v.egress, v.name = egress, value
+
+	return nil
+}
+
+// String returns the name of the Egress set.
+func (v *EgressValue) String() string {
+	return v.name
+}
+
+// Type is "string", so the help shows an --egress as one.
+func (v *EgressValue) Type() string {
+	return "string"
+}
+
 // Dial connects to the Gateway at gateway, a host:port, over TLS,
 // verifying it against the certificates of every file in caFiles or,
 // without one, the system's CA certificates. The client takes opts.

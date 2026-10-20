@@ -4,15 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/pflag"
 
 	"github.com/dnsgateway/dnsgate/internal/acme"
 	"github.com/dnsgateway/dnsgate/internal/gatewayconn"
+	"github.com/dnsgateway/dnsgate/internal/loglevel"
 )
 
 const (
@@ -40,161 +39,152 @@ const (
 const (
 	defaultListen   = acme.DefaultListen
 	defaultTTL      = 60
-	defaultLogLevel = "info"
+	defaultLogLevel = slog.LevelInfo
 	defaultGateway  = gatewayconn.DefaultGateway
 )
 
-// Flags holds the parsed CLI flags. Each falls back to an environment
-// variable, then to a default.
-type Flags struct {
-	Listen       string
-	TLSCertFile  string
-	TLSKeyFile   string
-	ChallengeMap string
-	TTL          uint32
-	LogLevel     string
-
-	Gateway string
-	CAFiles []string
-	Egress  string
-
-	// envTTLErr is why the TTL in the environment was not taken, if it was
-	// not; it stops the daemon unless --ttl replaces it.
-	envTTLErr error
+// envVar is the environment variable of a flag. A path list is split,
+// leaving out empty entries, and gives the flag once per path.
+type envVar struct {
+	flag, env string
+	pathList  bool
 }
 
-// DefaultFlags returns the flags resolved from the environment and
-// defaults, before command-line parsing.
-func DefaultFlags() *Flags {
-	f := &Flags{
-		Listen:       withDefaultEnv(envListen, defaultListen),
-		TLSCertFile:  withDefaultEnv(envTLSCertFile, ""),
-		TLSKeyFile:   withDefaultEnv(envTLSKeyFile, ""),
-		ChallengeMap: withDefaultEnv(envChallengeMap, ""),
-		TTL:          defaultTTL,
-		LogLevel:     withDefaultEnv(envLogLevel, defaultLogLevel),
-		Gateway:      withDefaultEnv(envGateway, defaultGateway),
-		CAFiles:      envPathList(envCAFile),
-		Egress:       withDefaultEnv(envEgress, ""),
-	}
+// daemonFlags registers the flags of the daemon on flags, bound to the
+// ACME Endpoint's options with their built-in defaults, and returns the
+// function that gives those options once flags are parsed. That function
+// first gives each flag not set on the command line the value of its
+// environment variable, if set, through the same parse: a bad value in
+// the environment is an error unless the flag replaces it.
+func daemonFlags(flags *pflag.FlagSet) func(lookupEnv func(string) (string, bool)) (acme.Options, error) {
+	opts := acme.Options{TTL: defaultTTL, LogLevel: defaultLogLevel}
 
-	if v, ok := os.LookupEnv(envTTL); ok {
-		ttl, err := strconv.ParseUint(v, 10, 32)
-		if err != nil {
-			f.envTTLErr = fmt.Errorf("invalid %s %q: give the TTL in seconds", envTTL, v)
+	envVars := append(addEndpointFlags(flags, &opts), addGatewayFlags(flags, &opts)...)
+
+	return func(lookupEnv func(string) (string, bool)) (acme.Options, error) {
+		for _, e := range envVars {
+			value, ok := lookupEnv(e.env)
+			if !ok || flags.Changed(e.flag) {
+				continue
+			}
+
+			values := []string{value}
+			if e.pathList {
+				values = pathList(value)
+			}
+
+			for _, v := range values {
+				if err := flags.Set(e.flag, v); err != nil {
+					return acme.Options{}, envError(e, v, err)
+				}
+			}
 		}
 
-		f.TTL = uint32(ttl)
+		return opts, nil
 	}
-
-	return f
 }
 
-// AddDaemonFlags registers the flags of the daemon.
-func (f *Flags) AddDaemonFlags(flags *pflag.FlagSet) {
-	flags.StringVarP(&f.Listen, flagListen, "", f.Listen,
+// addEndpointFlags registers the flags of the ACME Endpoint itself,
+// bound to opts, and returns their environment variables.
+func addEndpointFlags(flags *pflag.FlagSet, opts *acme.Options) []envVar {
+	flags.StringVarP(&opts.Listen, flagListen, "", defaultListen,
 		"TCP address the acme-dns and acmeproxy APIs are served on (env "+envListen+")")
-	flags.StringVarP(&f.TLSCertFile, flagTLSCertFile, "", f.TLSCertFile,
+	flags.StringVarP(&opts.CertFile, flagTLSCertFile, "", "",
 		"PEM certificate to serve HTTPS with, together with --"+flagTLSKeyFile+"; without both, plain HTTP is served (env "+envTLSCertFile+")")
-	flags.StringVarP(&f.TLSKeyFile, flagTLSKeyFile, "", f.TLSKeyFile,
+	flags.StringVarP(&opts.KeyFile, flagTLSKeyFile, "", "",
 		"PEM private key of --"+flagTLSCertFile+" (env "+envTLSKeyFile+")")
-	flags.StringVarP(&f.ChallengeMap, flagChallengeMap, "", f.ChallengeMap,
+	flags.StringVarP(&opts.ChallengeMapFile, flagChallengeMap, "", "",
 		"Challenge Map file, YAML or JSON, mapping each acme-dns subdomain to a zone and a name in it, "+
 			"or, with no zone, to a name in any zone the token allows; without it, every subdomain is unmapped (env "+envChallengeMap+")")
-	flags.Uint32VarP(&f.TTL, flagTTL, "", f.TTL,
+	flags.VarP(ttlValue{&opts.TTL}, flagTTL, "",
 		"TTL in seconds of the challenge values added (env "+envTTL+")")
-	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
-		"lowest level of the logs written: "+logLevelNames()+" (env "+envLogLevel+")")
-	flags.StringVarP(&f.Gateway, flagGateway, "", f.Gateway,
+	flags.VarP(loglevel.NewValue(&opts.LogLevel), flagLogLevel, "",
+		"lowest level of the logs written: "+loglevel.Names()+" (env "+envLogLevel+")")
+
+	return []envVar{
+		{flag: flagListen, env: envListen},
+		{flag: flagTLSCertFile, env: envTLSCertFile},
+		{flag: flagTLSKeyFile, env: envTLSKeyFile},
+		{flag: flagChallengeMap, env: envChallengeMap},
+		{flag: flagTTL, env: envTTL},
+		{flag: flagLogLevel, env: envLogLevel},
+	}
+}
+
+// addGatewayFlags registers the flags that point the Gateway client at
+// the Gateway, bound to opts, and returns their environment variables.
+func addGatewayFlags(flags *pflag.FlagSet, opts *acme.Options) []envVar {
+	flags.StringVarP(&opts.Gateway, flagGateway, "", defaultGateway,
 		"Gateway address as host:port (env "+envGateway+")")
-	flags.StringArrayVarP(&f.CAFiles, flagCAFile, "", f.CAFiles,
+	flags.StringArrayVarP(&opts.CAFiles, flagCAFile, "", nil,
 		"PEM file of the CA certificates that verify the Gateway, instead of the system's; repeat it to trust several (env "+envCAFile+", a path list)")
-	flags.StringVarP(&f.Egress, flagEgress, "", f.Egress,
+	flags.VarP(gatewayconn.NewEgressValue(&opts.Egress), flagEgress, "",
 		"Egress to reach the Provider through: gateway or agent (default: gateway if the token allows it; env "+envEgress+")")
-}
 
-// logLevels are the accepted --log-level values and their slog levels,
-// most severe first.
-var logLevels = []struct {
-	name  string
-	level slog.Level
-}{
-	{"error", slog.LevelError},
-	{"warn", slog.LevelWarn},
-	{"info", slog.LevelInfo},
-	{"debug", slog.LevelDebug},
-}
-
-// logLevelNames returns the accepted --log-level values, most severe first.
-func logLevelNames() string {
-	names := make([]string, len(logLevels))
-	for i, l := range logLevels {
-		names[i] = l.name
+	return []envVar{
+		{flag: flagGateway, env: envGateway},
+		{flag: flagCAFile, env: envCAFile, pathList: true},
+		{flag: flagEgress, env: envEgress},
 	}
-
-	return strings.Join(names, ", ")
 }
 
-// checkDaemonFlags checks the flags of the daemon, set on flags, and
-// returns the ACME Endpoint's options they give. A TLS certificate without
-// its key, or the reverse, is an error (acme.CheckTLSPair).
-func checkDaemonFlags(f *Flags, flags *pflag.FlagSet) (acme.Options, error) {
-	if err := acme.CheckTLSPair(f.TLSCertFile, f.TLSKeyFile); err != nil {
-		return acme.Options{}, fmt.Errorf("--%s, --%s: %w", flagTLSCertFile, flagTLSKeyFile, err)
-	}
+// ttlValue is a --ttl flag: a TTL in seconds.
+type ttlValue struct {
+	ttl *uint32
+}
 
-	level, err := logLevel(f.LogLevel)
+func (v ttlValue) Set(value string) error {
+	ttl, err := strconv.ParseUint(value, 10, 32)
 	if err != nil {
-		return acme.Options{}, err
+		return errors.New("give the TTL in seconds")
 	}
 
-	if f.envTTLErr != nil && !flags.Changed(flagTTL) {
-		return acme.Options{}, f.envTTLErr
-	}
+	*v.ttl = uint32(ttl)
 
-	egress, err := gatewayconn.ParseEgress(f.Egress)
-	if err != nil {
-		return acme.Options{}, err
-	}
-
-	return acme.Options{
-		Listen:           f.Listen,
-		CertFile:         f.TLSCertFile,
-		KeyFile:          f.TLSKeyFile,
-		LogLevel:         level,
-		Gateway:          f.Gateway,
-		CAFiles:          f.CAFiles,
-		Egress:           egress,
-		ChallengeMapFile: f.ChallengeMap,
-		TTL:              f.TTL,
-	}, nil
+	return nil
 }
 
-// logLevel returns the slog level that name, a --log-level, names.
-func logLevel(name string) (slog.Level, error) {
-	for _, l := range logLevels {
-		if l.name == name {
-			return l.level, nil
-		}
-	}
-
-	return 0, errors.New(`unknown log level "` + name + `": use ` + logLevelNames())
+func (v ttlValue) String() string {
+	return strconv.FormatUint(uint64(*v.ttl), 10)
 }
 
-func withDefaultEnv(key, def string) string {
-	if val, ok := os.LookupEnv(key); ok {
-		return val
-	}
-
-	return def
+// Type is "uint32", so the help shows a --ttl as one.
+func (v ttlValue) Type() string {
+	return "uint32"
 }
 
-// envPathList returns the paths in the environment variable key, a path
-// list, leaving out empty entries.
-func envPathList(key string) []string {
+// flagError returns err, an error parsing the flags. A bad --egress gives
+// gatewayconn's message alone, the one dnsgate-cli gives, which already
+// names the value.
+func flagError(err error) error {
+	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok && invalid.GetFlag().Name == flagEgress {
+		return invalid.Unwrap()
+	}
+
+	return err
+}
+
+// envError returns the error of value, from e's environment variable,
+// that its flag refused with err: "<ENV> "<value>": <reason>", or, for
+// --egress, gatewayconn's message alone, as flagError gives it.
+func envError(e envVar, value string, err error) error {
+	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok {
+		err = invalid.Unwrap()
+	}
+
+	if e.flag == flagEgress {
+		return err
+	}
+
+	return fmt.Errorf("%s %q: %w", e.env, value, err)
+}
+
+// pathList returns the paths in list, a path list, leaving out empty
+// entries.
+func pathList(list string) []string {
 	var paths []string
 
-	for _, p := range filepath.SplitList(os.Getenv(key)) {
+	for _, p := range filepath.SplitList(list) {
 		if p != "" {
 			paths = append(paths, p)
 		}

@@ -39,6 +39,39 @@ func TestParseEgressUnknown(t *testing.T) {
 	}
 }
 
+func TestEgressValue(t *testing.T) {
+	t.Parallel()
+
+	for value, want := range map[string]dnsgatev1.Egress{
+		"":        dnsgatev1.Egress_EGRESS_UNSPECIFIED,
+		"gateway": dnsgatev1.Egress_EGRESS_GATEWAY,
+		"agent":   dnsgatev1.Egress_EGRESS_AGENT,
+	} {
+		egress := dnsgatev1.Egress(-1)
+
+		v := gatewayconn.NewEgressValue(&egress)
+		if err := v.Set(value); err != nil || egress != want || v.String() != value {
+			t.Errorf("Set(%q) = %v: egress %v, String %q; want %v", value, err, egress, v.String(), want)
+		}
+	}
+}
+
+// An --egress refused gives ParseEgress's message, as dnsgate-cli does.
+func TestEgressValueUnknown(t *testing.T) {
+	t.Parallel()
+
+	egress := dnsgatev1.Egress_EGRESS_AGENT
+
+	err := gatewayconn.NewEgressValue(&egress).Set("relay")
+	if err == nil || err.Error() != `unknown egress "relay": use gateway or agent` {
+		t.Errorf("Set(relay) error = %v", err)
+	}
+
+	if egress != dnsgatev1.Egress_EGRESS_AGENT {
+		t.Errorf("Set(relay) changed the Egress to %v", egress)
+	}
+}
+
 func TestDialRefuses(t *testing.T) {
 	t.Parallel()
 

@@ -24,6 +24,10 @@ import (
 // set another address.
 const DefaultListen = ":8080"
 
+// ErrTLSPair is the error of a run given a TLS certificate without its
+// key, or the reverse.
+var ErrTLSPair = errors.New("a TLS certificate and key must be given together: give both to serve HTTPS, or neither to serve plain HTTP")
+
 // Bounds of each request. acme-dns requests are small JSON objects and
 // each one needs at most a few Gateway round trips.
 const (
@@ -111,9 +115,9 @@ func NewHandler(c Config) http.Handler {
 }
 
 // Run serves the ACME Endpoint until ctx is done, then stops gracefully.
-// A TLS certificate without its key, or the reverse, files that do not
-// load, or a given Challenge Map file that does not, stop it before it
-// listens. It connects to the Gateway lazily, on the first write.
+// A TLS certificate without its key, or the reverse (ErrTLSPair), files
+// that do not load, or a given Challenge Map file that does not, stop it
+// before it listens. It connects to the Gateway lazily, on the first write.
 func Run(ctx context.Context, o Options) error {
 	tlsConfig, err := loadTLS(o.CertFile, o.KeyFile)
 	if err != nil {
@@ -200,11 +204,11 @@ func Run(ctx context.Context, o Options) error {
 	}
 }
 
-// CheckTLSPair returns an error if only one of certFile and keyFile is
+// checkTLSPair returns ErrTLSPair if only one of certFile and keyFile is
 // given, so a half-configured HTTPS setup never falls back to plain HTTP.
-func CheckTLSPair(certFile, keyFile string) error {
+func checkTLSPair(certFile, keyFile string) error {
 	if (certFile == "") != (keyFile == "") {
-		return errors.New("a TLS certificate and key must be given together: give both to serve HTTPS, or neither to serve plain HTTP")
+		return ErrTLSPair
 	}
 
 	return nil
@@ -213,7 +217,7 @@ func CheckTLSPair(certFile, keyFile string) error {
 // loadTLS returns the TLS configuration that serves certFile and keyFile,
 // or nil for plain HTTP when both are empty.
 func loadTLS(certFile, keyFile string) (*tls.Config, error) {
-	if err := CheckTLSPair(certFile, keyFile); err != nil {
+	if err := checkTLSPair(certFile, keyFile); err != nil {
 		return nil, err
 	}
 

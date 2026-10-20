@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/dnsgateway/dnsgate-go/client"
 	"github.com/spf13/cobra"
+
+	"github.com/dnsgateway/dnsgate/internal/acme"
 )
 
 const bin = "dnsgate-acme"
@@ -39,8 +42,6 @@ func main() {
 // clientOpts: none in production, where it acts as Egress Agent through
 // its host's network; tests give it a fake network.
 func newRootCmd(clientOpts ...client.Option) *cobra.Command {
-	flags := DefaultFlags()
-
 	rootCmd := &cobra.Command{
 		Use:   bin,
 		Short: "ACME Endpoint",
@@ -63,12 +64,28 @@ func newRootCmd(clientOpts ...client.Option) *cobra.Command {
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runDaemon(cmd.Context(), cmd.ErrOrStderr(), flags, cmd.Flags(), clientOpts...)
-		},
 	}
 
-	flags.AddDaemonFlags(rootCmd.Flags())
+	options := daemonFlags(rootCmd.Flags())
+
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return flagError(err) })
+
+	rootCmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		opts, err := options(os.LookupEnv)
+		if err != nil {
+			return err
+		}
+
+		opts.Log = cmd.ErrOrStderr()
+		opts.ClientOptions = clientOpts
+
+		err = acme.Run(cmd.Context(), opts)
+		if errors.Is(err, acme.ErrTLSPair) {
+			return fmt.Errorf("--%s, --%s: %w", flagTLSCertFile, flagTLSKeyFile, err)
+		}
+
+		return err
+	}
 
 	rootCmd.AddCommand(newVersionCmd())
 
