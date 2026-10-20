@@ -123,59 +123,6 @@ func TestEgressAgentRelaysAPresentForAnAgentOnlyToken(t *testing.T) {
 	n.wantRelayed(t)
 }
 
-// wantPresentRefused checks that a /present of a challenge value at
-// _acme-challenge.example.com with tok answers 401 forbidden and writes
-// nothing.
-func (e *e2e) wantPresentRefused(t *testing.T, d *acmeDaemon, tok acmeToken) {
-	t.Helper()
-
-	providerCalls := len(e.Fake.Calls())
-
-	code, body := d.present(t, tok, acmeproxyBody("_acme-challenge.example.com.", challenge(1)))
-	if code != http.StatusUnauthorized || !jsonEqual(body, replyForbidden) {
-		t.Errorf("POST /present = %d %s, want 401 forbidden\nlogs:\n%s", code, body, d.Logs)
-	}
-
-	if got := e.Fake.Calls()[providerCalls:]; len(got) != 0 {
-		t.Errorf("the Provider was called: %v", got)
-	}
-
-	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
-}
-
-func TestPresentRefusesARequestWithoutBasicAuth(t *testing.T) {
-	e := newE2E(t)
-	d := e.acme(t, daemonConfig{Egress: "gateway"})
-
-	e.gatewayUntouched(t, func() {
-		code, body := d.present(t, acmeToken{}, acmeproxyBody("_acme-challenge.example.com.", challenge(1)))
-		if code != http.StatusUnauthorized || !jsonEqual(body, replyForbidden) {
-			t.Errorf("POST /present = %d %s, want 401 forbidden", code, body)
-		}
-	})
-
-	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
-
-	logs := d.Logs.String()
-	if !strings.Contains(logs, `"reason":"no Basic auth"`) {
-		t.Errorf("the logs do not give the reason:\n%s", logs)
-	}
-
-	if !strings.Contains(logs, `"name":"_acme-challenge.example.com."`) {
-		t.Errorf("the logs do not give the name:\n%s", logs)
-	}
-}
-
-func TestPresentRefusesAUsernameOtherThanTheTokenID(t *testing.T) {
-	e := newE2E(t)
-	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
-	other := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
-	d := e.acme(t, daemonConfig{Egress: "gateway"})
-
-	e.wantPresentRefused(t, d, acmeToken{Key: tok.Key, User: other.User})
-	e.wantPresentRefused(t, d, acmeToken{Key: tok.Key, User: ""})
-}
-
 // auditEvents returns the audit events in audit with the event name.
 func auditEvents(t *testing.T, audit, name string) []map[string]any {
 	t.Helper()
