@@ -2,6 +2,6 @@ permissions:
   - verbs: [patch]
     resources: [records]
     zones: ["example.com"]
-    names: ["_acme-challenge"]
+    names: ["_acme-challenge", "_acme-challenge.**"]
     types: [TXT]
     egress: [gateway, agent]

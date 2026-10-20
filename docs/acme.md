@@ -4,15 +4,18 @@
 
 Let existing ACME clients complete DNS-01 challenges through the Gateway without ever receiving the Provider Credential, and with no changes to the clients.
 
-The compatibility target is the **acme-dns HTTPS API** (`POST /update`, `GET /health`). Almost every ACME client already supports it: acme.sh, lego, cert-manager, certbot, Caddy and Proxmox.
+The ACME Endpoint speaks two HTTPS APIs on one listener:
 
-This document builds on the core architecture in [draft.md](draft.md). Terms are defined in [GLOSSARY.md](../GLOSSARY.md). Decisions are in [ADR 0001](adr/0001-self-contained-service-tokens.md) and [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md), which supersedes [ADR 0003](adr/0003-acme-endpoint.md).
+- the **acme-dns API** (`POST /update`, `GET /health`), which almost every ACME client already supports: acme.sh, lego, cert-manager, certbot, Caddy and Proxmox;
+- the **acmeproxy API** (`POST /present`, `POST /cleanup`), the HTTP "present / cleanup" protocol of lego's `httpreq` provider (and Traefik, built on lego), acme.sh's `dns_acmeproxy` hook and the Caddy / libdns `acmeproxy` module.
+
+This document builds on the core architecture in [draft.md](draft.md). Terms are defined in [GLOSSARY.md](../GLOSSARY.md). Decisions are in [ADR 0001](adr/0001-self-contained-service-tokens.md) [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md), which supersedes [ADR 0003](adr/0003-acme-endpoint.md), and ADRs [0012](adr/0012-unmapped-subdomain-is-the-certificate-domain.md) and [0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md), which amend it.
 
 ---
 
 # Main Principle
 
-ACME is **not** a new kind of authority. An acme-dns `/update` is translated into a `patch` (add one value) on a TXT record, sent to the Gateway with the caller's own Service Token. The Gateway authorizes it with the token's ordinary Permissions, exactly as it would a `dnsgate-cli record patch`. The Challenge Map only says *which* Challenge Target a subdomain refers to.
+ACME is **not** a new kind of authority. An acme-dns `/update` or an acmeproxy `/present` is translated into a `patch` that adds one value on a TXT record, and an acmeproxy `/cleanup` into a `patch` that removes one value, sent to the Gateway with the caller's own Service Token. The Gateway authorizes it with the token's ordinary Permissions, exactly as it would a `dnsgate-cli record patch`. The Challenge Map only says *which* Challenge Target an acme-dns subdomain refers to; an acmeproxy client names the Challenge Target itself.
 
 DNS resolution never grants permission. The ACME Endpoint never follows CNAMEs or looks up DNS at all.
 
@@ -30,8 +33,9 @@ The ACME Endpoint is `dnsgate-acme`, a separate daemon next to `dnsgate` and `dn
 - **Bound Tokens:** refused (401). acme-dns clients cannot present an Identity Token ([oidc.md](oidc.md)), so the Gateway refuses the token.
 
 ```text
-ACME client (acme.sh, lego, cert-manager, ...)
-      │  POST /update   X-Api-User / X-Api-Key / {subdomain, txt}
+ACME client (acme.sh, lego, cert-manager, Traefik, Caddy, ...)
+      │  acme-dns:   POST /update             X-Api-User / X-Api-Key  {subdomain, txt}
+      │  acmeproxy:  POST /present, /cleanup  Basic auth jti:token    {fqdn, value}
       ▼
 dnsgate-acme (ACME Endpoint)  ── Challenge Map file
       │  gRPC over TLS: InspectToken, PatchRecord (token unchanged)
@@ -50,10 +54,10 @@ Each flag falls back to an environment variable, then to a default. The three Ga
 
 | Flag | Environment variable | Default | Meaning |
 |---|---|---|---|
-| `--listen` | `DNSGATE_ACME_LISTEN_ADDRESS` | `:8080` | Address to serve the acme-dns API on |
+| `--listen` | `DNSGATE_ACME_LISTEN_ADDRESS` | `:8080` | Address to serve the acme-dns and acmeproxy APIs on |
 | `--tls-cert-file` | `DNSGATE_ACME_TLS_CERT_FILE` | none | TLS certificate to serve HTTPS with |
 | `--tls-key-file` | `DNSGATE_ACME_TLS_KEY_FILE` | none | Key of that certificate |
-| `--challenge-map` | `DNSGATE_ACME_CHALLENGE_MAP` | none | Challenge Map file (YAML or JSON); without it every subdomain is unmapped |
+| `--challenge-map` | `DNSGATE_ACME_CHALLENGE_MAP` | none | Challenge Map file (YAML or JSON); without it every subdomain is unmapped. The acmeproxy API never uses it |
 | `--ttl` | `DNSGATE_ACME_TTL` | `60` | TTL of the challenge values it adds |
 | `--log-level` | `DNSGATE_ACME_LOG_LEVEL` | `info` | Log level |
 | `--gateway` | `DNSGATE_GATEWAY` | `localhost:8443` | Gateway address |
@@ -72,7 +76,7 @@ TTL isn't a security boundary, so it lives in configuration and not in the token
 
 # Challenge Map
 
-The Challenge Map is a file in the ACME Endpoint's configuration, mapping each acme-dns subdomain to a Challenge Target by zone and zone-relative name:
+The Challenge Map is an optional file in the ACME Endpoint's configuration, used by the acme-dns API only. It maps each acme-dns subdomain to a Challenge Target by zone and zone-relative name:
 
 ```yaml
 examplecom:
@@ -157,7 +161,7 @@ An ACME client uses an ordinary **Derived Token**, issued with `dnsgate-cli toke
 
 ---
 
-# API
+# acme-dns API
 
 ## `POST /update`
 
@@ -248,27 +252,177 @@ Returns 200 with an empty body.
 
 ---
 
+# acmeproxy API
+
+The acmeproxy API is the HTTP "present / cleanup" protocol in its default (non-RAW) mode. It is served on the same listener, TLS settings, body cap and timeouts as the acme-dns API, at the root path. A client that expects a path prefix gets it from a reverse proxy in front of the ACME Endpoint. RAW mode (`{"domain", "token", "keyAuth"}`) is not supported.
+
+## `POST /present` and `POST /cleanup`
+
+Request:
+
+```http
+POST /present
+Authorization: Basic base64(tok_01JACME...:<Service Token>)
+Content-Type: application/json
+
+{"fqdn": "_acme-challenge.www.example.com.", "value": "<43-char base64url challenge value>"}
+```
+
+`POST /cleanup` takes the same body.
+
+- **Basic auth password** is the full Service Token.
+- **Basic auth username** must equal the token's `jti`, the same check as `X-Api-User`. A mismatch returns 401.
+- **`fqdn`** is the Challenge Target, an absolute name: the trailing dot is optional and case is ignored. It must be at most 253 characters, have at least two labels, and each label must be a DNS label (leading underscores allowed, as in `_acme-challenge`). A single label is refused, never read as relative. It need not start with `_acme-challenge`: clients that follow CNAMEs (lego does by default) send the delegated target, such as `challenge-123.acme.example.net.`.
+- **`value`** must be exactly 43 characters of `[A-Za-z0-9_-]`, the same check as `txt` in `/update`.
+
+Unknown fields are ignored. The body must be exactly one JSON object, with nothing after it, and is capped as for `/update`.
+
+## How the calls map to Gateway calls
+
+The **Challenge Map is not consulted.** The zone of the `fqdn` is the longest zone named in the token's Permissions that holds the name and allows `patch` on TXT there, so the Administrator configures no zone per domain. An `fqdn` in no such zone is refused with 401 `forbidden`, without a write.
+
+Local checks come first (JSON, `fqdn`, `value`, Basic auth present), then the same two Gateway calls as `/update`, with the Basic auth password as the Service Token, unchanged:
+
+1. **`InspectToken`** returns the token's `jti`, which must equal the Basic auth username, and the Permissions the zone is taken from.
+2. **`PatchRecord`** on TXT at the Challenge Target, with the `--egress` Egress:
+   - `/present` adds the value (`add: ["\"<value>\""]`, `ttl: --ttl`). A value already present is kept once, and a second value at the same name sits next to the first, so the apex and wildcard challenges of one certificate validate together.
+   - `/cleanup` removes that value only (`remove: ["\"<value>\""]`, no TTL). Every other value at the Challenge Target stays, so a cleanup never breaks a validation still running. Removing a value that is not there, even at a name with no TXT records at all, succeeds.
+
+## Response contract
+
+| Case | Status | Body |
+|---|---|---|
+| Success, including a value already present (`/present`) or already absent (`/cleanup`) | 200 | The request echoed: `{"fqdn": "...", "value": "..."}`. acme.sh looks for the value in the body; libdns checks both fields. |
+| No Basic auth, or an empty password | 401 | `{"error": "forbidden"}` |
+| Username is not the token's `jti` | 401 | `{"error": "forbidden"}` |
+| Token refused by the Gateway (bad, expired, revoked, Bound Token) | 401 | `{"error": "forbidden"}` |
+| Permission or Egress refused by the Gateway | 401 | `{"error": "forbidden"}` |
+| `fqdn` in no zone of the token's Permissions | 401 | `{"error": "forbidden"}` |
+| Malformed JSON, or data after the JSON object | 400 | `{"error": "bad_request"}` |
+| `fqdn` is not a valid name (single label, too long, bad label) | 400 | `{"error": "bad_fqdn"}` |
+| `value` is not a DNS-01 challenge value | 400 | `{"error": "bad_value"}` |
+| Provider failure, the Provider refusing the Provider Credential, TTL refused, Gateway unreachable or timed out | 500 | `{"error": "provider_error"}` (details go to the log only) |
+
+Gateway errors map to replies exactly as for `/update`. Only malformed JSON differs: the acme-dns API answers it 401 `forbidden`, the acmeproxy API 400 `bad_request`. Clients look only at the status: lego treats any non-2xx status as a failure, libdns any status but 200.
+
+## Tokens for acmeproxy clients
+
+An acmeproxy client uses an ordinary narrow ACME token. Because the client names the Challenge Target, keep the token scoped by name: `patch` on TXT at `_acme-challenge` names plus any delegated names, a mandatory expiry, and no `tokens` resource. `/cleanup` needs no extra verb, since `patch` covers removal. [permissions-acme.yaml](permissions-acme.yaml) is a minimal Permissions file:
+
+```yaml
+permissions:
+  - verbs: [patch]
+    resources: [records]
+    zones: ["example.com"]
+    names: ["_acme-challenge", "_acme-challenge.**"]
+    types: [TXT]
+    egress: [gateway, agent]
+```
+
+Add a Permission for each delegated Challenge Target, for example `zones: ["example.net"]` with `names: ["challenge-123.acme"]`, and drop the egress the ACME Endpoint does not ask for. Issue it with an expiry:
+
+```sh
+dnsgate-cli token create --sub traefik-prod --permissions docs/permissions-acme.yaml --expires 2160h
+```
+
+The client is given the token and its `jti`.
+
+## Client configuration
+
+In every client: endpoint = the ACME Endpoint's URL, username = the token's `jti`, password = the Service Token. Reach the ACME Endpoint over HTTPS (directly, or through a TLS-terminating proxy), since the Service Token travels in the `Authorization` header.
+
+### lego `httpreq`
+
+```sh
+HTTPREQ_ENDPOINT=https://acme.gateway.example \
+HTTPREQ_USERNAME=tok_01JACME... \
+HTTPREQ_PASSWORD=<Service Token> \
+lego run --dns httpreq -d '*.example.com' -d example.com
+```
+
+Leave `HTTPREQ_MODE` unset (default mode; `RAW` is not supported). lego follows a CNAME at `_acme-challenge` by default and sends the delegated target as `fqdn`, so the token must cover that name.
+
+### Traefik
+
+Traefik uses lego's `httpreq` provider, configured by the same environment variables on the Traefik process:
+
+```yaml
+certificatesResolvers:
+  gateway:
+    acme:
+      email: admin@example.com
+      storage: acme.json
+      dnsChallenge:
+        provider: httpreq
+```
+
+```sh
+HTTPREQ_ENDPOINT=https://acme.gateway.example
+HTTPREQ_USERNAME=tok_01JACME...
+HTTPREQ_PASSWORD=<Service Token>
+```
+
+### acme.sh `dns_acmeproxy`
+
+```sh
+export ACMEPROXY_ENDPOINT=https://acme.gateway.example
+export ACMEPROXY_USERNAME=tok_01JACME...
+export ACMEPROXY_PASSWORD=<Service Token>
+acme.sh --issue --dns dns_acmeproxy -d example.com -d '*.example.com'
+```
+
+acme.sh saves the three settings in the account configuration on the first run. It sends `fqdn` with a trailing dot and checks that the reply contains the value.
+
+### Caddy / libdns `acmeproxy`
+
+Build Caddy with the `github.com/caddy-dns/acmeproxy` module, then:
+
+```caddyfile
+example.com {
+	tls {
+		dns acmeproxy https://acme.gateway.example {
+			username {env.ACMEPROXY_USERNAME}
+			password {env.ACMEPROXY_PASSWORD}
+		}
+	}
+}
+```
+
+or in JSON, as the `acme` issuer's `challenges.dns.provider`:
+
+```json
+{
+  "name": "acmeproxy",
+  "endpoint": "https://acme.gateway.example",
+  "username": "tok_01JACME...",
+  "password": "<Service Token>"
+}
+```
+
+The module expands placeholders in all three settings, so the token can come from the environment. libdns requires exactly 200 and checks that the reply echoes `fqdn` and `value`.
+
+---
+
 # HTTP and HTTPS
 
 - With `--tls-cert-file` and `--tls-key-file`, `dnsgate-acme` serves **HTTPS**, TLS 1.2 or later, since some ACME clients and Proxmox run older TLS stacks.
-- With neither, it serves **plain HTTP**, for use behind a TLS-terminating proxy or Kubernetes ingress. ACME clients must still reach that proxy over HTTPS: the Service Token travels in `X-Api-Key`.
+- With neither, it serves **plain HTTP**, for use behind a TLS-terminating proxy or Kubernetes ingress. ACME clients must still reach that proxy over HTTPS: the Service Token travels in `X-Api-Key` or in the Basic auth `Authorization` header.
 - With only one of the two, it stops at startup.
 
 Read, write and idle timeouts are bounded. The daemon shuts down cleanly on SIGINT or SIGTERM.
 
 ---
 
-# No Cleanup
+# Cleanup
 
-The ACME Endpoint **only adds** challenge values. It never deletes or prunes them: no timer, no rule based on age or count.
+The ACME Endpoint removes a challenge value **only when a client asks**, through the acmeproxy `/cleanup` ([ADR 0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md)). It never deletes or prunes on its own: no timer, no rule based on age or count.
 
-- None of the acme-dns clients ever asks for removal. Their cleanup step does nothing.
-- Deleting later would need the Service Token after the request is over, which the ACME Endpoint does not keep.
-- Pruning by count can race with another validation still running at a shared Challenge Target.
+- **acmeproxy clients** call `/cleanup` once validation is done. It removes exactly the value named, inside the request and with the caller's token, so nothing is kept after the request and no other validation at the same Challenge Target is touched.
+- **acme-dns clients** never ask for removal: their cleanup step does nothing, and the acme-dns API has no removal call. Deleting later on their behalf would need the Service Token after the request is over, which the ACME Endpoint does not keep, and pruning by count can race with another validation still running at a shared Challenge Target.
 
 Consequences:
 
-- Values pile up at each Challenge Target, roughly two per renewal plus retries. The Administrator removes them with `dnsgate-cli record patch --remove` or `dnsgate-cli record delete`.
+- Values written through `/update` pile up at each Challenge Target, roughly two per renewal plus retries. Values written through `/present` remain only when a client fails before its `/cleanup`. The Administrator removes leftovers with `dnsgate-cli record patch --remove` or `dnsgate-cli record delete`.
 - There is **no limit** on how many values a Challenge Target can hold. Enforcing one would need the RRset, and a `patch`-only token can't read it ([ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md)). A client stuck in a retry loop keeps adding values until someone cleans up.
 
 ---
@@ -284,8 +438,12 @@ Consequences:
 | certbot-dns-acmedns | `api-url`, a registration file keyed by domain | Never registers. Requires exactly 200. |
 | acme-dns-auth.py certbot hook | `ACMEDNS_URL`, a stored account for each domain | Requires exactly 200. **Prints `X-Api-Key` to stdout when an update fails.** |
 | Caddy `caddy-dns/acmedns` | `server_url`, username, password, subdomain (or a map for each domain) | Requires exactly 200. |
+| lego `httpreq` (acmeproxy) | `HTTPREQ_ENDPOINT`, `HTTPREQ_USERNAME` (jti), `HTTPREQ_PASSWORD` (token) | Any 2xx is success. Follows CNAMEs by default. |
+| Traefik (acmeproxy) | `dnsChallenge.provider: httpreq`, plus lego's `HTTPREQ_*` variables | Built on lego `httpreq`. |
+| acme.sh `dns_acmeproxy` | `ACMEPROXY_ENDPOINT`, `ACMEPROXY_USERNAME` (jti), `ACMEPROXY_PASSWORD` (token) | Looks for the value in the reply. |
+| Caddy `caddy-dns/acmeproxy` | endpoint, `username` (jti), `password` (token) | Requires exactly 200 and the request echoed. |
 
-The account fields map the same way for every client:
+The account fields map the same way for every acme-dns client:
 
 ```text
 username   = token jti
@@ -298,9 +456,10 @@ fulldomain = the Challenge Target (used by the client only to print the CNAME to
 
 # Security Notes
 
-- **An ACME token presented straight to the Gateway skips the TXT shape check.** The 43-character check runs only in the ACME Endpoint. Anyone holding an ACME token can call `PatchRecord` on the Gateway directly and add any TXT value its Permissions allow, such as an SPF record or a domain verification string. Keep ACME tokens narrow: `patch` on TXT at the Challenge Targets only, no `tokens` resource, and a mandatory expiry.
+- **An ACME token presented straight to the Gateway skips the TXT shape check.** The 43-character check runs only in the ACME Endpoint, for both APIs. Anyone holding an ACME token can call `PatchRecord` on the Gateway directly and add any TXT value its Permissions allow, such as an SPF record or a domain verification string. Keep ACME tokens narrow: `patch` on TXT at the Challenge Targets only, no `tokens` resource, and a mandatory expiry.
 - **Expect ACME tokens to leak into logs.** Some clients print `X-Api-Key` when an update fails.
-- **The certificate domain is not sent as such**, only the subdomain and the value. A client may put the domain in the subdomain field, and the ACME Endpoint then writes at `_acme-challenge` in front of it, but nothing proves that is the domain of the certificate being issued. Authorization is therefore by Challenge Target only.
+- **An acmeproxy client names its own Challenge Target.** The `fqdn` can be any name the token's Permissions allow, so scope ACME tokens by name (`_acme-challenge`, `_acme-challenge.**` and the delegated names), not only by zone.
+- **The certificate domain is not sent as such**, only the subdomain (or `fqdn`) and the value. A client may put the domain in the subdomain field, and the ACME Endpoint then writes at `_acme-challenge` in front of it, but nothing proves that is the domain of the certificate being issued. Authorization is therefore by Challenge Target only.
 - **Checking the value's shape** stops the token, when used through the ACME Endpoint, from writing arbitrary TXT values. It doesn't prove the caller holds a real ACME authorization.
 - **The ACME Endpoint holds no keys.** Compromising it exposes the tokens presented to it while compromised, and lets it rewrite the Challenge Map, but not the Gateway's keys, so it cannot open or mint tokens, and the Gateway still limits every write by the token's Permissions.
 
@@ -310,9 +469,11 @@ fulldomain = the Challenge Target (used by the client only to print the CNAME to
 
 The ACME Endpoint logs each `/update` (successful or refused) as a structured event, `"msg": "update"`, with `request_id` (`req_` and a ULID), `subdomain`, the Challenge Target (`zone` and `name`), `result` (`ok` or the error, such as `forbidden`), `duration_ms`, and for a refusal or failure a `reason` and the Gateway's `error`. Successes and refusals are logged at info, failures (500) at error. A subdomain that is neither a DNS label nor a domain name is left out, since it may hold anything.
 
-At the `debug` log level, each `/update` also logs its request headers, `"msg": "update headers"`, with the same `request_id`. The values of `X-Api-Key`, `Authorization`, `Proxy-Authorization` and `Cookie` are replaced by their length.
+Each acmeproxy request is logged the same way, `"msg": "acmeproxy"`, with `request_id`, `action` (`present` or `cleanup`), `fqdn` (only once it is a valid name), `zone`, `name`, `result`, `duration_ms`, and for a refusal or failure `reason` and `error`. A refusal with the same cause as in `/update` has the same `reason`; a request without Basic auth is logged with `no Basic auth`.
 
-Never logged: the Service Token, `X-Api-Key`, the TXT value.
+At the `debug` log level, each request also logs its request headers, `"msg": "update headers"` or `"msg": "acmeproxy headers"`, with the same `request_id`. The values of `X-Api-Key`, `Authorization`, `Proxy-Authorization` and `Cookie` are replaced by their length.
+
+Never logged: the Service Token, `X-Api-Key`, `Authorization`, the TXT value.
 
 The Gateway's audit log records every ACME write as a `patch` by the token's Service Account, like any other write.
 
@@ -320,11 +481,11 @@ The Gateway's audit log records every ACME write as a `patch` by the token's Ser
 
 # v2 Scope
 
-1. `dnsgate-acme` with `POST /update`, `GET /health` and `POST /register` (404), over HTTP or HTTPS
+1. `dnsgate-acme` with `POST /update`, `POST /present`, `POST /cleanup`, `GET /health` and `POST /register` (404), over HTTP or HTTPS
 2. The optional Challenge Map file, checked at startup
-3. Each `/update` as InspectToken plus PatchRecord, with the TXT value shape check
+3. Each `/update`, `/present` and `/cleanup` as InspectToken plus PatchRecord, with the TXT value shape check
 4. Gateway Egress and Agent Egress, chosen with `--egress`
-5. The response contract above
+5. The response contracts above
 6. Integration tests against acme.sh, lego and cert-manager
 
-Not planned: `/register`, automatic cleanup, a per-target value limit, DNS or CNAME discovery, checking delegations, Bound Tokens.
+Not planned: `/register`, acmeproxy RAW mode, cleanup through the acme-dns API, automatic cleanup, a per-target value limit, DNS or CNAME discovery, checking delegations, Bound Tokens.
