@@ -1,8 +1,8 @@
 # DNS Gateway — ACME Flows (v2)
 
-This document shows how an existing ACME client gets a DNS-01 challenge value written through the ACME Endpoint, `dnsgate-acme`, and the Gateway. It covers who holds which key, and what each party can read.
+This document shows how an existing ACME client gets a DNS-01 challenge value written, and with the acmeproxy API removed again, through the ACME Endpoint, `dnsgate-acme`, and the Gateway. It covers who holds which key, and what each party can read.
 
-Background: [acme.md](acme.md) (design), [flows.md](flows.md) (core flows), [ADR 0001](adr/0001-self-contained-service-tokens.md), [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md). Terms: [GLOSSARY.md](../GLOSSARY.md). Claim names and key IDs are examples.
+Background: [acme.md](acme.md) (design), [flows.md](flows.md) (core flows), [ADR 0001](adr/0001-self-contained-service-tokens.md), [ADR 0011](adr/0011-acme-endpoint-is-a-gateway-client.md), [ADR 0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md). Terms: [GLOSSARY.md](../GLOSSARY.md). Claim names and key IDs are examples.
 
 ## Keys and who holds them
 
@@ -20,7 +20,7 @@ So only the Gateway can mint and read tokens. The ACME Endpoint and the client b
 ## What is encrypted, and with which key
 
 ```text
-X-Api-Key: <Service Token>  =  BASE64URL(JWE header) . encrypted key . IV . ciphertext . tag
+X-Api-Key (or Basic auth password): <Service Token>  =  BASE64URL(JWE header) . encrypted key . IV . ciphertext . tag
 
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ ① JWE header (READABLE by anyone who holds the token)                    │
@@ -53,7 +53,7 @@ X-Api-Key: <Service Token>  =  BASE64URL(JWE header) . encrypted key . IV . ciph
 
 The token carries no Challenge Map. The Challenge Map lives in the ACME Endpoint's configuration. The Provider Credential is not encrypted separately. It is one claim inside ④, protected by the token's single JWE layer. On the network, the token travels inside TLS on both hops: client to ACME Endpoint (or its proxy), and ACME Endpoint to Gateway.
 
-**Visible to the ACME client and the ACME Endpoint:** the opaque token, its `kid`, and the `jti`. The client is given the `jti` separately at issuance, to put in `X-Api-User`. The ACME Endpoint learns it from the Gateway's `InspectToken`.
+**Visible to the ACME client and the ACME Endpoint:** the opaque token, its `kid`, and the `jti`. The client is given the `jti` separately at issuance, to put in `X-Api-User` or the Basic auth username. The ACME Endpoint learns it from the Gateway's `InspectToken`.
 
 **Never visible to the ACME client or the ACME Endpoint:** the Cloudflare API token.
 
@@ -61,7 +61,7 @@ The token carries no Challenge Map. The Challenge Map lives in the ACME Endpoint
 
 ## 1. Issuing an ACME token
 
-The Administrator issues an ordinary Derived Token through the Gateway with `dnsgate-cli token create`, and adds the matching entries to the ACME Endpoint's Challenge Map. The ACME Endpoint plays no part in issuing.
+The Administrator issues an ordinary Derived Token through the Gateway with `dnsgate-cli token create`, and, for acme-dns clients that send a mapped subdomain, adds the matching entries to the ACME Endpoint's Challenge Map. acmeproxy clients need no Challenge Map entry. The ACME Endpoint plays no part in issuing.
 
 ```mermaid
 sequenceDiagram
@@ -233,16 +233,62 @@ sequenceDiagram
 
 ---
 
-## 5. Denied requests
+## 5. The acmeproxy API (`POST /present`, `POST /cleanup`)
+
+Example: Traefik (lego `httpreq`) renews `example.com`, with `HTTPREQ_USERNAME` set to the `jti` and `HTTPREQ_PASSWORD` to the Service Token. The client names the Challenge Target itself, so the Challenge Map is not consulted: the zone is the longest zone of the token's Permissions that holds the `fqdn` and allows `patch` on TXT there. After validation, the client removes its value with `/cleanup` ([ADR 0013](adr/0013-acme-endpoint-cleans-up-when-a-client-asks.md)).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AC as ACME client<br/>(lego httpreq / Traefik / acme.sh / Caddy)
+    participant AE as ACME Endpoint<br/>(dnsgate-acme)
+    participant GW as Gateway
+    participant CF as api.cloudflare.com
+    participant LE as ACME CA (Let's Encrypt)
+
+    AC->>LE: new order for example.com
+    LE-->>AC: DNS-01 challenge (key authorization)
+    AC->>AC: value = base64url(SHA256(keyAuthorization))
+
+    AC->>AE: POST /present (TLS)<br/>Authorization: Basic jti:Service Token<br/>{"fqdn":"_acme-challenge.example.com.","value":"…43 chars…"}
+    AE->>AE: JSON well formed? fqdn a domain name?<br/>value 43 chars of [A-Za-z0-9_-]? Basic auth present?
+    AE->>GW: InspectToken(Basic auth password)
+    GW-->>AE: jti, permissions
+    AE->>AE: username == jti?<br/>zone = longest token zone holding the fqdn → example.com
+    AE->>GW: PatchRecord(token, egress, example.com,<br/>_acme-challenge, TXT, ttl 60, add ["\"…\""])
+    GW->>GW: decrypt, verify, check revocation, Permission check
+    GW->>CF: add TXT value (no change if present)
+    GW-->>AE: OK
+    AE-->>AC: 200 {"fqdn":"_acme-challenge.example.com.","value":"…"}
+
+    AC->>LE: challenge ready
+    LE->>LE: Resolve TXT _acme-challenge.example.com
+    LE-->>AC: valid, certificate issued
+
+    AC->>AE: POST /cleanup (same Basic auth, same body)
+    AE->>GW: InspectToken, then PatchRecord(…, remove ["\"…\""])
+    GW->>CF: remove that value only (no-op if absent)
+    GW-->>AE: OK
+    AE-->>AC: 200 {"fqdn":"_acme-challenge.example.com.","value":"…"}
+    Note over AC,CF: Other values at the Challenge Target stay,<br/>so a concurrent validation is not broken.
+```
+
+lego follows a CNAME at `_acme-challenge.example.com` by default and sends the delegated target, such as `challenge-123.acme.example.net.`, as the `fqdn`. That works when the token's Permissions allow `patch` on TXT at that name.
+
+---
+
+## 6. Denied requests
 
 Every authorization failure returns the same answer, so the ACME Endpoint never reveals why a request was refused.
+
+### acme-dns (`POST /update`)
 
 | Situation | Decided by | Reply |
 |---|---|---|
 | Malformed JSON | ACME Endpoint | 401 `{"error":"forbidden"}` |
-| `subdomain` is not a valid DNS label | ACME Endpoint | 400 `{"error":"bad_subdomain"}` |
+| `subdomain` is neither a DNS label nor a domain name | ACME Endpoint | 400 `{"error":"bad_subdomain"}` |
 | `txt` has the wrong shape | ACME Endpoint | 400 `{"error":"bad_txt"}` |
-| `subdomain` not in the Challenge Map | ACME Endpoint | 401 `{"error":"forbidden"}` |
+| No zone of the token's Permissions holds the Challenge Target (a map entry without a zone, or an unmapped subdomain taken as the Certificate Domain) | ACME Endpoint | 401 `{"error":"forbidden"}` |
 | No `X-Api-Key` | ACME Endpoint | 401 `{"error":"forbidden"}` |
 | Token can't be decrypted (unknown `kid` or tampered) or the signature is invalid | Gateway (InspectToken) | 401 `{"error":"forbidden"}` |
 | Token expired, or its `jti` or an ancestor is revoked | Gateway (InspectToken) | 401 `{"error":"forbidden"}` |
@@ -253,3 +299,19 @@ Every authorization failure returns the same answer, so the ACME Endpoint never 
 | Cloudflare error | Gateway | 500 `{"error":"provider_error"}` (details in the logs only) |
 | Cloudflare refuses the Provider Credential | Gateway | 500 `{"error":"provider_error"}` (details in the logs only) |
 | Gateway unreachable or timed out | ACME Endpoint | 500 `{"error":"provider_error"}` (details in the log only) |
+
+A `subdomain` not in the Challenge Map is not refused: it is taken as the Certificate Domain ([ADR 0012](adr/0012-unmapped-subdomain-is-the-certificate-domain.md)), and the Gateway decides whether the token may write at `_acme-challenge` in front of it.
+
+### acmeproxy (`POST /present`, `POST /cleanup`)
+
+| Situation | Decided by | Reply |
+|---|---|---|
+| Malformed JSON, or data after the JSON object | ACME Endpoint | 400 `{"error":"bad_request"}` |
+| `fqdn` is not a valid name (single label, too long, bad label) | ACME Endpoint | 400 `{"error":"bad_fqdn"}` |
+| `value` has the wrong shape | ACME Endpoint | 400 `{"error":"bad_value"}` |
+| No Basic auth, or an empty password | ACME Endpoint | 401 `{"error":"forbidden"}` |
+| Token refused (undecryptable, bad signature, expired, revoked, Bound Token) | Gateway (InspectToken) | 401 `{"error":"forbidden"}` |
+| Basic auth username is not the `jti` | ACME Endpoint | 401 `{"error":"forbidden"}` |
+| `fqdn` in no zone of the token's Permissions | ACME Endpoint | 401 `{"error":"forbidden"}` |
+| Permissions don't cover the target, or the token doesn't allow the configured egress | Gateway (PatchRecord) | 401 `{"error":"forbidden"}` |
+| TTL below the Provider's minimum, Cloudflare error, Cloudflare refuses the Provider Credential, Gateway unreachable or timed out | Gateway or ACME Endpoint | 500 `{"error":"provider_error"}` (details in the log only) |

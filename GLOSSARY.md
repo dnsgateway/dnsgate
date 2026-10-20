@@ -11,7 +11,7 @@ The service that authorizes DNS requests and executes them against DNS providers
 _Avoid_: Router, DNS Router, proxy
 
 **ACME Endpoint**:
-A client of the Gateway that speaks the acme-dns HTTPS API, so existing ACME clients can write DNS-01 challenge values through the Gateway. It is not part of the Gateway and cannot read Service Tokens.
+A client of the Gateway that speaks the acme-dns and acmeproxy HTTPS APIs, so existing ACME clients can write DNS-01 challenge values through the Gateway. It is not part of the Gateway and cannot read Service Tokens.
 _Avoid_: acme-dns server, ACME handler, compatibility API
 
 **Egress Agent**:
