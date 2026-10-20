@@ -40,7 +40,7 @@ const maxDomainLen = 253
 // domainTarget returns the Challenge Target, without a zone, of a
 // subdomain not in the Challenge Map, and whether the subdomain is a
 // single DNS label or a domain name at all. A domain is taken as the
-// certificate domain, its Challenge Target _acme-challenge in front of it
+// Certificate Domain, its Challenge Target _acme-challenge in front of it
 // as an absolute name, so resolve takes the longest zone of the token
 // that holds it; a leading "*." or _acme-challenge label is dropped, case
 // and a trailing dot are ignored. A single label names _acme-challenge in

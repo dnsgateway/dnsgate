@@ -90,8 +90,9 @@ type Config struct {
 // /update adds a challenge value through the Gateway, and /register is
 // not supported (404) because tokens are provisioned by an Administrator.
 // acmeproxy: POST /present adds a challenge value at the fqdn through the
-// Gateway, and POST /cleanup removes that value only. GET /health answers 200 with an empty body. Request bodies are
-// capped at MaxBodyBytes.
+// Gateway, and POST /cleanup removes that value only. GET /health
+// answers 200 with an empty body. Request bodies are capped at
+// MaxBodyBytes.
 func NewHandler(c Config) http.Handler {
 	mux := http.NewServeMux()
 
