@@ -1,13 +1,13 @@
 package main
 
 import (
-	"errors"
+	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/spf13/pflag"
 
+	"github.com/dnsgateway/dnsgate/internal/loglevel"
 	"github.com/dnsgateway/dnsgate/internal/server"
 )
 
@@ -85,41 +85,19 @@ func (f *Flags) AddServerFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.TLSKeyFile, flagTLSKeyFile, "", f.TLSKeyFile,
 		"PEM file of the server certificate's private key (env "+envTLSKeyFile+")")
 	flags.StringVarP(&f.LogLevel, flagLogLevel, "", f.LogLevel,
-		"lowest level of the logs written: "+logLevelNames()+" (env "+envLogLevel+")")
-}
-
-// logLevels are the accepted --log-level values and their slog levels,
-// most severe first.
-var logLevels = []struct {
-	name  string
-	level slog.Level
-}{
-	{"error", slog.LevelError},
-	{"warn", slog.LevelWarn},
-	{"info", slog.LevelInfo},
-	{"debug", slog.LevelDebug},
-}
-
-// logLevelNames returns the accepted --log-level values, most severe first.
-func logLevelNames() string {
-	names := make([]string, len(logLevels))
-	for i, l := range logLevels {
-		names[i] = l.name
-	}
-
-	return strings.Join(names, ", ")
+		"lowest level of the logs written: "+loglevel.Names()+" (env "+envLogLevel+")")
 }
 
 // checkServerFlags checks the flags of "server" and returns the log level
 // asked for.
 func checkServerFlags(f *Flags) (slog.Level, error) {
-	for _, l := range logLevels {
-		if l.name == f.LogLevel {
-			return l.level, nil
-		}
+	var level slog.Level
+
+	if err := loglevel.NewValue(&level).Set(f.LogLevel); err != nil {
+		return 0, fmt.Errorf("--%s or %s %q: %w", flagLogLevel, envLogLevel, f.LogLevel, err)
 	}
 
-	return 0, errors.New(`unknown log level "` + f.LogLevel + `": use ` + logLevelNames())
+	return level, nil
 }
 
 func withDefaultEnv(key, def string) string {
