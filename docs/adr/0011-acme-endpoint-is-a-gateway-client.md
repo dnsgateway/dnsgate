@@ -1,6 +1,6 @@
 # The ACME Endpoint is a Gateway client that turns each update into Gateway calls and holds no keys
 
-Supersedes [ADR 0003](0003-acme-endpoint.md). Amended by [ADR 0012](0012-unmapped-subdomain-is-the-certificate-domain.md) and [ADR 0013](0013-acme-endpoint-cleans-up-when-a-client-asks.md).
+Supersedes [ADR 0003](0003-acme-endpoint.md). Amended by [ADR 0012](0012-unmapped-subdomain-is-the-certificate-domain.md) and [ADR 0013](0013-acme-endpoint-speaks-acmeproxy-and-cleans-up-on-request.md).
 
 The ACME Endpoint is `dnsgate-acme`, a separate daemon that is an ordinary client of the Gateway API. It speaks the acme-dns API to ACME clients and turns each `POST /update` into two Gateway calls made with the caller's Service Token, unchanged: `InspectToken`, to check that `X-Api-User` is the token's `jti`, then `PatchRecord`, adding one TXT value at the Challenge Target. The Gateway does all the authorization: it opens the token, checks Revocation, Permissions and Egress, and writes through the Provider. The ACME Endpoint holds no keys and no database, and never sees a Provider Credential in plaintext. It cannot read the token, so the Challenge Map moves out of the token into the ACME Endpoint's own configuration. The map still grants nothing: the Gateway accepts a write only if the token's Permissions allow `patch` on TXT at that Challenge Target. The Egress it asks for is set with `--egress`, and `agent` makes the ACME Endpoint the Egress Agent, so the Provider sees its IP.
 
