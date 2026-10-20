@@ -304,4 +304,4 @@ A `subdomain` not in the Challenge Map is not refused: it is taken as the Certif
 
 ### acmeproxy (`POST /present`, `POST /cleanup`)
 
-The refusals and their replies are those of the acmeproxy [Response contract](acme.md#response-contract-1).
+The refusals and their replies are those of the acmeproxy [Response contract](acme.md#acmeproxy-response-contract).
