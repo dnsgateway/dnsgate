@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/dnsgateway/dnsgate/compare/v0.1.0...v0.2.0) (2026-10-20)
+
+
+### Features
+
+* **acme:** make the challenge map optional ([0ca3760](https://github.com/dnsgateway/dnsgate/commit/0ca37609c660fdbf09d4d83e9b00e9930dc4a223)), closes [#41](https://github.com/dnsgateway/dnsgate/issues/41)
+* **acme:** serve acmeproxy post /cleanup ([2a80d13](https://github.com/dnsgateway/dnsgate/commit/2a80d13aa53368e29c580b79ef87624599cff88b)), closes [#45](https://github.com/dnsgateway/dnsgate/issues/45)
+* **acme:** serve acmeproxy post /present ([11b70ac](https://github.com/dnsgateway/dnsgate/commit/11b70acd845dfb6935e907be7ee3a9e3b5d0216b)), closes [#42](https://github.com/dnsgateway/dnsgate/issues/42)
+* homebrew artifacts ([3018e95](https://github.com/dnsgateway/dnsgate/commit/3018e951f1339cd7d2665789a213651e18dd65f3))
+
+
+### Bug Fixes
+
+* **acme:** cover the acmeproxy /present refusal contract ([48ecd47](https://github.com/dnsgateway/dnsgate/commit/48ecd47fcebac6ee1ab199f12a5d529970d9499e)), closes [#44](https://github.com/dnsgateway/dnsgate/issues/44)
+* helm chart release ([29d26f6](https://github.com/dnsgateway/dnsgate/commit/29d26f66efe8385a4eb82e07e7b63a1bcb69970b))
+
 ## [0.1.0](https://github.com/dnsgateway/dnsgate/compare/v0.0.1...v0.1.0) (2026-10-17)
 
 
