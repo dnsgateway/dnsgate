@@ -1,6 +1,6 @@
 // Package acme runs the ACME Endpoint: an HTTP server that speaks the
-// acme-dns API to ACME clients, over HTTPS or over plain HTTP behind a
-// TLS-terminating proxy.
+// acme-dns and acmeproxy APIs to ACME clients, over HTTPS or over plain
+// HTTP behind a TLS-terminating proxy.
 package acme
 
 import (
@@ -72,11 +72,11 @@ type Options struct {
 	ClientOptions []client.Option
 }
 
-// Config holds what the acme-dns API handler needs.
+// Config holds what the API handler needs.
 type Config struct {
 	// Logger receives the handler's logs.
 	Logger *slog.Logger
-	// Gateway is the client every /update calls.
+	// Gateway is the client every write calls.
 	Gateway *client.Client
 	// ChallengeMap maps the acme-dns subdomains to Challenge Targets.
 	ChallengeMap ChallengeMap
@@ -86,10 +86,12 @@ type Config struct {
 	Egress dnsgatev1.Egress
 }
 
-// NewHandler returns the acme-dns API: POST /update adds a challenge
-// value through the Gateway, GET /health answers 200 with an empty body,
-// and /register is not supported (404) because tokens are provisioned by
-// an Administrator. Request bodies are capped at MaxBodyBytes.
+// NewHandler returns the acme-dns and acmeproxy APIs. acme-dns: POST
+// /update adds a challenge value through the Gateway, and /register is
+// not supported (404) because tokens are provisioned by an Administrator.
+// acmeproxy: POST /present adds a challenge value at the fqdn through the
+// Gateway. GET /health answers 200 with an empty body. Request bodies are
+// capped at MaxBodyBytes.
 func NewHandler(c Config) http.Handler {
 	mux := http.NewServeMux()
 
@@ -97,10 +99,13 @@ func NewHandler(c Config) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("/register", http.NotFound)
+
 	w := writer{gateway: c.Gateway, egress: c.Egress}
 
 	u := &updater{writer: w, targets: c.ChallengeMap, ttl: c.TTL}
 	mux.Handle("POST /update", &endpoint{log: c.Logger, msg: "update", subjectKey: "subdomain", serve: u.update})
+
+	mux.Handle("POST /present", acmeproxyEndpoint(c.Logger, "present", &acmeproxy{writer: w, change: present(c.TTL)}))
 
 	return http.MaxBytesHandler(mux, MaxBodyBytes)
 }
@@ -108,7 +113,7 @@ func NewHandler(c Config) http.Handler {
 // Run serves the ACME Endpoint until ctx is done, then stops gracefully.
 // A TLS certificate without its key, or the reverse, files that do not
 // load, or a given Challenge Map file that does not, stop it before it
-// listens. It connects to the Gateway lazily, on the first /update.
+// listens. It connects to the Gateway lazily, on the first write.
 func Run(ctx context.Context, o Options) error {
 	tlsConfig, err := loadTLS(o.CertFile, o.KeyFile)
 	if err != nil {

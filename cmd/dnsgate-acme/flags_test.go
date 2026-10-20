@@ -150,7 +150,7 @@ func TestHelpDocumentsTheDaemonFlags(t *testing.T) {
 }
 
 // Without a Challenge Map, every subdomain is unmapped: /update takes it
-// as the certificate domain (ADR 0012).
+// as the certificate domain (ADR 0012). /present never consults the map.
 func TestDaemonStartsWithoutAChallengeMap(t *testing.T) {
 	e := newE2E(t)
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge", "_acme-challenge.**"}))
@@ -162,8 +162,10 @@ func TestDaemonStartsWithoutAChallengeMap(t *testing.T) {
 
 	d := &acmeDaemon{Base: "http://" + gw.Addr, HTTP: &http.Client{}, Logs: gw.Logs}
 	d.wantUpdated(t, tok, "www.example.com", challenge(1))
+	d.wantPresented(t, tok, "_acme-challenge.api.example.com.", challenge(2))
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.www.example.com", `60 "`+challenge(1)+`"`)
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.api.example.com", `60 "`+challenge(2)+`"`)
 }
 
 func TestHelpPresentsTheChallengeMapAsOptional(t *testing.T) {
