@@ -172,7 +172,7 @@ func TestHelpDescribesTheAcmeproxyAPI(t *testing.T) {
 }
 
 // Without a Challenge Map, every subdomain is unmapped: /update takes it
-// as the certificate domain (ADR 0012). /present never consults the map.
+// as the Certificate Domain (ADR 0012). /present never consults the map.
 func TestDaemonStartsWithoutAChallengeMap(t *testing.T) {
 	e := newE2E(t)
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge", "_acme-challenge.**"}))

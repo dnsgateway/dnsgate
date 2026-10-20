@@ -367,14 +367,6 @@ func (d *acmeDaemon) acmeproxy(t *testing.T, path string, tok acmeToken, body st
 	return resp.StatusCode, string(got)
 }
 
-// present sends POST /present with tok's credentials and body as is, and
-// returns the status and body of the response.
-func (d *acmeDaemon) present(t *testing.T, tok acmeToken, body string) (int, string) {
-	t.Helper()
-
-	return d.acmeproxy(t, "/present", tok, body)
-}
-
 // acmeproxyBody is the acmeproxy request body for fqdn and value.
 func acmeproxyBody(fqdn, value string) string {
 	b, _ := json.Marshal(map[string]string{"fqdn": fqdn, "value": value})

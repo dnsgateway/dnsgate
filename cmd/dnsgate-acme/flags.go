@@ -93,7 +93,7 @@ func DefaultFlags() *Flags {
 // AddDaemonFlags registers the flags of the daemon.
 func (f *Flags) AddDaemonFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&f.Listen, flagListen, "", f.Listen,
-		"TCP address the acme-dns API is served on (env "+envListen+")")
+		"TCP address the acme-dns and acmeproxy APIs are served on (env "+envListen+")")
 	flags.StringVarP(&f.TLSCertFile, flagTLSCertFile, "", f.TLSCertFile,
 		"PEM certificate to serve HTTPS with, together with --"+flagTLSKeyFile+"; without both, plain HTTP is served (env "+envTLSCertFile+")")
 	flags.StringVarP(&f.TLSKeyFile, flagTLSKeyFile, "", f.TLSKeyFile,

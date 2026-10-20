@@ -55,8 +55,8 @@ func (u *updater) update(r *http.Request, o *outcome) reply {
 		return forbidden
 	}
 
-	// A subdomain not in the Challenge Map is taken as the certificate
-	// domain. One that is neither a DNS label nor a domain name is left out
+	// A subdomain not in the Challenge Map is taken as the Certificate
+	// Domain. One that is neither a DNS label nor a domain name is left out
 	// of the log: it may be anything, a secret pasted in the wrong field
 	// included.
 	target, ok := u.targets[req.Subdomain]

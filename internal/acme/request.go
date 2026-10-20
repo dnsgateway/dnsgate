@@ -74,8 +74,8 @@ type outcome struct {
 // it.
 type endpoint struct {
 	log *slog.Logger
-	// logMsg is the message of the request's log line, the API's name;
-	// its header line is logMsg + " headers".
+	// logMsg is the message of the request's log line, "update" or
+	// "acmeproxy"; its header line is logMsg + " headers".
 	logMsg string
 	// attrs are logged right after the request ID.
 	attrs []slog.Attr
@@ -179,10 +179,11 @@ type patcher struct {
 }
 
 // patch patches TXT at target with the caller's credentials cred, under
-// GatewayTimeout: it inspects cred.key, checks cred.user against its jti, takes target's zone from its Permissions if
-// target names none, and sends the PatchRecord that change fills in. It
-// returns false with the reply to send if any of that refuses or fails,
-// recording in o the resolved target and why.
+// GatewayTimeout: it inspects cred.key, checks cred.user against its
+// jti, takes target's zone from its Permissions if target names none,
+// and sends the PatchRecord that change fills in. It returns false with
+// the reply to send if any of that refuses or fails, recording in o the
+// resolved target and why.
 func (p patcher) patch(ctx context.Context, o *outcome, cred credentials, target Target,
 	change func(*dnsgatev1.PatchRecordRequest),
 ) (reply, bool) {
