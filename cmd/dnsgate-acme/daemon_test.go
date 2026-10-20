@@ -33,7 +33,7 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 }
 
 // mapArgs returns the flag that gives dnsgate-acme the Challenge Map
-// testMap, which it needs to start.
+// testMap.
 func mapArgs(t *testing.T) []string {
 	t.Helper()
 

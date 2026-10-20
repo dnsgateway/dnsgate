@@ -149,10 +149,43 @@ func TestHelpDocumentsTheDaemonFlags(t *testing.T) {
 	}
 }
 
-func TestDaemonRefusesToStartWithoutAChallengeMap(t *testing.T) {
-	out, err := runCLI(t, "--listen", heldAddr(t))
-	if err == nil || !strings.Contains(err.Error(), "--challenge-map") || !strings.Contains(err.Error(), "DNSGATE_ACME_CHALLENGE_MAP") {
-		t.Errorf("error = %v, want one naming --challenge-map and DNSGATE_ACME_CHALLENGE_MAP before it listens\n%s", err, out)
+// Without a Challenge Map, every subdomain is unmapped: /update takes it
+// as the certificate domain (ADR 0012).
+func TestDaemonStartsWithoutAChallengeMap(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge", "_acme-challenge.**"}))
+
+	t.Setenv("DNSGATE_ACME_CHALLENGE_MAP", "")
+
+	// Not daemonCmd, which gives a --challenge-map.
+	gw := servertest.Launch(t, commandRun([]string{"--listen", "127.0.0.1:0", "--gateway", e.Gateway.Addr, "--ca-file", e.Env.CAFile}))
+
+	d := &acmeDaemon{Base: "http://" + gw.Addr, HTTP: &http.Client{}, Logs: gw.Logs}
+	d.wantUpdated(t, tok, "www.example.com", challenge(1))
+
+	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.www.example.com", `60 "`+challenge(1)+`"`)
+}
+
+func TestHelpPresentsTheChallengeMapAsOptional(t *testing.T) {
+	out, err := runCLI(t, "--help")
+	if err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+
+	var help string
+
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "--challenge-map") {
+			help = line
+		}
+	}
+
+	if !strings.Contains(help, "without it, every subdomain is unmapped") {
+		t.Errorf("--challenge-map help = %q, want it to say that without a map every subdomain is unmapped\n%s", help, out)
+	}
+
+	if strings.Contains(help, "required") {
+		t.Errorf("help presents the Challenge Map as required: %q", help)
 	}
 }
 

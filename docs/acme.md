@@ -53,7 +53,7 @@ Each flag falls back to an environment variable, then to a default. The three Ga
 | `--listen` | `DNSGATE_ACME_LISTEN_ADDRESS` | `:8080` | Address to serve the acme-dns API on |
 | `--tls-cert-file` | `DNSGATE_ACME_TLS_CERT_FILE` | none | TLS certificate to serve HTTPS with |
 | `--tls-key-file` | `DNSGATE_ACME_TLS_KEY_FILE` | none | Key of that certificate |
-| `--challenge-map` | `DNSGATE_ACME_CHALLENGE_MAP` | required | The Challenge Map file (YAML or JSON) |
+| `--challenge-map` | `DNSGATE_ACME_CHALLENGE_MAP` | none | Challenge Map file (YAML or JSON); without it every subdomain is unmapped |
 | `--ttl` | `DNSGATE_ACME_TTL` | `60` | TTL of the challenge values it adds |
 | `--log-level` | `DNSGATE_ACME_LOG_LEVEL` | `info` | Log level |
 | `--gateway` | `DNSGATE_GATEWAY` | `localhost:8443` | Gateway address |
@@ -63,7 +63,7 @@ Each flag falls back to an environment variable, then to a default. The three Ga
 The daemon stops at startup, with a clear error, when:
 
 - `--egress` is neither `gateway` nor `agent`;
-- the Challenge Map file can't be read or has an invalid entry (a key that isn't a single DNS label, an entry without a name, or an entry without a zone whose name is `@`);
+- a Challenge Map file is given but can't be read or has an invalid entry (a key that isn't a single DNS label, an entry without a name, or an entry without a zone whose name is `@`);
 - only one of `--tls-cert-file` and `--tls-key-file` is given. A half-configured TLS setup never falls back to HTTP.
 
 TTL isn't a security boundary, so it lives in configuration and not in the token. The Gateway refuses a TTL below the Provider's minimum, so set `--ttl` to at least that.
@@ -321,7 +321,7 @@ The Gateway's audit log records every ACME write as a `patch` by the token's Ser
 # v2 Scope
 
 1. `dnsgate-acme` with `POST /update`, `GET /health` and `POST /register` (404), over HTTP or HTTPS
-2. The Challenge Map file, checked at startup
+2. The optional Challenge Map file, checked at startup
 3. Each `/update` as InspectToken plus PatchRecord, with the TXT value shape check
 4. Gateway Egress and Agent Egress, chosen with `--egress`
 5. The response contract above
