@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"log/slog"
 	"net/http"
 
 	dnsgatev1 "github.com/dnsgateway/dnsgate-go/api/dnsgate/v1"
@@ -25,10 +26,22 @@ var (
 // Challenge Target through the Gateway, presenting the caller's Service
 // Token. The Gateway does all the authorization.
 type updater struct {
-	writer
+	patcher
 
 	targets ChallengeMap
-	ttl     uint32
+	// change puts the change of the call, adding the value, into the
+	// PatchRecord request.
+	change func(req *dnsgatev1.PatchRecordRequest, value string)
+}
+
+// updateEndpoint returns the endpoint that serves u.
+func updateEndpoint(log *slog.Logger, u *updater) *endpoint {
+	return &endpoint{
+		log:        log,
+		logMsg:     "update",
+		subjectKey: "subdomain",
+		serve:      u.update,
+	}
 }
 
 // update carries out the /update in r and returns the reply for it,
@@ -70,20 +83,16 @@ func (u *updater) update(r *http.Request, o *outcome) reply {
 		return forbidden
 	}
 
-	if rep, ok := u.patch(r.Context(), o, key, r.Header.Get("X-Api-User"), target,
-		func(p *dnsgatev1.PatchRecordRequest) {
-			p.Ttl = u.ttl
-			p.Add = txtValue(req.TXT)
-		}); !ok {
+	if rep, ok := u.patch(r.Context(), o, credentials{user: r.Header.Get("X-Api-User"), key: key}, target,
+		func(pr *dnsgatev1.PatchRecordRequest) { u.change(pr, req.TXT) }); !ok {
 		return rep
 	}
 
 	return reply{http.StatusOK, txtBody{req.TXT}}
 }
 
-// isLabel reports whether s is a single DNS label, as an acme-dns
-// subdomain must be: 1 to 63 of [A-Za-z0-9-], not starting or ending
-// with a hyphen.
+// isLabel reports whether s is a single DNS label: 1 to 63 of
+// [A-Za-z0-9-], not starting or ending with a hyphen.
 func isLabel(s string) bool {
 	if s == "" || len(s) > 63 || s[0] == '-' || s[len(s)-1] == '-' {
 		return false

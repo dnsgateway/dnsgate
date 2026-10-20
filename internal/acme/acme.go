@@ -100,12 +100,10 @@ func NewHandler(c Config) http.Handler {
 	})
 	mux.HandleFunc("/register", http.NotFound)
 
-	w := writer{gateway: c.Gateway, egress: c.Egress}
+	p := patcher{gateway: c.Gateway, egress: c.Egress}
 
-	u := &updater{writer: w, targets: c.ChallengeMap, ttl: c.TTL}
-	mux.Handle("POST /update", &endpoint{log: c.Logger, msg: "update", subjectKey: "subdomain", serve: u.update})
-
-	mux.Handle("POST /present", acmeproxyEndpoint(c.Logger, "present", &acmeproxy{writer: w, change: present(c.TTL)}))
+	mux.Handle("POST /update", updateEndpoint(c.Logger, &updater{patcher: p, targets: c.ChallengeMap, change: present(c.TTL)}))
+	mux.Handle("POST /present", acmeproxyEndpoint(c.Logger, "present", &acmeproxy{patcher: p, change: present(c.TTL)}))
 
 	return http.MaxBytesHandler(mux, MaxBodyBytes)
 }

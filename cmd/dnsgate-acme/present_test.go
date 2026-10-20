@@ -156,8 +156,13 @@ func TestPresentRefusesARequestWithoutBasicAuth(t *testing.T) {
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
 
-	if logs := d.Logs.String(); !strings.Contains(logs, `"reason":"no Basic auth"`) {
+	logs := d.Logs.String()
+	if !strings.Contains(logs, `"reason":"no Basic auth"`) {
 		t.Errorf("the logs do not give the reason:\n%s", logs)
+	}
+
+	if !strings.Contains(logs, `"name":"_acme-challenge.example.com."`) {
+		t.Errorf("the logs do not give the name:\n%s", logs)
 	}
 }
 

@@ -28,7 +28,7 @@ var (
 // Service Token the caller gives as the Basic auth password, its jti as
 // the username. The Gateway does all the authorization.
 type acmeproxy struct {
-	writer
+	patcher
 
 	// change puts the change of the call, adding or removing value, into
 	// the PatchRecord request.
@@ -40,7 +40,7 @@ type acmeproxy struct {
 func acmeproxyEndpoint(log *slog.Logger, action string, p *acmeproxy) *endpoint {
 	return &endpoint{
 		log:        log,
-		msg:        "acmeproxy",
+		logMsg:     "acmeproxy",
 		attrs:      []slog.Attr{slog.String("action", action)},
 		subjectKey: "fqdn",
 		serve:      p.serve,
@@ -79,6 +79,8 @@ func (p *acmeproxy) serve(r *http.Request, o *outcome) reply {
 		return badValue
 	}
 
+	o.target = target
+
 	user, key, ok := r.BasicAuth()
 	if !ok || key == "" {
 		o.reason = reasonNoBasicAuth
@@ -86,7 +88,7 @@ func (p *acmeproxy) serve(r *http.Request, o *outcome) reply {
 		return forbidden
 	}
 
-	if rep, ok := p.patch(r.Context(), o, key, user, target,
+	if rep, ok := p.patch(r.Context(), o, credentials{user: user, key: key}, target,
 		func(pr *dnsgatev1.PatchRecordRequest) { p.change(pr, req.Value) }); !ok {
 		return rep
 	}
@@ -106,6 +108,8 @@ func fqdnTarget(fqdn string) (Target, bool) {
 	}
 
 	for l := range strings.SplitSeq(name, ".") {
+		// The whole label counts against 63, its leading underscores
+		// included, which isLabel does not see.
 		if len(l) > 63 || !isLabel(strings.TrimLeft(l, "_")) {
 			return Target{}, false
 		}
