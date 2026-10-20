@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/dnsgateway/dnsgate/internal/acme"
@@ -50,38 +51,64 @@ type envVar struct {
 	pathList  bool
 }
 
-// daemonFlags registers the flags of the daemon on flags, bound to the
-// ACME Endpoint's options with their built-in defaults, and returns the
-// function that gives those options once flags are parsed. That function
-// first gives each flag not set on the command line the value of its
-// environment variable, if set, through the same parse: a bad value in
-// the environment is an error unless the flag replaces it.
-func daemonFlags(flags *pflag.FlagSet) func(lookupEnv func(string) (string, bool)) (acme.Options, error) {
-	opts := acme.Options{TTL: defaultTTL, LogLevel: defaultLogLevel}
+// daemonFlags are the flags of the daemon, bound to the ACME Endpoint's
+// options, and their environment variables.
+type daemonFlags struct {
+	flags   *pflag.FlagSet
+	opts    acme.Options
+	envVars []envVar
+}
 
-	envVars := append(addEndpointFlags(flags, &opts), addGatewayFlags(flags, &opts)...)
+// bindDaemonFlags registers the flags of the daemon on cmd, with their
+// built-in defaults and the error func that words a bad flag, and returns
+// them to give the options once cmd has parsed them.
+func bindDaemonFlags(cmd *cobra.Command) *daemonFlags {
+	f := &daemonFlags{
+		flags: cmd.Flags(),
+		opts:  acme.Options{TTL: defaultTTL, LogLevel: defaultLogLevel},
+	}
 
-	return func(lookupEnv func(string) (string, bool)) (acme.Options, error) {
-		for _, e := range envVars {
-			value, ok := lookupEnv(e.env)
-			if !ok || flags.Changed(e.flag) {
-				continue
-			}
+	f.envVars = append(addEndpointFlags(f.flags, &f.opts), addGatewayFlags(f.flags, &f.opts)...)
 
-			values := []string{value}
-			if e.pathList {
-				values = pathList(value)
-			}
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return flagError(err) })
 
-			for _, v := range values {
-				if err := flags.Set(e.flag, v); err != nil {
-					return acme.Options{}, envError(e, v, err)
-				}
-			}
+	return f
+}
+
+// options returns the ACME Endpoint's options. It first gives each flag
+// not set on the command line the value of its environment variable, if
+// set, through the same parse: a bad value in the environment is an
+// error unless the flag replaces it.
+func (f *daemonFlags) options(lookupEnv func(string) (string, bool)) (acme.Options, error) {
+	for _, e := range f.envVars {
+		value, ok := lookupEnv(e.env)
+		if !ok || f.flags.Changed(e.flag) {
+			continue
 		}
 
-		return opts, nil
+		values := []string{value}
+		if e.pathList {
+			values = pathList(value)
+		}
+
+		for _, v := range values {
+			if err := f.flags.Set(e.flag, v); err != nil {
+				return acme.Options{}, envError(e, v, err)
+			}
+		}
 	}
+
+	return f.opts, nil
+}
+
+// runError returns err, the error of acme.Run, with a TLS certificate
+// without its key, or the reverse, worded in flag terms.
+func runError(err error) error {
+	if errors.Is(err, acme.ErrTLSPair) {
+		return fmt.Errorf("--%s, --%s: %w", flagTLSCertFile, flagTLSKeyFile, err)
+	}
+
+	return err
 }
 
 // addEndpointFlags registers the flags of the ACME Endpoint itself,
@@ -153,30 +180,46 @@ func (v ttlValue) Type() string {
 	return "uint32"
 }
 
-// flagError returns err, an error parsing the flags. A bad --egress gives
-// gatewayconn's message alone, the one dnsgate-cli gives, which already
-// names the value.
+// valueNamer is a flag value whose Set errors are complete messages that
+// name the value refused, such as gatewayconn's EgressValue: they are
+// given alone, without the flag or environment variable in front.
+type valueNamer interface {
+	ErrorNamesValue() bool
+}
+
+// refusal returns the reason in err, an error setting a flag, and
+// whether that reason is a complete message to give alone.
+func refusal(err error) (reason error, complete bool) {
+	invalid, ok := errors.AsType[*pflag.InvalidValueError](err)
+	if !ok {
+		return err, false
+	}
+
+	namer, ok := invalid.GetFlag().Value.(valueNamer)
+
+	return invalid.Unwrap(), ok && namer.ErrorNamesValue()
+}
+
+// flagError returns err, an error parsing the flags, or the reason alone
+// if it is a complete message.
 func flagError(err error) error {
-	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok && invalid.GetFlag().Name == flagEgress {
-		return invalid.Unwrap()
+	if reason, complete := refusal(err); complete {
+		return reason
 	}
 
 	return err
 }
 
 // envError returns the error of value, from e's environment variable,
-// that its flag refused with err: "<ENV> "<value>": <reason>", or, for
-// --egress, gatewayconn's message alone, as flagError gives it.
+// that its flag refused with err: "<ENV> "<value>": <reason>", or the
+// reason alone if it is a complete message.
 func envError(e envVar, value string, err error) error {
-	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok {
-		err = invalid.Unwrap()
+	reason, complete := refusal(err)
+	if complete {
+		return reason
 	}
 
-	if e.flag == flagEgress {
-		return err
-	}
-
-	return fmt.Errorf("%s %q: %w", e.env, value, err)
+	return fmt.Errorf("%s %q: %w", e.env, value, reason)
 }
 
 // pathList returns the paths in list, a path list, leaving out empty

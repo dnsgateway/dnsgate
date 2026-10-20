@@ -3,6 +3,7 @@ package loglevel
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 )
@@ -29,6 +30,27 @@ func Names() string {
 	return strings.Join(names, ", ")
 }
 
+// Parse returns the slog level that name, one of Names, names.
+func Parse(name string) (slog.Level, error) {
+	level, ok := lookup(name)
+	if !ok {
+		return 0, fmt.Errorf("unknown log level %q: use %s", name, Names())
+	}
+
+	return level, nil
+}
+
+// lookup returns the slog level that name names, if it is one of Names.
+func lookup(name string) (slog.Level, bool) {
+	for _, l := range levels {
+		if l.name == name {
+			return l.level, true
+		}
+	}
+
+	return 0, false
+}
+
 // Value is a --log-level flag: a pflag.Value that takes one of Names and
 // sets the slog level it points at.
 type Value struct {
@@ -41,17 +63,17 @@ func NewValue(level *slog.Level) *Value {
 	return &Value{level: level}
 }
 
-// Set sets the level that name names.
+// Set sets the level that name names. Its error leaves out name, which
+// the flag's error already gives.
 func (v *Value) Set(name string) error {
-	for _, l := range levels {
-		if l.name == name {
-			*v.level = l.level
-
-			return nil
-		}
+	level, ok := lookup(name)
+	if !ok {
+		return errors.New("unknown log level: use " + Names())
 	}
 
-	return errors.New("unknown log level: use " + Names())
+	*v.level = level
+
+	return nil
 }
 
 // String returns the name of the level.

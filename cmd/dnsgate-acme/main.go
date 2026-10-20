@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -66,12 +65,10 @@ func newRootCmd(clientOpts ...client.Option) *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	options := daemonFlags(rootCmd.Flags())
-
-	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return flagError(err) })
+	flags := bindDaemonFlags(rootCmd)
 
 	rootCmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		opts, err := options(os.LookupEnv)
+		opts, err := flags.options(os.LookupEnv)
 		if err != nil {
 			return err
 		}
@@ -79,12 +76,7 @@ func newRootCmd(clientOpts ...client.Option) *cobra.Command {
 		opts.Log = cmd.ErrOrStderr()
 		opts.ClientOptions = clientOpts
 
-		err = acme.Run(cmd.Context(), opts)
-		if errors.Is(err, acme.ErrTLSPair) {
-			return fmt.Errorf("--%s, --%s: %w", flagTLSCertFile, flagTLSKeyFile, err)
-		}
-
-		return err
+		return runError(acme.Run(cmd.Context(), opts))
 	}
 
 	rootCmd.AddCommand(newVersionCmd())

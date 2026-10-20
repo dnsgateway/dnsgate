@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 
@@ -91,13 +90,7 @@ func (f *Flags) AddServerFlags(flags *pflag.FlagSet) {
 // checkServerFlags checks the flags of "server" and returns the log level
 // asked for.
 func checkServerFlags(f *Flags) (slog.Level, error) {
-	var level slog.Level
-
-	if err := loglevel.NewValue(&level).Set(f.LogLevel); err != nil {
-		return 0, fmt.Errorf("--%s or %s %q: %w", flagLogLevel, envLogLevel, f.LogLevel, err)
-	}
-
-	return level, nil
+	return loglevel.Parse(f.LogLevel)
 }
 
 func withDefaultEnv(key, def string) string {
