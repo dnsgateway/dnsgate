@@ -149,6 +149,28 @@ func TestHelpDocumentsTheDaemonFlags(t *testing.T) {
 	}
 }
 
+// The help tells an Administrator how to configure an acmeproxy client:
+// the calls, how to authenticate to them, and that the fqdn bypasses the
+// Challenge Map.
+func TestHelpDescribesTheAcmeproxyAPI(t *testing.T) {
+	out, err := runCLI(t, "--help")
+	if err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+
+	for _, want := range []string{
+		"serves the acme-dns and acmeproxy APIs",
+		"POST /present adds the challenge value at the fqdn",
+		"POST /cleanup removes that value only",
+		"HTTP Basic auth: the username is the token's jti and the password is the Service Token",
+		"The fqdn is the Challenge Target: the Challenge Map is not consulted",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help does not contain %q:\n%s", want, out)
+		}
+	}
+}
+
 // Without a Challenge Map, every subdomain is unmapped: /update takes it
 // as the certificate domain (ADR 0012). /present never consults the map.
 func TestDaemonStartsWithoutAChallengeMap(t *testing.T) {

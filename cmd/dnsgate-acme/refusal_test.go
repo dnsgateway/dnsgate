@@ -72,6 +72,24 @@ func (e *e2e) providerUntouched(t *testing.T, call func()) {
 	}
 }
 
+// providerNotWritten checks that what call does writes nothing through
+// the Provider, which it may still read.
+func (e *e2e) providerNotWritten(t *testing.T, call func()) {
+	t.Helper()
+
+	providerCalls := len(e.Fake.Calls())
+
+	call()
+
+	for _, c := range e.Fake.Calls()[providerCalls:] {
+		switch c.Op {
+		case providertest.OpApply, providertest.OpCreateRecord, providertest.OpUpdateRecord, providertest.OpDeleteRecord:
+			t.Errorf("the Provider was written: %v", c)
+		default:
+		}
+	}
+}
+
 func TestUpdateRefusesASubdomainThatIsNotADNSLabelOrDomain(t *testing.T) {
 	e := newE2E(t)
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))

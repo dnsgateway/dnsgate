@@ -225,10 +225,15 @@ func (p patcher) patch(ctx context.Context, o *outcome, cred credentials, target
 	return reply{}, true
 }
 
-// txtValue is a challenge value in TXT presentation form; a challenge
-// value needs no escaping.
+// txtValue is the record of a challenge value, as txtString gives it.
 func txtValue(value string) []*dnsgatev1.RecordValue {
-	return []*dnsgatev1.RecordValue{{Value: `"` + value + `"`}}
+	return []*dnsgatev1.RecordValue{{Value: txtString(value)}}
+}
+
+// txtString is a challenge value in TXT presentation form; a challenge
+// value needs no escaping.
+func txtString(value string) string {
+	return `"` + value + `"`
 }
 
 // gatewayFailure returns the reply to a failed Gateway call, recording

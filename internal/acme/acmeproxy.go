@@ -55,6 +55,12 @@ func present(ttl uint32) func(*dnsgatev1.PatchRecordRequest, string) {
 	}
 }
 
+// cleanup removes the value, and only it, with no TTL: the other values
+// stay, and a value that is not there is no change.
+func cleanup(req *dnsgatev1.PatchRecordRequest, value string) {
+	req.Remove = []string{txtString(value)}
+}
+
 // serve carries out the call in r and returns the reply for it, recording
 // in o what the log should tell about it. The local checks come first, so
 // a request they refuse never reaches the Gateway.
