@@ -23,14 +23,24 @@ const (
 	replyProviderError = `{"error":"provider_error"}`
 )
 
-// wantReply sends body with tok and checks that it answers exactly code
-// with the JSON reply want.
-func (d *acmeDaemon) wantReply(t *testing.T, tok acmeToken, body string, code int, want string) {
+// wantReply sends body to path, /update with tok's credentials as acme-dns
+// headers, /present or /cleanup with them as acmeproxy Basic auth, and
+// checks that it answers exactly code with the JSON reply want.
+func (d *acmeDaemon) wantReply(t *testing.T, path string, tok acmeToken, body string, code int, want string) {
 	t.Helper()
 
-	gotCode, got := d.update(t, tok, body)
+	var gotCode int
+
+	var got string
+
+	if path == "/update" {
+		gotCode, got = d.update(t, tok, body)
+	} else {
+		gotCode, got = d.acmeproxy(t, path, tok, body)
+	}
+
 	if gotCode != code || !jsonEqual(got, want) {
-		t.Errorf("POST /update %s = %d %s, want %d %s\nlogs:\n%s", body, gotCode, got, code, want, d.Logs)
+		t.Errorf("POST %s %s = %d %s, want %d %s\nlogs:\n%s", path, body, gotCode, got, code, want, d.Logs)
 	}
 }
 
@@ -39,13 +49,23 @@ func (d *acmeDaemon) wantReply(t *testing.T, tok acmeToken, body string, code in
 func (e *e2e) gatewayUntouched(t *testing.T, call func()) {
 	t.Helper()
 
-	audit, providerCalls := len(e.Gateway.Audit.String()), len(e.Fake.Calls())
+	audit := len(e.Gateway.Audit.String())
 
-	call()
+	e.providerUntouched(t, call)
 
 	if got := e.Gateway.Audit.String()[audit:]; got != "" {
 		t.Errorf("the Gateway was called:\n%s", got)
 	}
+}
+
+// providerUntouched checks that what call does never reaches the
+// Provider, whether or not it reaches the Gateway.
+func (e *e2e) providerUntouched(t *testing.T, call func()) {
+	t.Helper()
+
+	providerCalls := len(e.Fake.Calls())
+
+	call()
 
 	if got := e.Fake.Calls()[providerCalls:]; len(got) != 0 {
 		t.Errorf("the Provider was called: %v", got)
@@ -74,12 +94,38 @@ func TestUpdateRefusesASubdomainThatIsNotADNSLabelOrDomain(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e.gatewayUntouched(t, func() {
-				d.wantReply(t, tok, updateBody(sub, challenge(1)), http.StatusBadRequest, replyBadSubdomain)
+				d.wantReply(t, "/update", tok, updateBody(sub, challenge(1)), http.StatusBadRequest, replyBadSubdomain)
 			})
 		})
 	}
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
+}
+
+// A subdomain that is neither a DNS label nor a domain name is left out of
+// the log, not logged empty, since it may hold anything.
+func TestUpdateLeavesASubdomainThatIsNotADNSLabelOrDomainOutOfTheLog(t *testing.T) {
+	e := newE2E(t)
+	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
+	d := e.acme(t, daemonConfig{Egress: "gateway"})
+
+	for name, sub := range map[string]string{
+		"empty":      "",
+		"underscore": "_acme",
+		"space":      "example com",
+	} {
+		t.Run(name, func(t *testing.T) {
+			d.wantReply(t, "/update", tok, updateBody(sub, challenge(1)), http.StatusBadRequest, replyBadSubdomain)
+
+			entries := updateLogs(t, d.Logs.String())
+			if len(entries) == 0 {
+				t.Fatalf("no update logged:\n%s", d.Logs)
+			}
+
+			wantLogged(t, entries[len(entries)-1], map[string]any{"result": "bad_subdomain", "level": "INFO"},
+				"subdomain", "reason", "error")
+		})
+	}
 }
 
 func TestUpdateRefusesMalformedJSONAsForbidden(t *testing.T) {
@@ -99,7 +145,7 @@ func TestUpdateRefusesMalformedJSONAsForbidden(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e.gatewayUntouched(t, func() {
-				d.wantReply(t, tok, body, http.StatusUnauthorized, replyForbidden)
+				d.wantReply(t, "/update", tok, body, http.StatusUnauthorized, replyForbidden)
 			})
 		})
 	}
@@ -114,7 +160,7 @@ func TestUpdateRefusesAnUnmappedDomainInNoZoneOfTheToken(t *testing.T) {
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
 	d := e.acme(t, daemonConfig{Egress: "gateway"})
 
-	d.wantReply(t, tok, updateBody("example.net", challenge(1)), http.StatusUnauthorized, replyForbidden)
+	d.wantReply(t, "/update", tok, updateBody("example.net", challenge(1)), http.StatusUnauthorized, replyForbidden)
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
 	e.wantTXT(t, zoneNetID, zoneNet, "_acme-challenge.example.net")
@@ -126,7 +172,7 @@ func TestUpdateRefusesARequestWithoutAToken(t *testing.T) {
 	d := e.acme(t, daemonConfig{Egress: "gateway"})
 
 	e.gatewayUntouched(t, func() {
-		d.wantReply(t, acmeToken{User: tok.User}, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+		d.wantReply(t, "/update", acmeToken{User: tok.User}, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
 	})
 
 	e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
@@ -154,7 +200,7 @@ func TestUpdateRefusesATokenTheGatewayDoesNotAccept(t *testing.T) {
 		"expired": expired,
 	} {
 		t.Run(name, func(t *testing.T) {
-			d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+			d.wantReply(t, "/update", tok, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
 		})
 	}
 
@@ -181,7 +227,7 @@ func TestUpdateRefusesAWriteTheTokensPermissionsDoNotAllow(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tok := e.token(t, perm)
 
-			d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+			d.wantReply(t, "/update", tok, updateBody("examplecom", challenge(1)), http.StatusUnauthorized, replyForbidden)
 		})
 	}
 
@@ -202,7 +248,7 @@ func TestUpdateRefusesAnEntryWithoutAZoneTheTokenDoesNotName(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tok := e.token(t, perm)
 
-			d.wantReply(t, tok, updateBody("anycom", challenge(1)), http.StatusUnauthorized, replyForbidden)
+			d.wantReply(t, "/update", tok, updateBody("anycom", challenge(1)), http.StatusUnauthorized, replyForbidden)
 		})
 	}
 
@@ -229,7 +275,7 @@ func TestUpdateAnswersProviderErrorWhenTheProviderFails(t *testing.T) {
 
 			e.Fake.Fail(providertest.OpCreateRecord, err)
 
-			d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
+			d.wantReply(t, "/update", tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
 
 			e.Fake.Fail(providertest.OpCreateRecord, nil)
 			e.wantTXT(t, zoneComID, zoneCom, "_acme-challenge.example.com")
@@ -242,7 +288,7 @@ func TestUpdateAnswersProviderErrorWhenTheGatewayIsUnreachable(t *testing.T) {
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
 	d := e.acme(t, daemonConfig{Egress: "gateway", Args: []string{"--gateway", servertest.FreePort(t)}})
 
-	d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
+	d.wantReply(t, "/update", tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
 }
 
 func TestUpdateAnswersProviderErrorWhenTheGatewayRefusesTheTTL(t *testing.T) {
@@ -254,7 +300,7 @@ func TestUpdateAnswersProviderErrorWhenTheGatewayRefusesTheTTL(t *testing.T) {
 	tok := e.token(t, patchTXT("example.com", []string{"_acme-challenge"}))
 	d := e.acme(t, daemonConfig{Egress: "gateway", Args: []string{"--ttl", "60"}})
 
-	d.wantReply(t, tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
+	d.wantReply(t, "/update", tok, updateBody("examplecom", challenge(1)), http.StatusInternalServerError, replyProviderError)
 
 	if logs := d.Logs.String(); !strings.Contains(logs, "--ttl") {
 		t.Errorf("the logs do not point at --ttl:\n%s", logs)
@@ -290,10 +336,10 @@ func TestUpdateLogsEachRequestWithoutTheTokenOrTheTXTValue(t *testing.T) {
 	d := e.acme(t, daemonConfig{Egress: "gateway"})
 
 	d.wantUpdated(t, tok, "examplecom", challenge(1))
-	d.wantReply(t, refused, updateBody("examplecom", challenge(2)), http.StatusUnauthorized, replyForbidden)
+	d.wantReply(t, "/update", refused, updateBody("examplecom", challenge(2)), http.StatusUnauthorized, replyForbidden)
 
 	e.Fake.Fail(providertest.OpCreateRecord, dnsprovider.ErrUnauthorized)
-	d.wantReply(t, tok, updateBody("examplecom", challenge(3)), http.StatusInternalServerError, replyProviderError)
+	d.wantReply(t, "/update", tok, updateBody("examplecom", challenge(3)), http.StatusInternalServerError, replyProviderError)
 
 	logs := d.Logs.String()
 
@@ -356,7 +402,7 @@ func TestUpdateRefusesATXTValueThatIsNotAChallengeValue(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e.gatewayUntouched(t, func() {
-				d.wantReply(t, tok, updateBody("examplecom", txt), http.StatusBadRequest, replyBadTXT)
+				d.wantReply(t, "/update", tok, updateBody("examplecom", txt), http.StatusBadRequest, replyBadTXT)
 			})
 		})
 	}
