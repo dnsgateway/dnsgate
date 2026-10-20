@@ -333,3 +333,64 @@ func (e *e2e) wantTXT(t *testing.T, zoneID, zone, name string, want ...string) {
 func challenge(seed byte) string {
 	return strings.Repeat(string('A'+seed%26), 40) + "_-0"
 }
+
+// acmeproxy sends POST path, /present or /cleanup, with body as is and
+// tok's credentials as HTTP Basic auth, its ID as the username and the
+// Service Token as the password, or no Authorization header when tok is
+// empty. It returns the status and body of the response.
+func (d *acmeDaemon) acmeproxy(t *testing.T, path string, tok acmeToken, body string) (int, string) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, d.Base+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	if tok != (acmeToken{}) {
+		req.SetBasicAuth(tok.User, tok.Key)
+	}
+
+	resp, err := d.HTTP.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return resp.StatusCode, string(got)
+}
+
+// present sends POST /present with tok's credentials and body as is, and
+// returns the status and body of the response.
+func (d *acmeDaemon) present(t *testing.T, tok acmeToken, body string) (int, string) {
+	t.Helper()
+
+	return d.acmeproxy(t, "/present", tok, body)
+}
+
+// acmeproxyBody is the acmeproxy request body for fqdn and value.
+func acmeproxyBody(fqdn, value string) string {
+	b, _ := json.Marshal(map[string]string{"fqdn": fqdn, "value": value})
+
+	return string(b)
+}
+
+// wantPresented sends a /present of value at fqdn with tok and checks
+// that it answers exactly 200 with the request echoed.
+func (d *acmeDaemon) wantPresented(t *testing.T, tok acmeToken, fqdn, value string) {
+	t.Helper()
+
+	body := acmeproxyBody(fqdn, value)
+
+	code, got := d.present(t, tok, body)
+	if code != http.StatusOK || !jsonEqual(got, body) {
+		t.Fatalf("POST /present = %d %s, want 200 %s\nlogs:\n%s", code, got, body, d.Logs)
+	}
+}
