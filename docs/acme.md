@@ -287,7 +287,7 @@ Local checks come first (JSON, `fqdn`, `value`, Basic auth present), then the sa
    - `/present` adds the value (`add: ["\"<value>\""]`, `ttl: --ttl`). A value already present is kept once, and a second value at the same name sits next to the first, so the apex and wildcard challenges of one certificate validate together.
    - `/cleanup` removes that value only (`remove: ["\"<value>\""]`, no TTL). Every other value at the Challenge Target stays, so a cleanup never breaks a validation still running. Removing a value that is not there, even at a name with no TXT records at all, succeeds.
 
-## Response contract
+## acmeproxy response contract
 
 | Case | Status | Body |
 |---|---|---|
