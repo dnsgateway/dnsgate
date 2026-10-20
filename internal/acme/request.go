@@ -74,9 +74,9 @@ type outcome struct {
 // it.
 type endpoint struct {
 	log *slog.Logger
-	// msg is the message of the request's log line; its header line is
-	// msg + " headers".
-	msg string
+	// logMsg is the message of the request's log line, the API's name;
+	// its header line is logMsg + " headers".
+	logMsg string
 	// attrs are logged right after the request ID.
 	attrs []slog.Attr
 	// subjectKey is the field outcome.subject is logged as.
@@ -91,7 +91,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := requestIDPrefix + ulid.Make().String()
 
 	if e.log.Enabled(r.Context(), slog.LevelDebug) {
-		e.log.LogAttrs(r.Context(), slog.LevelDebug, e.msg+" headers",
+		e.log.LogAttrs(r.Context(), slog.LevelDebug, e.logMsg+" headers",
 			slog.String("request_id", id), slog.Any("headers", redactedHeaders(r.Header)))
 	}
 
@@ -155,35 +155,41 @@ func (e *endpoint) logRequest(ctx context.Context, id string, rep reply, o outco
 		attrs = append(attrs, slog.String("error", o.err.Error()))
 	}
 
-	e.log.LogAttrs(ctx, level, e.msg, attrs...)
+	e.log.LogAttrs(ctx, level, e.logMsg, attrs...)
 }
 
-// writer writes challenge values through the Gateway, presenting the
+// credentials are what the caller presents: its Service Token, key, and
+// the token's ID, user.
+type credentials struct {
+	user string
+	key  string
+}
+
+// patcher patches challenge values through the Gateway, presenting the
 // caller's Service Token. The Gateway does all the authorization.
-type writer struct {
+type patcher struct {
 	gateway *client.Client
 	// egress is the Egress every write asks for.
 	egress dnsgatev1.Egress
 }
 
-// patch patches TXT at target with the Service Token key, whose ID the
-// caller gave as user, under GatewayTimeout: it inspects the token, checks
-// user against its jti, takes target's zone from its Permissions if
+// patch patches TXT at target with the caller's credentials cred, under
+// GatewayTimeout: it inspects cred.key, checks cred.user against its jti, takes target's zone from its Permissions if
 // target names none, and sends the PatchRecord that change fills in. It
 // returns false with the reply to send if any of that refuses or fails,
 // recording in o the resolved target and why.
-func (w writer) patch(ctx context.Context, o *outcome, key, user string, target Target,
+func (p patcher) patch(ctx context.Context, o *outcome, cred credentials, target Target,
 	change func(*dnsgatev1.PatchRecordRequest),
 ) (reply, bool) {
 	ctx, cancel := context.WithTimeout(ctx, GatewayTimeout)
 	defer cancel()
 
-	info, err := w.gateway.InspectToken(ctx, key)
+	info, err := p.gateway.InspectToken(ctx, cred.key)
 	if err != nil {
 		return gatewayFailure(o, err), false
 	}
 
-	if info.GetJti() != user {
+	if info.GetJti() != cred.user {
 		o.reason = reasonAPIUserMismatch
 
 		return forbidden, false
@@ -199,15 +205,15 @@ func (w writer) patch(ctx context.Context, o *outcome, key, user string, target 
 	o.target = target
 
 	req := &dnsgatev1.PatchRecordRequest{
-		Token:  key,
-		Egress: w.egress,
+		Token:  cred.key,
+		Egress: p.egress,
 		Zone:   target.Zone,
 		Name:   target.Name,
 		Type:   "TXT",
 	}
 	change(req)
 
-	if _, err := w.gateway.PatchRecord(ctx, req); err != nil {
+	if _, err := p.gateway.PatchRecord(ctx, req); err != nil {
 		return gatewayFailure(o, err), false
 	}
 
