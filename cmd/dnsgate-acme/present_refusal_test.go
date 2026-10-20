@@ -242,7 +242,8 @@ func TestPresentRefusesARequestWithoutBasicAuth(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e.gatewayUntouched(t, func() {
-				e.wantPresentForbidden(t, d, cred, "_acme-challenge.example.com.", "no Basic auth")
+				entry := e.wantPresentForbiddenLogged(t, d, cred, "_acme-challenge.example.com.", "no Basic auth")
+				wantLogged(t, entry, map[string]any{"name": "_acme-challenge.example.com."}, "error")
 			})
 		})
 	}
