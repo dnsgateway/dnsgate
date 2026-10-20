@@ -139,8 +139,13 @@ func (e *endpoint) logRequest(ctx context.Context, id string, rep reply, o outco
 	}
 
 	attrs := append([]slog.Attr{slog.String("request_id", id)}, e.attrs...)
+
+	// A subject that is not valid is left out, not logged empty.
+	if o.subject != "" {
+		attrs = append(attrs, slog.String(e.subjectKey, o.subject))
+	}
+
 	attrs = append(attrs,
-		slog.String(e.subjectKey, o.subject),
 		slog.String("zone", o.target.Zone),
 		slog.String("name", o.target.Name),
 		slog.String("result", result),
